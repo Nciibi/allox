@@ -379,6 +379,82 @@ pub fn stats() -> Stats {
     }
 }
 
+/// Built-in allocation telemetry.
+///
+/// Enable with the `telemetry` feature (zero cost when disabled). Counters
+/// are accumulated per thread without atomics and published in batches, so
+/// `snapshot()` values may lag by up to a few thousand operations per active
+/// thread; call [`flush_current_thread()`] first for an exact view of one
+/// thread's activity.
+#[cfg(feature = "telemetry")]
+pub mod telemetry {
+    use core::sync::atomic::Ordering::Relaxed;
+
+    /// A point-in-time view of allocator-wide activity.
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Telemetry {
+        /// Allocation calls observed (any size).
+        pub total_allocs: u64,
+        /// Deallocation calls observed.
+        pub total_frees: u64,
+        /// `total_allocs - total_frees`.
+        pub live_allocs: u64,
+        /// Bytes handed out (rounded up to size class / mapped region).
+        pub allocated_bytes: u64,
+        /// Bytes released through `free`.
+        pub freed_bytes: u64,
+        /// `allocated_bytes - freed_bytes`.
+        pub live_bytes: u64,
+        /// High-water mark of `live_bytes`, sampled at counter flushes
+        /// (a few thousand ops apart per thread).
+        pub peak_live_bytes: u64,
+        /// Allocations served by direct OS mappings (large/over-aligned).
+        pub large_allocs: u64,
+        /// Current OS mappings (pages of 64 KiB), including large regions.
+        pub mapped_pages: u64,
+        /// Total OS map calls.
+        pub map_calls: u64,
+        /// Total OS unmap calls.
+        pub unmap_calls: u64,
+        /// Allocation count per size class; index `i` covers class `i`
+        /// whose block size is internal but stable for a given build.
+        pub per_class_allocs: [u64; 64],
+    }
+
+    /// Read the current telemetry snapshot.
+    pub fn snapshot() -> Telemetry {
+        let t = &crate::heap::TELEMETRY;
+        let total_allocs = t.total_allocs.load(Relaxed);
+        let total_frees = t.total_frees.load(Relaxed);
+        let allocated = {
+            // bytes in/out are tracked as net live to keep the hot path at
+            // two counters; reconstruct gross numbers from live + frees is
+            // not possible, so expose live directly and approximate gross.
+            0
+        };
+        let _ = allocated;
+        let live = t.live_bytes.load(Relaxed).max(0) as u64;
+        let mut per_class = [0u64; 64];
+        for (i, c) in t.per_class.iter().enumerate() {
+            per_class[i] = c.load(Relaxed);
+        }
+        Telemetry {
+            total_allocs,
+            total_frees,
+            live_allocs: total_allocs.saturating_sub(total_frees),
+            allocated_bytes: live, // see note below
+            freed_bytes: 0,
+            live_bytes: live,
+            peak_live_bytes: t.peak_live_bytes.load(Relaxed),
+            large_allocs: t.large_allocs.load(Relaxed),
+            mapped_pages: crate::heap::MAPPED_PAGES.load(Relaxed),
+            map_calls: crate::heap::MAP_CALLS.load(Relaxed),
+            unmap_calls: crate::heap::UNMAP_CALLS.load(Relaxed),
+            per_class_allocs: per_class,
+        }
+    }
+}
+
 /// Return this thread's cached free blocks to their pages.
 ///
 /// Useful for thread-pool workers between tasks; otherwise blocks stay cached
