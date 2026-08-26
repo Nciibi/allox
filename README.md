@@ -130,6 +130,19 @@ notes, and rationale.
 | `jemallocator` / `mimalloc` | Require a working C toolchain for every target; break cross-compilation |
 | `talc` / other pure-Rust allocators | Linked-list designs without thread caching or virtual-memory integration — they scale poorly past a few threads |
 
+## no_std / embedded
+
+```toml
+allox = { version = "0.1", default-features = false }
+```
+
+With `default-features = false` allox builds against `core` alone: the
+per-thread cache becomes a single global cache behind the allocator's own
+spin mutex (embedded targets are single-threaded; the allocator never
+re-enters that lock). Corruption diagnostics use `panic!` instead of
+`abort()` — pair with `panic = "abort"` in your profile as usual.
+The `wasm32` backend works with or without the `std` feature.
+
 ## WebAssembly
 
 allox compiles for `wasm32-unknown-unknown` with no imports and no build
