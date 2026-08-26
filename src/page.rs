@@ -37,7 +37,7 @@ impl PageHeader {
     /// The page header owning `p`, found by masking address bits.
     #[inline]
     pub(crate) unsafe fn of(p: *mut u8) -> *mut PageHeader {
-        ((p as usize & !PAGE_MASK) as *mut PageHeader)
+        (p as usize & !PAGE_MASK) as *mut PageHeader
     }
 
     /// Carve a freshly mapped page into a full free list of `class`-sized

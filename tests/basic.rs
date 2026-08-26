@@ -107,7 +107,6 @@ fn many_small_churn() {
             }
             if round % 3 == 0 && !live.is_empty() {
                 let (old, osz) = live.pop().unwrap();
-                for (p, s) in old.iter().zip(&old.iter().map(|_| osz)) {}
                 for &p in &old {
                     assert_eq!(*p.add(osz - 1), 42);
                     free(p);

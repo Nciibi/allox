@@ -18,7 +18,7 @@ pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
-struct Inner {
+pub(crate) struct Inner {
     partial: [*mut PageHeader; NUM_CLASSES],
 }
 

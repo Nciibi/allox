@@ -1,0 +1,1 @@
+Zip<std::slice::Iter<'_, *mut u8>, &Map<std::slice::Iter<'_, *mut u8>, {closure@tests\basic.rs:110:62: 110:65}>>
