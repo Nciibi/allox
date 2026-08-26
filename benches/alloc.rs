@@ -83,7 +83,7 @@ fn run<A: GlobalAlloc + Sync + 'static>(alloc: &'static A, wl: &Workload, second
                             }
                             unsafe { *p = ops as u8 };
                             live.push((p, size));
-                            if rng.next() % 100 < wl.free_pct && live.len() > 64 {
+                            if rng.next() % 100 < free_pct && live.len() > 64 {
                                 let idx = (rng.next() as usize) % live.len();
                                 let (p, s) = live.swap_remove(idx);
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
