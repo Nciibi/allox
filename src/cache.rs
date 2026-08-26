@@ -12,7 +12,7 @@ use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PA
 use core::ptr;
 
 /// Start flushing when a bin exceeds this many cached blocks...
-const FLUSH_LIMIT: u32 = 2 * REFILL_BATCH + 1;
+const FLUSH_LIMIT: u32 = 8192; // TEMP EXPERIMENT
 /// ...and shrink it back down to this level (retain half: fewer future
 /// refills and fewer future flushes than drain-to-empty).
 const FLUSH_TARGET: u32 = REFILL_BATCH;
