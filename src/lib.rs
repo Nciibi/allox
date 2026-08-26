@@ -219,8 +219,13 @@ unsafe fn free_large(p: *mut u8) {
 
 #[cold]
 fn corrupt_pointer() -> ! {
-    eprintln!("allox: free/realloc of pointer not owned by this allocator");
-    std::process::abort()
+    #[cfg(feature = "std")]
+    {
+        eprintln!("allox: free/realloc of pointer not owned by this allocator");
+        std::process::abort();
+    }
+    #[cfg(not(feature = "std"))]
+    panic!("allox: free/realloc of pointer not owned by this allocator")
 }
 
 /// Core dispatch used by every public entry point.
