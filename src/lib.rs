@@ -63,21 +63,25 @@ impl Default for Allox {
 }
 
 thread_local! {
-    static CACHE: RefCell<cache::ThreadCache> =
-        const { RefCell::new(cache::ThreadCache::new()) };
+    // UnsafeCell, not RefCell: the borrow-flag check costs measurable time on
+    // the allocation fast path. Aliasing is impossible because the allocator
+    // never invokes user code while the cache is borrowed, so no reentrant
+    // allocation can observe two simultaneous `&mut`s.
+    static CACHE: core::cell::UnsafeCell<cache::ThreadCache> =
+        const { core::cell::UnsafeCell::new(cache::ThreadCache::new()) };
 }
 
 /// Run `f` with this thread's cache; if TLS is unavailable (thread exiting),
 /// run the lock-based fallback instead. Never panics, never unwinds.
 #[inline]
 fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl FnOnce() -> R) -> R {
-    let result = CACHE.try_with(|c| match c.try_borrow_mut() {
-        Ok(mut cache) => Some(f(&mut cache)),
-        Err(_) => None,
+    let result = CACHE.try_with(|c| {
+        // Safety: see the `CACHE` declaration; no reentrancy is possible.
+        f(unsafe { &mut *c.get() })
     });
     match result {
-        Ok(Some(r)) => r,
-        _ => fallback(),
+        Ok(r) => r,
+        Err(_) => fallback(),
     }
 }
 
