@@ -6,9 +6,7 @@
 //! happen while any thread still caches one of its blocks.
 
 use crate::classes::NUM_CLASSES;
-use crate::page::{
-    pop_block, unlink_helper_placeholder, FLAG_IN_PARTIAL, PAGE_MAGIC, PAGE_SIZE, PageHeader,
-};
+use crate::page::{pop_block, FLAG_IN_PARTIAL, PAGE_SIZE, PageHeader};
 use crate::sys::{self, Mutex, MutexGuard};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -163,9 +161,3 @@ impl GlobalHeap {
 }
 
 pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
-
-// keep PAGE_MAGIC referenced for validation helpers living elsewhere
-pub(crate) use crate::page::PAGE_MAGIC as _PAGE_MAGIC_REEXPORT;
-const _: () = {
-    let _ = PAGE_MAGIC;
-};
