@@ -13,7 +13,7 @@
 use crate::classes::CLASSES;
 use crate::classes::NUM_CLASSES;
 use crate::heap::REFILL_BATCH;
-use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
+use crate::page::{pop_block, push_block, PageHeader};
 use core::ptr;
 
 /// Total bytes one thread's cache may retain before trimming starts.

@@ -45,17 +45,41 @@ struct Workload {
 }
 
 const WORKLOADS: &[Workload] = &[
-    Workload { name: "tight-small 1T", threads: 1, size_range: (64, 64), free_pct: 40 },
-    Workload { name: "mixed-small 1T", threads: 1, size_range: (16, 4096), free_pct: 50 },
-    Workload { name: "tight-small 8T", threads: 8, size_range: (64, 64), free_pct: 40 },
-    Workload { name: "mixed-small 8T", threads: 8, size_range: (16, 4096), free_pct: 50 },
-    Workload { name: "mixed-all 8T", threads: 8, size_range: (16, 65536), free_pct: 50 },
+    Workload {
+        name: "tight-small 1T",
+        threads: 1,
+        size_range: (64, 64),
+        free_pct: 40,
+    },
+    Workload {
+        name: "mixed-small 1T",
+        threads: 1,
+        size_range: (16, 4096),
+        free_pct: 50,
+    },
+    Workload {
+        name: "tight-small 8T",
+        threads: 8,
+        size_range: (64, 64),
+        free_pct: 40,
+    },
+    Workload {
+        name: "mixed-small 8T",
+        threads: 8,
+        size_range: (16, 4096),
+        free_pct: 50,
+    },
+    Workload {
+        name: "mixed-all 8T",
+        threads: 8,
+        size_range: (16, 65536),
+        free_pct: 50,
+    },
 ];
 
 fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
-    let layout_for =
-        |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let threads = wl.threads;
     let size_range = wl.size_range;
     let free_pct = wl.free_pct;
@@ -75,8 +99,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
                             let size = if size_range.0 == size_range.1 {
                                 size_range.0
                             } else {
-                                size_range.0
-                                    + (rng.next() as usize) % (size_range.1 - size_range.0)
+                                size_range.0 + (rng.next() as usize) % (size_range.1 - size_range.0)
                             };
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
