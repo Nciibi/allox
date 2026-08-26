@@ -72,7 +72,6 @@ fn randomized_stress_multithreaded() {
                     }
                 }
                 0
-                leaked
             })
         })
         .collect();
