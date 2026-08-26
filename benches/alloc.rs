@@ -33,6 +33,8 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     }
 }
 
+static DLMALLOC: Dlmalloc = Dlmalloc;
+
 struct Rng(u64);
 
 impl Rng {

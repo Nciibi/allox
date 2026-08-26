@@ -28,6 +28,7 @@ telemetry = []
 # Benchmark comparators only — never dependencies of the library itself.
 talc = "5"
 spinning_top = "0.3"
+dlmalloc = "0.2"
 
 [[bench]]
 name = "alloc"
