@@ -47,22 +47,51 @@ println!("{} pages mapped", s.mapped_pages);
 allox::flush_current_thread(); // return this thread's caches (thread pools)
 ```
 
+## Benchmarks
+
+Median of 5 interleaved runs, Windows x86-64, `cargo bench` (ops/s,
+higher is better). Comparators run identical workloads through their
+`GlobalAlloc` implementations. talc uses its documented global-allocator
+configuration with a 512 MiB claimed arena.
+
+| Workload | allox | talc | system | allox/talc | allox/sys |
+|---|---:|---:|---:|---:|---:|
+| tight-small 1T (64 B) | 47.6 M/s | 29.2 M/s | 10.9 M/s | **1.63×** | **4.36×** |
+| mixed-small 1T (16–4096 B) | 28.9 M/s | 9.6 M/s | 8.1 M/s | **3.02×** | **3.59×** |
+| tight-small 8T (64 B) | 220.2 M/s | 2.1 M/s | 51.4 M/s | **102×** | **4.29×** |
+| mixed-small 8T (16–4096 B) | 142.3 M/s | 1.9 M/s | 29.2 M/s | **75×** | **4.87×** |
+| mixed-all 8T (16–65536 B) | 106 K/s | 0 (OOM) | 53 K/s | **∞** | **2.00×** |
+
+Why the multi-threaded gaps are structural, not tuning: every allox
+allocation fast path is lock-free per thread (sharded class locks are only
+touched by batched slow paths), while single-heap allocators serialize on
+one mutex. Reproduce with `cargo bench`.
+
 ## Design
 
-mimalloc-inspired, simplified for Rust's world:
+mimalloc-inspired, adapted for Rust's world:
 
 - **Size classes**: ~12.5% geometric growth from 16 B to 16 KiB — internal
-  fragmentation never exceeds ~12.5%.
-- **64 KiB pages** hold blocks of one class; pointer → page header is a single
-  bit-mask, no lookup tables.
+  fragmentation never exceeds ~12.5%. Direct-mapped lookup table:
+  size → class is one shift and one load.
+- **64 KiB pages** hold blocks of one class; pointer → page header is a
+  single bit-mask, no lookup tables.
 - **Per-thread free lists**: allocation and deallocation fast paths take no
-  locks and perform no atomic operations.
+  locks and perform no atomic operations. Freed blocks stay in the freeing
+  thread's cache — they almost always come back to the same thread.
+- **Byte-budgeted caches**: thread caches grow freely and are trimmed only
+  when a thread's total exceeds its budget (biggest bin first); flush/refill
+  round-trips through the global heap were measured to cost 5× on mixed
+  workloads, so they are made rare rather than fast.
 - **Sharded global heap**: each size class' partial-page list has its own
-  mutex; slow paths are batched (~1 lock acquisition per 64+ operations).
+  mutex; slow paths are batched (~64 blocks per lock acquisition).
 - **Large / over-aligned allocations** are served by directly mapped regions
   tagged with a magic header; invalid frees are detected and abort.
 - **Debug builds validate every free**: pointer bounds, class alignment, and
   double-free detection.
+- **No TLS destructors, no allocation inside the allocator**: const-init
+  thread-local state; a spin-then-yield internal mutex that cannot allocate;
+  explicit `flush_current_thread()` for thread pools.
 
 See [DESIGN.md](DESIGN.md) for the full architecture document, research
 notes, and rationale.
