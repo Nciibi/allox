@@ -270,3 +270,19 @@ fuzz/     alloc_seq.cc
 | Lock contention worse than expected | Batch sizes tunable; M4 removes lock from steady state |
 | Windows VirtualAlloc 64 KiB granularity waste | Already uniform: we always operate in 64 KiB units |
 | Name/API churn before release | v0.x semver; API frozen at 0.1 review |
+
+### 4.6 Zero-init and page lifetime
+- Delayed reclamation: a page whose `used` hits zero is parked on its class'
+  empty-page list (cap 4/class) and recycled by the next refill; only the
+  oldest pages beyond the cap are unmapped. Churn workloads avoid
+  map/unmap syscalls entirely.
+- Virgin tracking: `FLAG_VIRGIN` means "no block of this page was ever
+  allocated-and-freed", so all free blocks are OS-zero *except their first
+  word*, which holds the intrusive freelist link. `alloc_zeroed` on virgin
+  blocks clears just that word; otherwise it memsets the full block.
+  The flag is cleared whenever any block is returned to the page.
+
+Rejected optimization, recorded deliberately: in-place realloc growth into
+the adjacent free block requires taking the class lock to inspect the page
+free list (it is lock-protected), so every grow pays a lock acquisition to
+sometimes avoid a copy - expected net loss; alloc-copy-free stays.
