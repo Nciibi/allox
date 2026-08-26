@@ -137,8 +137,14 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
     total as f64 / seconds as f64
 }
 
+fn median(v: &mut [f64]) -> f64 {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v[v.len() / 2]
+}
+
 fn main() {
     const SECS: u64 = 3;
+    const REPS: usize = 5;
 
     struct Named(&'static str, &'static dyn SyncGlobalAlloc);
     trait SyncGlobalAlloc: GlobalAlloc + Sync {}
@@ -163,12 +169,17 @@ fn main() {
         if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
         }
-        let mut scores = Vec::new();
-        for a in &allocators {
-            eprintln!("  running {} / {}...", wl.name, a.0);
-            scores.push(run(a.1, wl, SECS));
+        // Median of REPS runs per allocator: interleaved so thermal drift
+        // affects all allocators equally.
+        let mut scores = vec![vec![]; allocators.len()];
+        for _ in 0..REPS {
+            for (i, a) in allocators.iter().enumerate() {
+                eprintln!("  running {} / {}...", wl.name, a.0);
+                scores[i].push(run(a.1, wl, SECS));
+            }
         }
-        let [allox_s, talc_s, sys_s] = [scores[0], scores[1], scores[2]];
+        let medians: Vec<f64> = scores.iter().map(|s| median(s)).collect();
+        let [allox_s, talc_s, sys_s] = [medians[0], medians[1], medians[2]];
         if allox_s > talc_s {
             wins_vs_talc += 1;
         }
