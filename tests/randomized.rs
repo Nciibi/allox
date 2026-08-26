@@ -139,7 +139,7 @@ fn randomized_churn_all_paths_multithreaded() {
                         _ => {}
                     }
                 }
-                for s in &live {
+                for s in live.iter() {
                     unsafe {
                         s.verify();
                         allox::free(s.p);
