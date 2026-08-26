@@ -56,7 +56,16 @@ impl<T> Mutex<T> {
                 spins += 1;
             }
             if self.locked.load(Ordering::Relaxed) {
+                #[cfg(feature = "std")]
                 std::thread::yield_now();
+                #[cfg(not(feature = "std"))]
+                {
+                    // No OS to schedule us out; keep spinning.
+                    core::hint::spin_loop();
+                    core::hint::spin_loop();
+                    core::hint::spin_loop();
+                    core::hint::spin_loop();
+                }
                 spins = 0;
             }
         }
