@@ -66,6 +66,7 @@ const fn class_for_size_scan(size: usize) -> usize {
 ///
 /// Requires `1 <= size <= MAX_SMALL_SIZE`.
 #[inline]
+#[allow(clippy::manual_div_ceil)] // div_ceil not const-stable at MSRV
 pub(crate) const fn class_for_size(size: usize) -> usize {
     if size <= MAX_SMALL_SIZE {
         CLASS_LUT[(size + MIN_ALIGN - 1) / MIN_ALIGN] as usize
