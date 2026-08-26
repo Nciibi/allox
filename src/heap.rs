@@ -1,9 +1,11 @@
-//! Global page heap: per-class partial-page lists guarded by one mutex.
+//! Global page heap: per-size-class partial-page lists, each under its own
+//! mutex (lock sharding: contention spreads across 64 independent locks).
 //!
-//! All mutation of a page's `free_head` happens while holding the heap mutex,
-//! so thread caches only ever own *detached* block chains. A page is unmapped
-//! exactly when its `used` count drops to zero, which by construction cannot
-//! happen while any thread still caches one of its blocks.
+//! All mutation of a page's `free_head` happens while holding that page
+//! class' mutex, so thread caches only ever own *detached* block chains.
+//! A page is unmapped exactly when its `used` count drops to zero, which by
+//! construction cannot happen while any thread still caches one of its
+//! blocks. No code path ever holds two class locks at once.
 
 use crate::classes::NUM_CLASSES;
 use crate::page::{pop_block, FLAG_IN_PARTIAL, PAGE_SIZE, PageHeader};
@@ -11,22 +13,22 @@ use crate::sys::{self, Mutex, MutexGuard};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-/// Blocks moved from a page into a thread cache in one batch.
+/// Blocks moved from pages into a thread cache in one batch.
 pub(crate) const REFILL_BATCH: u32 = 32;
 
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
-pub(crate) struct Inner {
-    partial: [*mut PageHeader; NUM_CLASSES],
+pub(crate) struct ListHead {
+    head: *mut PageHeader,
 }
 
 // Raw pointers are only manipulated while holding the enclosing Mutex.
-unsafe impl Send for Inner {}
+unsafe impl Send for ListHead {}
 
 pub(crate) struct GlobalHeap {
-    inner: Mutex<Inner>,
+    classes: [Mutex<ListHead>; NUM_CLASSES],
 }
 
 unsafe fn link_partial(list: &mut *mut PageHeader, p: *mut PageHeader) {
@@ -61,7 +63,7 @@ unsafe fn unlink_partial(list: &mut *mut PageHeader, p: *mut PageHeader) -> bool
 }
 
 /// Pop up to REFILL_BATCH blocks from the pages of one partial list,
-/// building a detached chain. Caller must hold the heap lock.
+/// building a detached chain. Caller must hold the class' lock.
 unsafe fn fill_from_list(list: &mut *mut PageHeader, chain: &mut *mut u8, count: &mut u32) {
     while *count < REFILL_BATCH {
         let page = *list;
@@ -90,9 +92,9 @@ unsafe fn fill_from_list(list: &mut *mut PageHeader, chain: &mut *mut u8, count:
 impl GlobalHeap {
     pub(crate) const fn new() -> Self {
         GlobalHeap {
-            inner: Mutex::new(Inner {
-                partial: [ptr::null_mut(); NUM_CLASSES],
-            }),
+            classes: [Mutex::new(ListHead {
+                head: ptr::null_mut(),
+            }); NUM_CLASSES],
         }
     }
 
@@ -103,8 +105,8 @@ impl GlobalHeap {
         let mut count: u32 = 0;
 
         {
-            let mut inner = self.inner.lock();
-            fill_from_list(&mut inner.partial[class], &mut chain, &mut count);
+            let mut list = self.classes[class].lock();
+            fill_from_list(&mut list.head, &mut chain, &mut count);
         }
 
         if count == 0 {
@@ -114,9 +116,9 @@ impl GlobalHeap {
                 (*page).init(class);
                 MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
-                let mut inner = self.inner.lock();
-                link_partial(&mut inner.partial[class], page);
-                fill_from_list(&mut inner.partial[class], &mut chain, &mut count);
+                let mut list = self.classes[class].lock();
+                link_partial(&mut list.head, page);
+                fill_from_list(&mut list.head, &mut chain, &mut count);
             }
         }
 
@@ -124,14 +126,10 @@ impl GlobalHeap {
     }
 
     /// Return a chain of `n` blocks, all belonging to `page`, to that page.
-    pub(crate) unsafe fn release_blocks(
-        &self,
-        page: *mut PageHeader,
-        chain: *mut u8,
-        n: u16,
-    ) {
+    pub(crate) unsafe fn release_blocks(&self, page: *mut PageHeader, chain: *mut u8, n: u16) {
+        let class = (*page).class as usize;
         let unmap_now = {
-            let mut inner = self.inner.lock();
+            let mut list = self.classes[class].lock();
             let mut tail = chain;
             while !(*tail.cast::<*mut u8>()).is_null() {
                 tail = *tail.cast::<*mut u8>();
@@ -141,11 +139,11 @@ impl GlobalHeap {
             (*page).free_count += n;
             (*page).used -= n;
             if (*page).used == 0 {
-                unlink_partial(&mut inner.partial[(*page).class as usize], page);
+                unlink_partial(&mut list.head, page);
                 true
             } else {
                 if (*page).flags & FLAG_IN_PARTIAL == 0 {
-                    link_partial(&mut inner.partial[(*page).class as usize], page);
+                    link_partial(&mut list.head, page);
                 }
                 false
             }
@@ -157,9 +155,10 @@ impl GlobalHeap {
         }
     }
 
-    /// Lock access for external validation (debug double-free detection).
-    pub(crate) fn lock_for_debug(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock()
+    /// Lock access to a class' partial list for external validation
+    /// (debug double-free detection).
+    pub(crate) fn debug_lock(&self, class: usize) -> MutexGuard<'_, ListHead> {
+        self.classes[class].lock()
     }
 }
 

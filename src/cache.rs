@@ -165,7 +165,7 @@ unsafe fn debug_validate_free(p: *mut u8) {
     if offset < HEADER_SIZE || (offset - HEADER_SIZE) % block_size != 0 {
         invalid("allox: dealloc of misaligned interior pointer");
     }
-    let _guard = crate::heap::HEAP.lock_for_debug();
+    let _guard = crate::heap::HEAP.debug_lock(class);
     let mut cur = (*page).free_head;
     let mut steps = (*page).free_count;
     while steps > 0 {
