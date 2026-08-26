@@ -23,7 +23,7 @@ impl Rng {
     }
 }
 
-fn bench<A: GlobalAlloc + ?Sized>(name: &str, alloc: &A, threads: usize, seconds: u64, size_range: (usize, usize)) {
+fn bench<A: GlobalAlloc + Sync + ?Sized>(name: &str, alloc: &'static A, threads: usize, seconds: u64, size_range: (usize, usize)) {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n, 16).unwrap();
 
