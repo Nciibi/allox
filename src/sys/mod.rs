@@ -5,20 +5,20 @@
 
 #[cfg(unix)]
 pub(crate) mod unix;
-#[cfg(windows)]
-pub(crate) mod windows;
 #[cfg(target_family = "wasm")]
 pub(crate) mod wasm;
+#[cfg(windows)]
+pub(crate) mod windows;
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(unix)]
 pub(crate) use unix::{map, unmap};
-#[cfg(windows)]
-pub(crate) use windows::{map, unmap};
 #[cfg(target_family = "wasm")]
 pub(crate) use wasm::{map, unmap};
+#[cfg(windows)]
+pub(crate) use windows::{map, unmap};
 
 /// Spin-then-yield mutex.
 ///
