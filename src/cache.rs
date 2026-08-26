@@ -90,32 +90,57 @@ impl ThreadCache {
 
         let page = PageHeader::of(p);
         let class = (*page).class as usize;
+        let block_size = CLASSES[class] as usize;
         {
             let bin = &mut self.bins[class];
             push_block(&mut bin.head, p);
             bin.len += 1;
         }
-        let limit = flush_limit(class);
-        if self.bins[class].len > limit {
-            self.flush_bin(class, false, limit / 2);
+        self.cached_bytes += block_size;
+        if self.cached_bytes > THREAD_CACHE_BUDGET {
+            self.trim();
+        }
+    }
+
+    /// Bring total cached bytes under budget: repeatedly halve the largest
+    /// bins (cheap pass over a fixed 64-entry array; no allocation).
+    unsafe fn trim(&mut self) {
+        let target = THREAD_CACHE_BUDGET / 2;
+        while self.cached_bytes > target {
+            // Find the bin holding the most bytes.
+            let mut best = usize::MAX;
+            let mut best_bytes = 0usize;
+            for class in 0..NUM_CLASSES {
+                let b = self.bins[class].len as usize * CLASSES[class];
+                if self.bins[class].len > REFILL_BATCH && b > best_bytes {
+                    best_bytes = b;
+                    best = class;
+                }
+            }
+            if best == usize::MAX {
+                break;
+            }
+            self.flush_bin(best, false, self.bins[best].len / 2);
         }
     }
 
     /// Return cached blocks of `class`, grouped by owning page so each page
     /// needs only one lock acquisition. With `full`, drain the bin entirely;
-    /// otherwise shrink it to `floor` (retaining half reduces future refills
-    /// and future flushes).
-    unsafe fn flush_bin(&mut self, class: usize, full: bool, floor: u32) {
-        let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
+    /// otherwise shrink it to `floor` blocks (retaining half reduces future
+    /// refills and future flushes).
+    unsafe fn flush_bin(&mut self, class: usize, full: bool, floor_blocks: u32) {
+        let floor = if full { 0 } else { floor_blocks };
         let mut ng = 0usize;
+        let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
         let bin = &mut self.bins[class];
 
-        while bin.len > floor {
+        while bin.len > floor.max(0).min(bin.len) || (!full && false) {
             let b = match pop_block(&mut bin.head) {
                 Some(b) => b,
                 None => break,
             };
             bin.len -= 1;
+            self.cached_bytes = self.cached_bytes.saturating_sub(CLASSES[class] as usize);
             let page = PageHeader::of(b);
             *b.cast::<*mut u8>() = ptr::null_mut();
             let mut slot = None;
