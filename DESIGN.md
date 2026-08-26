@@ -281,6 +281,12 @@ fuzz/     alloc_seq.cc
   word*, which holds the intrusive freelist link. `alloc_zeroed` on virgin
   blocks clears just that word; otherwise it memsets the full block.
   The flag is cleared whenever any block is returned to the page.
+- Large-region recycling: freed large regions (64 KiB-multiples, the
+  16 KiB..64+ MiB class of allocations) are parked in a fixed 64-slot,
+  64 MiB-capped cache and reused best-fit on the next large allocation.
+  Without this, block-heavy workloads pay one map + one unmap syscall per
+  allocation (~10 us/op ceiling). Reused regions are not OS-zero, so
+  `alloc_zeroed` memsets them; `malloc` does not care.
 
 Rejected optimization, recorded deliberately: in-place realloc growth into
 the adjacent free block requires taking the class lock to inspect the page
