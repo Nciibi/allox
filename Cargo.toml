@@ -12,6 +12,12 @@ readme = "README.md"
 [lib]
 name = "allox"
 
+[features]
+# Built-in allocation telemetry (thread-local counters, batched publication).
+# Opt-in so production builds pay exactly zero for it; enable and query via
+# `allox::telemetry::snapshot()`.
+telemetry = []
+
 [[bench]]
 name = "alloc"
 harness = false
