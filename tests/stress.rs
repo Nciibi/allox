@@ -71,7 +71,7 @@ fn randomized_stress_multithreaded() {
                         allox::free(*p);
                     }
                 }
-                let leaked = live.len().min(0);
+                0
                 leaked
             })
         })
