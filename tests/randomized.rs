@@ -82,7 +82,7 @@ fn randomized_churn_all_paths_multithreaded() {
     let handles: Vec<_> = (0..6)
         .map(|t| {
             thread::spawn(move || {
-                let mut rng = Rng((t as u64 + 7) * 0x2545F4914F6CDD1D);
+                let mut rng = Rng((t as u64 + 7).wrapping_mul(0x2545F4914F6CDD1D));
                 let mut live: Vec<Slot> = Vec::with_capacity(512);
                 let mut reallocs = 0usize;
                 for _ in 0..60_000 {
