@@ -4,6 +4,10 @@
 //! Exports return 0 on success, non-zero failure codes.
 
 #![cfg(target_family = "wasm")]
+// The crate requires a main for non-wasm hosts; on wasm we only export
+// `allox_wasm_smoke` and let the JS host drive it.
+#[cfg(not(target_family = "wasm"))]
+fn main() {}
 
 use std::alloc::Layout;
 
