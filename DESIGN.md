@@ -146,12 +146,18 @@ alloc_zeroed: alloc + explicit zero (OS-zero guarantee only holds for fresh
 pages; recycled cache memory must be zeroed in software).
 
 ### 4.4 Concurrency model
-- v1: thread caches (no locks) + one global mutex around partial-page lists.
-  Contention only on refill/flush (amortized ~1 lock acquisition per >=32 ops).
-- Upgrade path (M4, mimalloc-style): per-page atomic cross-thread free list so
-  remote frees become a single CAS. Layout below leaves room for it.
-- Own `sys::Mutex`: SRWLock (Windows), pthread_mutex (POSIX), spin fallback.
-  None of these allocate => no recursion hazard with GlobalAlloc.
+- Sharded locking: each of the ~64 size classes has its own mutex guarding its
+  partial-page list; no code path ever holds two class locks at once. Thread
+  caches are lock-free; contention only on batched refill/flush (amortized
+  ~1 lock acquisition per >=32 ops, spread over 64 independent locks).
+- Our `sys::Mutex` is a spin-then-yield lock: it can never allocate (unlike
+  `std::sync::Mutex`), eliminating the recursion hazard inside `GlobalAlloc`.
+  Slow paths are rare and batched, so brief spinning before yielding suffices.
+- Note: because freed blocks go to the *freeing* thread's cache (no block
+  ownership), mimalloc-style atomic cross-thread free lists are unnecessary;
+  lock sharding addresses the remaining contention directly.
+- Future option if profiling demands: futex/SRWLock-backed parking for the
+  class mutexes under heavy contention.
 
 PageHeader (repr(C, align(16)), 48 bytes):
 magic: u64, prev/next: *mut PageHeader, free_head: *mut u8,
