@@ -68,7 +68,7 @@ unsafe fn alloc_slot(rng: &mut Rng) -> Slot {
     };
     let p = allox::aligned_alloc(align, size);
     assert!(!p.is_null(), "OOM {}@{}", size, align);
-    let mut slot = Slot { p, size, align, tag: (rng.next() & 0xFF) as u8 };
+    let slot = Slot { p, size, align, tag: (rng.next() & 0xFF) as u8 };
     for i in 0..slot.size {
         *p.add(i) = slot.pattern(i);
     }
@@ -128,7 +128,8 @@ fn randomized_churn_all_paths_multithreaded() {
                                 live.push(s);
                                 reallocs += 1;
                             } else {
-                                live.push(live.swap_remove(idx));
+                                let keep = live.swap_remove(idx);
+                                live.push(keep);
                             }
                         }
                         _ if !live.is_empty() => {
@@ -177,7 +178,7 @@ fn calloc_zero_after_recycle() {
                     let q = unsafe { allox::calloc(n2, 2) };
                     assert!(!q.is_null());
                     for i in 0..n2 * 2 {
-                        assert_eq!(*q.add(i), 0, "round {} offset {}", round, i);
+                        assert_eq!(unsafe { *q.add(i) }, 0, "round {} offset {}", round, i);
                     }
                     unsafe { allox::free(q) };
                 }
