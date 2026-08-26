@@ -2,7 +2,7 @@
 name = "allox"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.79"
 description = "A pure-Rust, thread-cached general-purpose memory allocator. Zero dependencies, no C toolchain."
 license = "MIT OR Apache-2.0"
 categories = ["memory-management", "no-std"]
