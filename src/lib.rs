@@ -325,21 +325,20 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     alloc_small(class_for_size(size))
 }
 
-/// Like `alloc_impl` but reports whether the returned memory is already
-/// OS-zero, so callers can skip most of the memset. Large allocations are
-/// always freshly mapped and therefore always fully zeroed.
-///
-/// Safety/semantics of `zeroed == true`: the block was never allocated since
-/// its page was carved, so the OS zeroing survives everywhere *except* the
-/// first word, which held the intrusive freelist link — callers must clear
-/// that word themselves.
+/// Like `alloc_impl` but zeroes the allocation. Virgin small blocks only
+/// need their freelist-link word cleared; recycled large regions are memset.
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
         return align.max(1) as *mut u8;
     }
     if align > MIN_ALIGN || size > MAX_SMALL_SIZE {
-        return alloc_large(size, align);
+        let (p, fresh) = alloc_large_ex(size, align);
+        if !p.is_null() && !fresh {
+            // Recycled region: dirtied by its previous life.
+            ptr::write_bytes(p, 0, size);
+        }
+        return p;
     }
     let class = class_for_size(size);
     let (p, virgin) = with_cache(
