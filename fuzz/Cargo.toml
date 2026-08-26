@@ -1,0 +1,31 @@
+[package]
+name = "allox-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.allox]
+path = ".."
+features = ["telemetry"]
+
+[[bin]]
+name = "alloc_seq"
+path = "fuzz_targets/alloc_seq.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zero_init_seq"
+path = "fuzz_targets/zero_init_seq.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
