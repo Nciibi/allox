@@ -8,7 +8,7 @@
 //! blocks. No code path ever holds two class locks at once.
 
 use crate::classes::NUM_CLASSES;
-use crate::page::{pop_block, PageHeader, FLAG_IN_PARTIAL, PAGE_SIZE};
+use crate::page::{pop_block, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE, PageHeader};
 use crate::sys::{self, Mutex, MutexGuard};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -16,16 +16,36 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// Blocks moved from pages into a thread cache in one batch.
 pub(crate) const REFILL_BATCH: u32 = 64;
 
+/// Fully-freed pages kept mapped per size class before unmapping.
+/// Avoids map/unmap syscalls on alloc/free churn; worst-case retention is
+/// `64 classes x CAP x 64 KiB` (~16 MiB).
+const EMPTY_PAGE_CACHE_PER_CLASS: u32 = 4;
+
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) struct ListHead {
+    /// Partial pages (spare free blocks), doubly linked via prev/next.
     head: *mut PageHeader,
+    /// Fully free pages held for reuse instead of unmapping; singly linked
+    /// via `next`. All carry a full free list and `used == 0`.
+    empty: *mut PageHeader,
+    empty_count: u32,
 }
 
 // Raw pointers are only manipulated while holding the enclosing Mutex.
 unsafe impl Send for ListHead {}
+
+impl ListHead {
+    pub(crate) const fn new() -> Self {
+        ListHead {
+            head: ptr::null_mut(),
+            empty: ptr::null_mut(),
+            empty_count: 0,
+        }
+    }
+}
 
 pub(crate) struct GlobalHeap {
     classes: [Mutex<ListHead>; NUM_CLASSES],
