@@ -199,7 +199,8 @@ fn main() {
             .iter_mut()
             .map(|s| median(s.as_mut_slice()))
             .collect();
-        let [allox_s, talc_s, sys_s] = [medians[0], medians[1], medians[2]];
+        let [allox_s, talc_s, dlm_s, sys_s] =
+            [medians[0], medians[1], medians[2], medians[3]];
         if allox_s > talc_s {
             wins_vs_talc += 1;
         }
@@ -207,17 +208,19 @@ fn main() {
             wins_vs_sys += 1;
         }
         println!(
-            "{:<18} {:>12.0} {:>12.0} {:>12.0} {:>9.2}x {:>9.2}x",
+            "{:<18} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>8.2}x {:>8.2}x",
             wl.name,
             allox_s,
             talc_s,
+            dlm_s,
             sys_s,
             allox_s / talc_s,
+            allox_s / dlm_s,
             allox_s / sys_s,
         );
     }
 
-    println!("{}", "-".repeat(80));
+    println!("{}", "-".repeat(100));
     println!(
         "allox wins vs talc: {wins_vs_talc}/{}   vs system: {wins_vs_sys}/{}",
         WORKLOADS.len(),
