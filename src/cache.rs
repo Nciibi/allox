@@ -51,6 +51,10 @@ struct Bin {
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
+    /// Per class: number of guaranteed-OS-zero blocks currently at the
+    /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
+    /// iff the remaining length drops below this count.
+    virgin: [u32; NUM_CLASSES],
 }
 
 impl ThreadCache {
@@ -61,6 +65,7 @@ impl ThreadCache {
                 len: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
+            virgin: [0; NUM_CLASSES],
         }
     }
 
@@ -68,22 +73,36 @@ impl ThreadCache {
     pub(crate) unsafe fn alloc(&mut self, class: usize) -> *mut u8 {
         let bin = &mut self.bins[class];
         if let Some(p) = pop_block(&mut bin.head) {
-            bin.len -= 1;
+            let below = bin.len - 1;
+            bin.len = below;
             self.cached_bytes -= CLASSES[class];
+            if below < self.virgin[class] {
+                self.virgin[class] -= 1;
+            }
             return p;
         }
-        self.refill(class)
+        self.refill(class).0
+    }
+
+    /// Allocation that also reports whether the block is still OS-zero,
+    /// letting `alloc_zeroed` skip the memset.
+    pub(crate) unsafe fn alloc_zeroed(&mut self, class: usize) -> (*mut u8, bool) {
+        if self.bins[class].head.is_null() {
+            return self.refill(class);
+        }
+        (self.alloc(class), false)
     }
 
     /// Slow path: pull a batch of blocks from the global heap.
-    unsafe fn refill(&mut self, class: usize) -> *mut u8 {
+    #[inline]
+    unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         // Under aggregate pressure, shed some cache before asking for more.
         if self.cached_bytes > THREAD_CACHE_BUDGET / 2 {
             self.trim();
         }
-        let (chain, count) = crate::heap::HEAP.take_blocks(class);
+        let (chain, count, mut virgin) = crate::heap::HEAP.take_blocks(class);
         if chain.is_null() {
-            return ptr::null_mut();
+            return (ptr::null_mut(), false);
         }
         // Split one block off to return; the rest stay in the bin.
         let first = chain;
@@ -92,7 +111,17 @@ impl ThreadCache {
         bin.head = rest;
         bin.len += count - 1;
         self.cached_bytes += CLASSES[class] * (count - 1) as usize;
-        first
+        // Refill only happens on an empty bin, so the whole batch sits at the
+        // bottom; the block we returned was part of it.
+        if !virgin {
+            self.virgin[class] = 0;
+        } else {
+            self.virgin[class] = count - 1;
+        }
+        if chain.is_null() {
+            virgin = false;
+        }
+        (first, virgin)
     }
 
     pub(crate) unsafe fn dealloc(&mut self, p: *mut u8) {
