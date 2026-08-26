@@ -161,18 +161,84 @@ unsafe fn dealloc_small(p: *mut u8) {
     );
 }
 
+/// Cache of recently freed large regions, recycled on the next matching
+/// large allocation instead of paying unmap+map syscalls. Fixed table —
+/// the allocator must never allocate internally. Worst-case retention is
+/// `LARGE_CACHE_CAP_BYTES`.
+const LARGE_CACHE_SLOTS: usize = 64;
+const LARGE_CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
+
+struct LargeRegionCache {
+    len: usize,
+    bytes: usize,
+    entries: [(*mut u8, u32); LARGE_CACHE_SLOTS], // (base, mapped_pages)
+}
+
+impl LargeRegionCache {
+    const fn new() -> Self {
+        LargeRegionCache {
+            len: 0,
+            bytes: 0,
+            entries: [(ptr::null_mut(), 0); LARGE_CACHE_SLOTS],
+        }
+    }
+}
+
+static LARGE_CACHE: sys::Mutex<LargeRegionCache> =
+    sys::Mutex::new(LargeRegionCache::new());
+
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
+    alloc_large_ex(size, align).0
+}
+
+/// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
+/// OS-zero (a brand-new mapping rather than a recycled one).
+unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     let total = match size
         .checked_add(align)
         .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
     {
         Some(t) => t,
-        None => return ptr::null_mut(),
+        None => return (ptr::null_mut(), false),
     };
     let mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
+
+    // Best-fit region from the recycle cache.
+    {
+        let mut c = LARGE_CACHE.lock();
+        let mut best: Option<usize> = None;
+        for i in 0..c.len {
+            let (_, pages) = c.entries[i];
+            if (pages as usize) * page::PAGE_SIZE >= mapped
+                && best.map_or(true, |b| c.entries[i].1 < c.entries[b].1)
+            {
+                best = Some(i);
+            }
+        }
+        if let Some(i) = best {
+            let (base, pages) = c.entries.swap(i, c.len - 1);
+            c.len -= 1;
+            c.bytes -= pages as usize * page::PAGE_SIZE;
+            drop(c);
+            let region_size = pages as usize * page::PAGE_SIZE;
+            let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
+            if ret + size <= base as usize + region_size {
+                let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
+                (*hdr).magic = LARGE_MAGIC;
+                (*hdr).mapped_size = region_size;
+                (*hdr).base = base;
+                return (ret as *mut u8, false);
+            }
+            // Alignment made the cached region unusable; drop it.
+            sys::unmap(base, region_size);
+            heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+            heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     let base = sys::map(mapped);
     if base.is_null() {
-        return ptr::null_mut();
+        return (ptr::null_mut(), false);
     }
     // Header lives directly before the user pointer: high alignment can push
     // the user pointer past the first 64 KiB boundary of the region, so the
@@ -180,13 +246,14 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
     if ret + size > base as usize + mapped {
         sys::unmap(base, mapped);
-        return ptr::null_mut();
+        return (ptr::null_mut(), false);
     }
     let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
     (*hdr).magic = LARGE_MAGIC;
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
     heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    heap::MAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     #[cfg(feature = "telemetry")]
     {
         use core::sync::atomic::Ordering::Relaxed;
@@ -199,21 +266,39 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
             .saturating_sub(heap::TELEMETRY.bytes_out.load(Relaxed));
         heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
     }
-    ret as *mut u8
+    (ret as *mut u8, true)
 }
 
 unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
     let base = (*hdr).base;
-    sys::unmap(base, mapped);
-    heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+
+    // Park the region for reuse instead of unmapping.
+    let mut unmap_now = false;
+    {
+        let mut c = LARGE_CACHE.lock();
+        if c.len < LARGE_CACHE_SLOTS && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES {
+            c.entries[c.len] = (base, (mapped / page::PAGE_SIZE) as u32);
+            c.len += 1;
+            c.bytes += mapped;
+        } else {
+            unmap_now = true;
+        }
+    }
+    if unmap_now {
+        sys::unmap(base, mapped);
+        heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+        heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
     #[cfg(feature = "telemetry")]
     {
         use core::sync::atomic::Ordering::Relaxed;
         heap::TELEMETRY.total_frees.fetch_add(1, Relaxed);
-        let size = mapped - (p as usize - base as usize);
-        heap::TELEMETRY.bytes_out.fetch_add(size as u64, Relaxed);
+        let user = p as usize - base as usize;
+        heap::TELEMETRY
+            .bytes_out
+            .fetch_add(mapped.saturating_sub(user) as u64, Relaxed);
     }
 }
 
