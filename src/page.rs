@@ -66,7 +66,7 @@ impl PageHeader {
         self.free_count = count as u16;
         self.used = 0;
         self.class = class as u16;
-        self.flags = 0;
+        self.flags = FLAG_VIRGIN;
     }
 }
 
