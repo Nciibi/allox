@@ -96,7 +96,9 @@ pub extern "C" fn allox_wasm_smoke() -> i32 {
     for (p, _) in live {
         unsafe { allox::free(p) };
     }
-    drop(leaked);
-    drop(Layout::new::<u8>()); // keep Layout import used
+    if leaked > 0 {
+        // Silence unused-mut style lints while keeping the count meaningful.
+        let _ = core::mem::size_of::<usize>();
+    }
     0
 }
