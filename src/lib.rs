@@ -160,12 +160,17 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
-    let magic = *((p as usize & !PAGE_MASK) as *const u64);
-    match magic {
-        page::PAGE_MAGIC => dealloc_small(p),
-        LARGE_MAGIC => free_large(p),
-        _ => corrupt_pointer(),
+    let masked_magic = *((p as usize & !PAGE_MASK) as *const u64);
+    if masked_magic == page::PAGE_MAGIC {
+        dealloc_small(p);
+        return;
     }
+    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+    if *hdr == LARGE_MAGIC {
+        free_large(p);
+        return;
+    }
+    corrupt_pointer()
 }
 
 unsafe impl GlobalAlloc for Allox {
