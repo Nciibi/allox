@@ -166,9 +166,16 @@ impl ThreadCache {
             if below < self.virgin[class] {
                 self.virgin[class] -= 1;
             }
+            #[cfg(feature = "telemetry")]
+            self.note_alloc(class);
             return p;
         }
-        self.refill(class).0
+        let (p, _) = self.refill(class);
+        #[cfg(feature = "telemetry")]
+        if !p.is_null() {
+            self.note_alloc(class);
+        }
+        p
     }
 
     /// Allocation that also reports whether the block is still OS-zero,
@@ -183,9 +190,16 @@ impl ThreadCache {
             if zeroed {
                 self.virgin[class] -= 1;
             }
+            #[cfg(feature = "telemetry")]
+            self.note_alloc(class);
             return (p, zeroed);
         }
-        self.refill(class)
+        let r = self.refill(class);
+        #[cfg(feature = "telemetry")]
+        if !r.0.is_null() {
+            self.note_alloc(class);
+        }
+        r
     }
 
     /// Slow path: pull a batch of blocks from the global heap.
