@@ -236,6 +236,8 @@ impl ThreadCache {
         push_block(&mut bin.head, p);
         bin.len += 1;
         self.cached_bytes += CLASSES[class];
+        #[cfg(feature = "telemetry")]
+        self.note_free(class);
         if self.cached_bytes > THREAD_CACHE_BUDGET {
             self.trim();
         }
@@ -334,6 +336,8 @@ impl ThreadCache {
         }
         self.cached_bytes = 0;
         self.virgin = [0; NUM_CLASSES];
+        #[cfg(feature = "telemetry")]
+        self.publish();
     }
 }
 
