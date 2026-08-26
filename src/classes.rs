@@ -12,6 +12,7 @@ pub(crate) const MAX_SMALL_SIZE: usize = 16 * 1024;
 /// Number of entries in the class table (trailing entries saturate at MAX).
 pub(crate) const NUM_CLASSES: usize = 64;
 
+// `usize::div_ceil` is not const-stable at our MSRV; keep manual rounding.
 const fn build_classes() -> [usize; NUM_CLASSES] {
     let mut table = [MAX_SMALL_SIZE; NUM_CLASSES];
     let mut size = MIN_ALIGN;
