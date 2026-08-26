@@ -87,10 +87,18 @@ impl ThreadCache {
     /// Allocation that also reports whether the block is still OS-zero,
     /// letting `alloc_zeroed` skip the memset.
     pub(crate) unsafe fn alloc_zeroed(&mut self, class: usize) -> (*mut u8, bool) {
-        if self.bins[class].head.is_null() {
-            return self.refill(class);
+        let bin = &mut self.bins[class];
+        if let Some(p) = pop_block(&mut bin.head) {
+            let below = bin.len - 1;
+            bin.len = below;
+            self.cached_bytes -= CLASSES[class];
+            let zeroed = below < self.virgin[class];
+            if zeroed {
+                self.virgin[class] -= 1;
+            }
+            return (p, zeroed);
         }
-        (self.alloc(class), false)
+        self.refill(class)
     }
 
     /// Slow path: pull a batch of blocks from the global heap.
@@ -100,7 +108,7 @@ impl ThreadCache {
         if self.cached_bytes > THREAD_CACHE_BUDGET / 2 {
             self.trim();
         }
-        let (chain, count, mut virgin) = crate::heap::HEAP.take_blocks(class);
+        let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
@@ -113,14 +121,7 @@ impl ThreadCache {
         self.cached_bytes += CLASSES[class] * (count - 1) as usize;
         // Refill only happens on an empty bin, so the whole batch sits at the
         // bottom; the block we returned was part of it.
-        if !virgin {
-            self.virgin[class] = 0;
-        } else {
-            self.virgin[class] = count - 1;
-        }
-        if chain.is_null() {
-            virgin = false;
-        }
+        self.virgin[class] = if virgin { count - 1 } else { 0 };
         (first, virgin)
     }
 
