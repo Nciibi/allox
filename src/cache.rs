@@ -11,14 +11,23 @@ use crate::heap::REFILL_BATCH;
 use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
 use core::ptr;
 
-/// Start flushing when a bin exceeds this many cached blocks...
-const FLUSH_LIMIT: u32 = 8192; // TEMP EXPERIMENT
-/// ...and shrink it back down to this level (retain half: fewer future
+/// Soft byte budget per size class in one thread's cache. Small blocks are
+/// cheap to retain, so small classes may hold many; large classes hold few.
+/// This bounds total thread-cache waste to a few MB while keeping hot bins
+/// warm enough that flush/refill round-trips through the global heap stay
+/// rare (they are the dominant slow-path cost under mixed workloads).
+const CACHE_BYTES_PER_CLASS: u32 = 256 * 1024;
+
+/// Start flushing a class' bin once it exceeds this many blocks...
+#[inline]
+fn flush_limit(class: usize) -> u32 {
+    (CACHE_BYTES_PER_CLASS / crate::classes::CLASSES[class] as u32)
+        .max(REFILL_BATCH)
+        .min(8192)
+}
+/// ...and shrink it back down to half of that (retain half: fewer future
 /// refills and fewer future flushes than drain-to-empty).
-const FLUSH_TARGET: u32 = REFILL_BATCH;
-/// Distinct pages touched by one flush; bounded because a flushed bin holds
-/// at most `FLUSH_LIMIT + 1` blocks.
-const MAX_FLUSH_GROUPS: usize = (FLUSH_LIMIT as usize) + 8;
+const MAX_FLUSH_GROUPS: usize = 8200;
 
 #[derive(Clone, Copy)]
 struct Group {
