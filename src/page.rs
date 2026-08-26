@@ -15,6 +15,10 @@ pub(crate) const LARGE_MAGIC: u64 = 0x00B1_0C5A_6E0F_F1CE;
 
 /// Flag: page is currently linked into its size class' partial list.
 pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
+/// Flag: no block of this page was ever allocated-and-freed since the page
+/// was carved, so every free block is still OS-zero. Cleared the moment any
+/// block is returned to the page.
+pub(crate) const FLAG_VIRGIN: u16 = 2;
 
 // magic + prev + next + free_head + free_count/used/class/flags = 40 bytes,
 // padded by align(16) to 48.
