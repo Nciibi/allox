@@ -12,6 +12,10 @@ readme = "README.md"
 [lib]
 name = "allox"
 
+[[bench]]
+name = "alloc"
+harness = false
+
 [dev-dependencies]
 
 [profile.release]
