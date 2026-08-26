@@ -130,6 +130,16 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
     heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    #[cfg(feature = "telemetry")]
+    {
+        use core::sync::atomic::Ordering::Relaxed;
+        heap::TELEMETRY.large_allocs.fetch_add(1, Relaxed);
+        heap::TELEMETRY.total_allocs.fetch_add(1, Relaxed);
+        heap::TELEMETRY.bytes_in.fetch_add(size as u64, Relaxed);
+        let live = heap::TELEMETRY.bytes_in.load(Relaxed)
+            .saturating_sub(heap::TELEMETRY.bytes_out.load(Relaxed));
+        heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
+    }
     ret as *mut u8
 }
 
@@ -139,6 +149,13 @@ unsafe fn free_large(p: *mut u8) {
     let base = (*hdr).base;
     sys::unmap(base, mapped);
     heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+    #[cfg(feature = "telemetry")]
+    {
+        use core::sync::atomic::Ordering::Relaxed;
+        heap::TELEMETRY.total_frees.fetch_add(1, Relaxed);
+        let size = mapped - ((p as usize - base as usize));
+        heap::TELEMETRY.bytes_out.fetch_add(size as u64, Relaxed);
+    }
 }
 
 #[cold]
