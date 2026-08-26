@@ -382,8 +382,13 @@ unsafe fn debug_validate_free(p: *mut u8) {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "std"))]
 fn invalid(msg: &'static str) -> ! {
     eprintln!("{}", msg);
     std::process::abort()
+}
+
+#[cfg(all(debug_assertions, not(feature = "std")))]
+fn invalid(msg: &'static str) -> ! {
+    panic!("{}", msg)
 }
