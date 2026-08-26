@@ -83,16 +83,19 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
                             }
                             unsafe { *p = ops as u8 };
                             live.push((p, size));
-                            if rng.next() % 100 < free_pct && live.len() > 64 {
+                            live_bytes += size;
+                            if rng.next() % 100 < free_pct && !live.is_empty() {
                                 let idx = (rng.next() as usize) % live.len();
                                 let (p, s) = live.swap_remove(idx);
+                                live_bytes -= s;
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
                             }
                             ops += 1;
                         }
-                        // keep memory bounded under low free_pct
-                        if live.len() > 16_384 {
+                        // keep resident memory bounded regardless of size mix
+                        if live_bytes > 96 * 1024 * 1024 {
                             for (p, s) in live.drain(..) {
+                                live_bytes -= s;
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
                             }
                         }
