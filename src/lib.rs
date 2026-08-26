@@ -159,6 +159,31 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     alloc_small(class_for_size(size))
 }
 
+/// Like `alloc_impl` but reports whether the returned memory is already
+/// OS-zero, so callers can skip the memset. Large allocations are always
+/// freshly mapped and therefore always zeroed.
+unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
+    debug_assert!(align.is_power_of_two());
+    if size == 0 {
+        return align.max(1) as *mut u8;
+    }
+    if align > MIN_ALIGN || size > MAX_SMALL_SIZE {
+        return alloc_large(size, align);
+    }
+    let class = class_for_size(size);
+    let (p, zeroed) = with_cache(
+        |c| c.alloc_zeroed(class),
+        || {
+            let (chain, _, virgin) = HEAP.take_blocks(class);
+            (chain, virgin)
+        },
+    );
+    if !p.is_null() && !zeroed {
+        ptr::write_bytes(p, 0, size);
+    }
+    p
+}
+
 unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
