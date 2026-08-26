@@ -2,8 +2,13 @@
 //!
 //! Fast path: pop/push on a bin's intrusive list — no locks, no atomics.
 //! Slow paths: refill from the global heap (batched), and trimming when the
-//! thread's total cached bytes exceed [`THREAD_CACHE_BUDGET`] (grouped by
-//! owning page so each page needs only one lock acquisition).
+//! thread's total cached bytes exceed [`THREAD_CACHE_BUDGET`].
+//!
+//! Design note: freed blocks almost always come back to the same thread.
+//! Round-tripping them through the global heap (lock + list surgery +
+//! re-carve) is the dominant slow-path cost under mixed workloads, so bins
+//! grow freely and trimming happens only against the aggregate byte budget,
+//! biggest classes first.
 
 use crate::classes::CLASSES;
 use crate::classes::NUM_CLASSES;
@@ -12,13 +17,13 @@ use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PA
 use core::ptr;
 
 /// Total bytes one thread's cache may retain before trimming starts.
-///
-/// Blocks freed by a thread are very likely to be re-allocated by that same
-/// thread; round-tripping them through the global heap (lock + list surgery +
-/// re-carve) is by far the most expensive slow path. So caches grow freely
-/// and we trim only when the aggregate budget is exceeded. Worst-case overhead
-/// is `THREAD_CACHE_BUDGET` bytes per thread.
+/// Worst-case overhead is this many bytes per thread.
 const THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
+
+/// Blocks released to the global heap per grouping pass. Bounds the stack
+/// buffer used to group blocks by owning page.
+const FLUSH_CHUNK: u32 = 2048;
+const MAX_FLUSH_GROUPS: usize = FLUSH_CHUNK as usize + 8;
 
 #[derive(Clone, Copy)]
 struct Group {
@@ -64,6 +69,7 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
         if let Some(p) = pop_block(&mut bin.head) {
             bin.len -= 1;
+            self.cached_bytes -= CLASSES[class];
             return p;
         }
         self.refill(class)
@@ -71,6 +77,10 @@ impl ThreadCache {
 
     /// Slow path: pull a batch of blocks from the global heap.
     unsafe fn refill(&mut self, class: usize) -> *mut u8 {
+        // Under aggregate pressure, shed some cache before asking for more.
+        if self.cached_bytes > THREAD_CACHE_BUDGET / 2 {
+            self.trim();
+        }
         let (chain, count) = crate::heap::HEAP.take_blocks(class);
         if chain.is_null() {
             return ptr::null_mut();
@@ -81,6 +91,7 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
         bin.head = rest;
         bin.len += count - 1;
+        self.cached_bytes += CLASSES[class] * (count - 1) as usize;
         first
     }
 
@@ -90,86 +101,92 @@ impl ThreadCache {
 
         let page = PageHeader::of(p);
         let class = (*page).class as usize;
-        let block_size = CLASSES[class] as usize;
-        {
-            let bin = &mut self.bins[class];
-            push_block(&mut bin.head, p);
-            bin.len += 1;
-        }
-        self.cached_bytes += block_size;
+        let bin = &mut self.bins[class];
+        push_block(&mut bin.head, p);
+        bin.len += 1;
+        self.cached_bytes += CLASSES[class];
         if self.cached_bytes > THREAD_CACHE_BUDGET {
             self.trim();
         }
     }
 
-    /// Bring total cached bytes under budget: repeatedly halve the largest
-    /// bins (cheap pass over a fixed 64-entry array; no allocation).
+    /// Bring total cached bytes under half the budget by repeatedly halving
+    /// the largest bin. Fixed-size passes over a 64-entry array; no allocation.
     unsafe fn trim(&mut self) {
         let target = THREAD_CACHE_BUDGET / 2;
         while self.cached_bytes > target {
-            // Find the bin holding the most bytes.
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
             for class in 0..NUM_CLASSES {
-                let b = self.bins[class].len as usize * CLASSES[class];
-                if self.bins[class].len > REFILL_BATCH && b > best_bytes {
-                    best_bytes = b;
+                let bin_bytes = self.bins[class].len as usize * CLASSES[class];
+                if self.bins[class].len > REFILL_BATCH && bin_bytes > best_bytes {
+                    best_bytes = bin_bytes;
                     best = class;
                 }
             }
             if best == usize::MAX {
+                self.cached_bytes = target; // nothing trimmable left; stop
                 break;
             }
-            self.flush_bin(best, false, self.bins[best].len / 2);
+            let len = self.bins[best].len;
+            self.flush_bin(best, len / 2);
         }
     }
 
-    /// Return cached blocks of `class`, grouped by owning page so each page
-    /// needs only one lock acquisition. With `full`, drain the bin entirely;
-    /// otherwise shrink it to `floor` blocks (retaining half reduces future
-    /// refills and future flushes).
-    unsafe fn flush_bin(&mut self, class: usize, full: bool, floor_blocks: u32) {
-        let floor = if full { 0 } else { floor_blocks };
-        let mut ng = 0usize;
-        let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
+    /// Shrink `class`'s bin down to `floor_blocks` blocks, returning removed
+    /// blocks to their owning pages in chunked, grouped batches so each page
+    /// needs only one lock acquisition per chunk.
+    unsafe fn flush_bin(&mut self, class: usize, floor_blocks: u32) {
+        let block_size = CLASSES[class];
         let bin = &mut self.bins[class];
 
-        while bin.len > floor.max(0).min(bin.len) || (!full && false) {
-            let b = match pop_block(&mut bin.head) {
-                Some(b) => b,
-                None => break,
-            };
-            bin.len -= 1;
-            self.cached_bytes = self.cached_bytes.saturating_sub(CLASSES[class] as usize);
-            let page = PageHeader::of(b);
-            *b.cast::<*mut u8>() = ptr::null_mut();
-            let mut slot = None;
-            for g in groups.iter_mut().take(ng) {
-                if g.page == page {
-                    slot = Some(g);
-                    break;
-                }
-            }
-            match slot {
-                Some(g) => {
-                    *g.tail.cast::<*mut u8>() = b;
-                    g.tail = b;
-                    g.n += 1;
-                }
-                None => {
-                    groups[ng] = Group {
-                        page,
-                        head: b,
-                        tail: b,
-                        n: 1,
-                    };
-                    ng += 1;
-                }
-            }
-        }
+        while bin.len > floor_blocks {
+            let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
+            let mut ng = 0usize;
+            let mut popped = 0u32;
 
-        for g in groups.iter_mut().take(ng) {
-            crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
+            while bin.len > floor_blocks && popped < FLUSH_CHUNK {
+                let b = match pop_block(&mut bin.head) {
+                    Some(b) => b,
+                    None => break,
+                };
+                bin.len -= 1;
+                popped += 1;
+                self.cached_bytes = self.cached_bytes.saturating_sub(block_size as usize);
+
+                let page = PageHeader::of(b);
+                *b.cast::<*mut u8>() = ptr::null_mut();
+                let mut slot = None;
+                for g in groups.iter_mut().take(ng) {
+                    if g.page == page {
+                        slot = Some(g);
+                        break;
+                    }
+                }
+                match slot {
+                    Some(g) => {
+                        *g.tail.cast::<*mut u8>() = b;
+                        g.tail = b;
+                        g.n += 1;
+                    }
+                    None => {
+                        groups[ng] = Group {
+                            page,
+                            head: b,
+                            tail: b,
+                            n: 1,
+                        };
+                        ng += 1;
+                    }
+                }
+            }
+
+            for g in groups.iter_mut().take(ng) {
+                crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
+            }
+            if popped == 0 {
+                break;
+            }
         }
     }
 
@@ -177,9 +194,10 @@ impl ThreadCache {
     pub(crate) unsafe fn flush_all(&mut self) {
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
-                self.flush_bin(class, true, 0);
+                self.flush_bin(class, 0);
             }
         }
+        self.cached_bytes = 0;
     }
 }
 
@@ -189,6 +207,7 @@ impl ThreadCache {
 /// it never races with list mutation.
 #[cfg(debug_assertions)]
 unsafe fn debug_validate_free(p: *mut u8) {
+    use crate::page::{HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
     if p.is_null() {
         return;
     }
