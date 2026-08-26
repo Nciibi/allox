@@ -174,6 +174,9 @@ struct LargeRegionCache {
     entries: [(*mut u8, u32); LARGE_CACHE_SLOTS], // (base, mapped_pages)
 }
 
+// Raw pointers are only touched while holding the enclosing mutex.
+unsafe impl Send for LargeRegionCache {}
+
 impl LargeRegionCache {
     const fn new() -> Self {
         LargeRegionCache {
@@ -216,8 +219,13 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
             }
         }
         if let Some(i) = best {
-            let (base, pages) = c.entries.swap(i, c.len - 1);
-            c.len -= 1;
+            let last = c.len - 1;
+            let (base, pages) = (
+                c.entries[i].0,
+                core::mem::replace(&mut c.entries[i].1, 0),
+            );
+            c.entries[i] = c.entries[last];
+            c.len = last;
             c.bytes -= pages as usize * page::PAGE_SIZE;
             drop(c);
             let region_size = pages as usize * page::PAGE_SIZE;
@@ -278,9 +286,12 @@ unsafe fn free_large(p: *mut u8) {
     let mut unmap_now = false;
     {
         let mut c = LARGE_CACHE.lock();
-        if c.len < LARGE_CACHE_SLOTS && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES {
-            c.entries[c.len] = (base, (mapped / page::PAGE_SIZE) as u32);
-            c.len += 1;
+        let slot_ok = c.len < LARGE_CACHE_SLOTS
+            && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES;
+        if slot_ok {
+            let idx = c.len;
+            c.entries[idx] = (base, (mapped / page::PAGE_SIZE) as u32);
+            c.len = idx + 1;
             c.bytes += mapped;
         } else {
             unmap_now = true;
