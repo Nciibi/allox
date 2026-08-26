@@ -14,7 +14,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Blocks moved from pages into a thread cache in one batch.
-pub(crate) const REFILL_BATCH: u32 = 32;
+pub(crate) const REFILL_BATCH: u32 = 64;
 
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);

@@ -11,11 +11,14 @@ use crate::heap::REFILL_BATCH;
 use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
 use core::ptr;
 
-/// Flush when a bin exceeds this many cached blocks.
-const FLUSH_LIMIT: u32 = REFILL_BATCH + 1;
+/// Start flushing when a bin exceeds this many cached blocks...
+const FLUSH_LIMIT: u32 = 2 * REFILL_BATCH + 1;
+/// ...and shrink it back down to this level (retain half: fewer future
+/// refills and fewer future flushes than drain-to-empty).
+const FLUSH_TARGET: u32 = REFILL_BATCH;
 /// Distinct pages touched by one flush; bounded because a flushed bin holds
 /// at most `FLUSH_LIMIT + 1` blocks.
-const MAX_FLUSH_GROUPS: usize = 48;
+const MAX_FLUSH_GROUPS: usize = (FLUSH_LIMIT as usize) + 8;
 
 #[derive(Clone, Copy)]
 struct Group {
