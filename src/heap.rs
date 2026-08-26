@@ -130,14 +130,31 @@ impl GlobalHeap {
     }
 
     /// Acquire up to REFILL_BATCH free blocks of `class` as an intrusive chain.
-    /// Returns `(null, 0)` only when the OS refuses us memory.
-    pub(crate) unsafe fn take_blocks(&self, class: usize) -> (*mut u8, u32) {
+    /// The `virgin` flag is true when every returned block is guaranteed to
+    /// still be OS-zero (never allocated since its page was carved).
+    /// Returns `(null, 0, _)` only when the OS refuses us memory.
+    pub(crate) unsafe fn take_blocks(&self, class: usize) -> (*mut u8, u32, bool) {
         let mut chain: *mut u8 = ptr::null_mut();
         let mut count: u32 = 0;
+        let mut virgin = true;
 
         {
             let mut list = self.classes[class].lock();
-            fill_from_list(&mut list.head, &mut chain, &mut count);
+            fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
+
+            if count == 0 && !list.empty.is_null() {
+                // Recycle a cached empty page of the same class instead of
+                // asking the OS. Its free list is already full and intact.
+                let page = list.empty;
+                list.empty = (*page).next;
+                (*page).next = ptr::null_mut();
+                list.empty_count -= 1;
+                if (*page).flags & FLAG_VIRGIN == 0 {
+                    virgin = false;
+                }
+                link_partial(&mut list.head, page);
+                fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
+            }
         }
 
         if count == 0 {
@@ -149,11 +166,13 @@ impl GlobalHeap {
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[class].lock();
                 link_partial(&mut list.head, page);
-                fill_from_list(&mut list.head, &mut chain, &mut count);
+                fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
+            } else {
+                virgin = false;
             }
         }
 
-        (chain, count)
+        (chain, count, virgin)
     }
 
     /// Return a chain of `n` blocks, all belonging to `page`, to that page.
@@ -161,6 +180,8 @@ impl GlobalHeap {
         let class = (*page).class as usize;
         let unmap_now = {
             let mut list = self.classes[class].lock();
+            // Freed blocks are dirty by definition.
+            (*page).flags &= !FLAG_VIRGIN;
             let mut tail = chain;
             while !(*tail.cast::<*mut u8>()).is_null() {
                 tail = *tail.cast::<*mut u8>();
@@ -171,7 +192,15 @@ impl GlobalHeap {
             (*page).used -= n;
             if (*page).used == 0 {
                 unlink_partial(&mut list.head, page);
-                true
+                if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
+                    // Delayed reclamation: keep the page mapped for reuse.
+                    (*page).next = list.empty;
+                    list.empty = page;
+                    list.empty_count += 1;
+                    false
+                } else {
+                    true
+                }
             } else {
                 if (*page).flags & FLAG_IN_PARTIAL == 0 {
                     link_partial(&mut list.head, page);
