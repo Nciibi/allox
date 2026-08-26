@@ -178,7 +178,10 @@ fn main() {
                 scores[i].push(run(a.1, wl, SECS));
             }
         }
-        let medians: Vec<f64> = scores.iter().map(|s| median(s)).collect();
+        let medians: Vec<f64> = scores
+            .iter_mut()
+            .map(|s| median(s.as_mut_slice()))
+            .collect();
         let [allox_s, talc_s, sys_s] = [medians[0], medians[1], medians[2]];
         if allox_s > talc_s {
             wins_vs_talc += 1;
