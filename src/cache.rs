@@ -180,7 +180,11 @@ impl ThreadCache {
                     Some(b) => b,
                     None => break,
                 };
-                bin.len -= 1;
+                let below = bin.len - 1;
+                bin.len = below;
+                if below < self.virgin[class] {
+                    self.virgin[class] -= 1;
+                }
                 popped += 1;
                 self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
 
@@ -228,6 +232,7 @@ impl ThreadCache {
             }
         }
         self.cached_bytes = 0;
+        self.virgin = [0; NUM_CLASSES];
     }
 }
 
