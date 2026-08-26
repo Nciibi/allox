@@ -52,12 +52,15 @@ const WORKLOADS: &[Workload] = &[
     Workload { name: "mixed-all 8T", threads: 8, size_range: (16, 65536), free_pct: 50 },
 ];
 
-fn run<A: GlobalAlloc + Sync>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
+fn run<A: GlobalAlloc + Sync + 'static>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for =
         |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let threads = wl.threads;
+    let size_range = wl.size_range;
+    let free_pct = wl.free_pct;
 
-    let handles: Vec<_> = (0..wl.threads)
+    let handles: Vec<_> = (0..threads)
         .map(|t| {
             std::thread::Builder::new()
                 .stack_size(1 << 20)
@@ -68,12 +71,11 @@ fn run<A: GlobalAlloc + Sync>(alloc: &'static A, wl: &Workload, seconds: u64) ->
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         for _ in 0..10_000 {
-                            let size = if wl.size_range.0 == wl.size_range.1 {
-                                wl.size_range.0
+                            let size = if size_range.0 == size_range.1 {
+                                size_range.0
                             } else {
-                                wl.size_range.0
-                                    + (rng.next() as usize)
-                                        % (wl.size_range.1 - wl.size_range.0)
+                                size_range.0
+                                    + (rng.next() as usize) % (size_range.1 - size_range.0)
                             };
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
