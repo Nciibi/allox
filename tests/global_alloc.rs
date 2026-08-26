@@ -15,7 +15,10 @@ fn std_collections_work() {
         map.insert(format!("key-{}", i), vec![i as u8; (i as usize % 512) + 1]);
     }
     for (k, v) in &map {
-        assert_eq!(v.len(), k.rsplit('-').next().unwrap().parse::<u32>().unwrap() as usize % 512 + 1);
+        assert_eq!(
+            v.len(),
+            k.rsplit('-').next().unwrap().parse::<u32>().unwrap() as usize % 512 + 1
+        );
     }
     let mut btree = BTreeMap::new();
     for i in 0..5_000u32 {
@@ -58,6 +61,8 @@ fn cross_thread_send_and_drop() {
     });
     let data = handle.join().unwrap();
     drop(data);
-    let more: Vec<Box<[u8]>> = (0..1000).map(|i| vec![0u8; i % 2048 + 1].into_boxed_slice()).collect();
+    let more: Vec<Box<[u8]>> = (0..1000)
+        .map(|i| vec![0u8; i % 2048 + 1].into_boxed_slice())
+        .collect();
     assert_eq!(more.len(), 1000);
 }

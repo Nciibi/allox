@@ -63,7 +63,10 @@ mod tests {
         assert_eq!(class_for_size(1), 0);
         assert_eq!(class_for_size(16), 0);
         assert_eq!(class_for_size(17), 1);
-        assert_eq!(class_for_size(MAX_SMALL_SIZE), class_for_size(MAX_SMALL_SIZE));
+        assert_eq!(
+            class_for_size(MAX_SMALL_SIZE),
+            class_for_size(MAX_SMALL_SIZE)
+        );
         assert!(CLASSES[class_for_size(MAX_SMALL_SIZE)] >= MAX_SMALL_SIZE);
     }
 

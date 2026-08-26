@@ -70,10 +70,7 @@ thread_local! {
 /// Run `f` with this thread's cache; if TLS is unavailable (thread exiting),
 /// run the lock-based fallback instead. Never panics, never unwinds.
 #[inline]
-fn with_cache<R>(
-    f: impl FnOnce(&mut cache::ThreadCache) -> R,
-    fallback: impl FnOnce() -> R,
-) -> R {
+fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl FnOnce() -> R) -> R {
     let result = CACHE.try_with(|c| match c.try_borrow_mut() {
         Ok(mut cache) => Some(f(&mut cache)),
         Err(_) => None,
@@ -105,7 +102,10 @@ unsafe fn dealloc_small(p: *mut u8) {
 }
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
-    let total = match size.checked_add(align).and_then(|v| v.checked_add(LARGE_HEADER_SIZE)) {
+    let total = match size
+        .checked_add(align)
+        .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
+    {
         Some(t) => t,
         None => return ptr::null_mut(),
     };
@@ -185,12 +185,7 @@ unsafe impl GlobalAlloc for Allox {
         dealloc_impl(p)
     }
 
-    unsafe fn realloc(
-        &self,
-        p: *mut u8,
-        layout: core::alloc::Layout,
-        new_size: usize,
-    ) -> *mut u8 {
+    unsafe fn realloc(&self, p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
         if new_size == 0 {
             self.dealloc(p, layout);
             return layout.align().max(1) as *mut u8;
@@ -325,9 +320,7 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     if *(base as *const u64) == page::PAGE_MAGIC {
         let page = base as *mut page::PageHeader;
         classes::CLASSES[(*page).class as usize]
-    } else if (*(p.wrapping_sub(LARGE_HEADER_SIZE) as *const LargeHeader)).magic
-        == LARGE_MAGIC
-    {
+    } else if (*(p.wrapping_sub(LARGE_HEADER_SIZE) as *const LargeHeader)).magic == LARGE_MAGIC {
         let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
         (*hdr).mapped_size - (p as usize - (*hdr).base as usize)
     } else {
@@ -363,8 +356,5 @@ pub fn stats() -> Stats {
 /// until the pages naturally die. Deliberately *not* run in a TLS destructor:
 /// see DESIGN.md §4.5 for why.
 pub fn flush_current_thread() {
-    with_cache(
-        |c| unsafe { c.flush_all() },
-        || {},
-    );
+    with_cache(|c| unsafe { c.flush_all() }, || {});
 }

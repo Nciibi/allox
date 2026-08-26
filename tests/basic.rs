@@ -1,4 +1,4 @@
-use allox::{calloc, free, malloc, realloc, aligned_alloc, usable_size};
+use allox::{aligned_alloc, calloc, free, malloc, realloc, usable_size};
 
 #[test]
 fn malloc_free_all_sizes_roundtrip() {

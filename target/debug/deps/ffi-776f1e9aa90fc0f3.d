@@ -5,5 +5,5 @@ D:\projects\allocator\target\debug\deps\libffi-776f1e9aa90fc0f3.rmeta: tests\ffi
 tests\ffi.rs:
 Cargo.toml:
 
-# env-dep:CLIPPY_ARGS=
+# env-dep:CLIPPY_ARGS=-D__CLIPPY_HACKERY__warnings__CLIPPY_HACKERY__
 # env-dep:CLIPPY_CONF_DIR

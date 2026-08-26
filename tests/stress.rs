@@ -33,13 +33,12 @@ fn randomized_stress_multithreaded() {
                 for op in 0..OPS_PER_THREAD {
                     let roll = rng.next() % 100;
                     if roll < 55 || live.is_empty() {
-                        let size =
-                            match rng.next() % 4 {
-                                0 => 1 + (rng.next() % 128) as usize,
-                                1 => 129 + (rng.next() % 3968) as usize,
-                                2 => 4097 + (rng.next() % 12288) as usize,
-                                _ => 16385 + (rng.next() % 100_000) as usize,
-                            };
+                        let size = match rng.next() % 4 {
+                            0 => 1 + (rng.next() % 128) as usize,
+                            1 => 129 + (rng.next() % 3968) as usize,
+                            2 => 4097 + (rng.next() % 12288) as usize,
+                            _ => 16385 + (rng.next() % 100_000) as usize,
+                        };
                         let tag = (rng.next() & 0xFF) as u8;
                         let p = unsafe { allox::malloc(size) };
                         assert!(!p.is_null(), "OOM at {} bytes", size);

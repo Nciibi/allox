@@ -8,7 +8,7 @@
 //! blocks. No code path ever holds two class locks at once.
 
 use crate::classes::NUM_CLASSES;
-use crate::page::{pop_block, FLAG_IN_PARTIAL, PAGE_SIZE, PageHeader};
+use crate::page::{pop_block, PageHeader, FLAG_IN_PARTIAL, PAGE_SIZE};
 use crate::sys::{self, Mutex, MutexGuard};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -92,10 +92,11 @@ unsafe fn fill_from_list(list: &mut *mut PageHeader, chain: &mut *mut u8, count:
 impl GlobalHeap {
     pub(crate) const fn new() -> Self {
         GlobalHeap {
-            classes: [
-                const { Mutex::new(ListHead { head: ptr::null_mut() }) };
-                NUM_CLASSES
-            ],
+            classes: [const {
+                Mutex::new(ListHead {
+                    head: ptr::null_mut(),
+                })
+            }; NUM_CLASSES],
         }
     }
 

@@ -5,10 +5,10 @@
 //! bin grows past [`FLUSH_LIMIT`] (grouped by owning page so each page needs
 //! only one lock acquisition).
 
+use crate::classes::CLASSES;
 use crate::classes::NUM_CLASSES;
 use crate::heap::REFILL_BATCH;
-use crate::page::{pop_block, push_block, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK, PageHeader};
-use crate::classes::CLASSES;
+use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
 use core::ptr;
 
 /// Flush when a bin exceeds this many cached blocks.

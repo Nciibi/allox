@@ -22,7 +22,13 @@ impl Rng {
     }
 }
 
-fn bench<A: GlobalAlloc + Sync + ?Sized>(name: &str, alloc: &'static A, threads: usize, seconds: u64, size_range: (usize, usize)) {
+fn bench<A: GlobalAlloc + Sync + ?Sized>(
+    name: &str,
+    alloc: &'static A,
+    threads: usize,
+    seconds: u64,
+    size_range: (usize, usize),
+) {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n, 16).unwrap();
 
@@ -83,13 +89,7 @@ fn run_suite(label: &str, alloc: &'static dyn GlobalAllocSync) {
         (8, (16, 4096)),
         (1, (20000, 65536)),
     ] {
-        bench(
-            label,
-            alloc,
-            threads,
-            3,
-            range,
-        );
+        bench(label, alloc, threads, 3, range);
     }
 }
 
