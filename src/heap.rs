@@ -31,7 +31,8 @@ pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) struct TelemetryCounters {
     pub(crate) total_allocs: AtomicU64,
     pub(crate) total_frees: AtomicU64,
-    pub(crate) live_bytes: core::sync::atomic::AtomicI64,
+    pub(crate) bytes_in: AtomicU64,
+    pub(crate) bytes_out: AtomicU64,
     pub(crate) peak_live_bytes: AtomicU64,
     pub(crate) large_allocs: AtomicU64,
     pub(crate) per_class: [AtomicU64; NUM_CLASSES],
@@ -41,7 +42,8 @@ pub(crate) struct TelemetryCounters {
 pub(crate) static TELEMETRY: TelemetryCounters = TelemetryCounters {
     total_allocs: AtomicU64::new(0),
     total_frees: AtomicU64::new(0),
-    live_bytes: core::sync::atomic::AtomicI64::new(0),
+    bytes_in: AtomicU64::new(0),
+    bytes_out: AtomicU64::new(0),
     peak_live_bytes: AtomicU64::new(0),
     large_allocs: AtomicU64::new(0),
     per_class: [const { AtomicU64::new(0) }; NUM_CLASSES],
