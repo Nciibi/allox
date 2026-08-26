@@ -117,8 +117,8 @@ impl ThreadCache {
         while self.cached_bytes > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
-            for class in 0..NUM_CLASSES {
-                let bin_bytes = self.bins[class].len as usize * CLASSES[class];
+            for (class, size) in CLASSES.iter().enumerate() {
+                let bin_bytes = self.bins[class].len as usize * size;
                 if self.bins[class].len > REFILL_BATCH && bin_bytes > best_bytes {
                     best_bytes = bin_bytes;
                     best = class;
@@ -152,7 +152,7 @@ impl ThreadCache {
                 };
                 bin.len -= 1;
                 popped += 1;
-                self.cached_bytes = self.cached_bytes.saturating_sub(block_size as usize);
+                self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
 
                 let page = PageHeader::of(b);
                 *b.cast::<*mut u8>() = ptr::null_mut();
