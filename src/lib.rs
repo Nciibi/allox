@@ -549,6 +549,24 @@ pub mod telemetry {
     }
 }
 
+/// Set the per-thread cache retention budget in bytes (default 32 MiB).
+///
+/// Threads may each retain up to this many freed bytes before trimming
+/// starts. Lower it to trade some allocation speed for resident memory on
+/// many-threaded servers. Must be called before spawning worker threads;
+/// reads are atomic so it is safe at any time, but mid-flight threads pick
+/// the new value up lazily.
+pub fn set_thread_cache_budget(bytes: usize) {
+    #[cfg(feature = "std")]
+    {
+        cache::set_budget(bytes);
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let _ = bytes; // fixed budget in no_std builds
+    }
+}
+
 /// Return this thread's cached free blocks to their pages.
 ///
 /// Useful for thread-pool workers between tasks; otherwise blocks stay cached

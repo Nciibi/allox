@@ -37,6 +37,14 @@ fn thread_cache_budget() -> usize {
     DEFAULT_THREAD_CACHE_BUDGET
 }
 
+#[cfg(feature = "std")]
+pub(crate) fn set_budget(bytes: usize) {
+    CACHE_BUDGET.store(
+        bytes.max(REFILL_BATCH as usize * 16),
+        core::sync::atomic::Ordering::Relaxed,
+    );
+}
+
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
 const FLUSH_CHUNK: u32 = 2048;
