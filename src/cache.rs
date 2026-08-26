@@ -18,7 +18,24 @@ use core::ptr;
 
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
-const THREAD_CACHE_BUDGET: usize = 64 * 1024 * 1024;
+/// Total bytes one thread's cache may retain before trimming starts.
+/// Overridable at startup via `allox::set_thread_cache_budget` (atomic read;
+/// never from the environment, since environment access can allocate).
+const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
+
+#[cfg(feature = "std")]
+static CACHE_BUDGET: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(DEFAULT_THREAD_CACHE_BUDGET);
+
+#[inline]
+fn thread_cache_budget() -> usize {
+    #[cfg(feature = "std")]
+    {
+        CACHE_BUDGET.load(core::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(feature = "std"))]
+    DEFAULT_THREAD_CACHE_BUDGET
+}
 
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
@@ -214,7 +231,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         // Under aggregate pressure, shed some cache before asking for more.
-        if self.cached_bytes > THREAD_CACHE_BUDGET / 2 {
+        if self.cached_bytes > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
@@ -246,7 +263,7 @@ impl ThreadCache {
         self.cached_bytes += CLASSES[class];
         #[cfg(feature = "telemetry")]
         self.note_free(class);
-        if self.cached_bytes > THREAD_CACHE_BUDGET {
+        if self.cached_bytes > thread_cache_budget() {
             self.trim();
         }
     }
@@ -254,7 +271,7 @@ impl ThreadCache {
     /// Bring total cached bytes under half the budget by repeatedly halving
     /// the largest bin. Fixed-size passes over a 64-entry array; no allocation.
     unsafe fn trim(&mut self) {
-        let target = THREAD_CACHE_BUDGET / 2;
+        let target = thread_cache_budget() / 2;
         while self.cached_bytes > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
@@ -392,3 +409,4 @@ fn invalid(msg: &'static str) -> ! {
 fn invalid(msg: &'static str) -> ! {
     panic!("{}", msg)
 }
+
