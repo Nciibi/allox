@@ -52,7 +52,7 @@ const WORKLOADS: &[Workload] = &[
     Workload { name: "mixed-all 8T", threads: 8, size_range: (16, 65536), free_pct: 50 },
 ];
 
-fn run<A: GlobalAlloc + Sync + 'static>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
+fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for =
         |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
