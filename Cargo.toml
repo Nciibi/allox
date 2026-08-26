@@ -29,6 +29,10 @@ telemetry = []
 talc = "5"
 spinning_top = "0.3"
 
+[[bench]]
+name = "alloc"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
