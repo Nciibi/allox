@@ -1,9 +1,9 @@
 //! Per-thread cache of detached free-block chains, one bin per size class.
 //!
 //! Fast path: pop/push on a bin's intrusive list — no locks, no atomics.
-//! Slow paths: refill from the global heap (batched), and flush back when a
-//! bin grows past [`FLUSH_LIMIT`] (grouped by owning page so each page needs
-//! only one lock acquisition).
+//! Slow paths: refill from the global heap (batched), and trimming when the
+//! thread's total cached bytes exceed [`THREAD_CACHE_BUDGET`] (grouped by
+//! owning page so each page needs only one lock acquisition).
 
 use crate::classes::CLASSES;
 use crate::classes::NUM_CLASSES;
@@ -11,23 +11,14 @@ use crate::heap::REFILL_BATCH;
 use crate::page::{pop_block, push_block, PageHeader, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK};
 use core::ptr;
 
-/// Soft byte budget per size class in one thread's cache. Small blocks are
-/// cheap to retain, so small classes may hold many; large classes hold few.
-/// This bounds total thread-cache waste to a few MB while keeping hot bins
-/// warm enough that flush/refill round-trips through the global heap stay
-/// rare (they are the dominant slow-path cost under mixed workloads).
-const CACHE_BYTES_PER_CLASS: u32 = 1024 * 1024;
-
-/// Start flushing a class' bin once it exceeds this many blocks...
-#[inline]
-fn flush_limit(class: usize) -> u32 {
-    (CACHE_BYTES_PER_CLASS / crate::classes::CLASSES[class] as u32)
-        .max(REFILL_BATCH)
-        .min(8192)
-}
-/// ...and shrink it back down to half of that (retain half: fewer future
-/// refills and fewer future flushes than drain-to-empty).
-const MAX_FLUSH_GROUPS: usize = 8200;
+/// Total bytes one thread's cache may retain before trimming starts.
+///
+/// Blocks freed by a thread are very likely to be re-allocated by that same
+/// thread; round-tripping them through the global heap (lock + list surgery +
+/// re-carve) is by far the most expensive slow path. So caches grow freely
+/// and we trim only when the aggregate budget is exceeded. Worst-case overhead
+/// is `THREAD_CACHE_BUDGET` bytes per thread.
+const THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct Group {
@@ -54,6 +45,7 @@ struct Bin {
 
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
+    cached_bytes: usize,
 }
 
 impl ThreadCache {
@@ -63,6 +55,7 @@ impl ThreadCache {
                 head: ptr::null_mut(),
                 len: 0,
             }; NUM_CLASSES],
+            cached_bytes: 0,
         }
     }
 
