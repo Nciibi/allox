@@ -49,7 +49,7 @@ const WORKLOADS: &[Workload] = &[
         name: "tight-small 1T",
         threads: 1,
         size_range: (64, 64),
-        free_pct: 40,
+        free_pct: 50,
     },
     Workload {
         name: "mixed-small 1T",
@@ -61,7 +61,7 @@ const WORKLOADS: &[Workload] = &[
         name: "tight-small 8T",
         threads: 8,
         size_range: (64, 64),
-        free_pct: 40,
+        free_pct: 50,
     },
     Workload {
         name: "mixed-small 8T",
