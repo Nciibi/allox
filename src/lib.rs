@@ -464,6 +464,25 @@ pub mod telemetry {
             per_class_allocs: per_class,
         }
     }
+
+    impl Default for Telemetry {
+        fn default() -> Self {
+            Telemetry {
+                total_allocs: 0,
+                total_frees: 0,
+                live_allocs: 0,
+                allocated_bytes: 0,
+                freed_bytes: 0,
+                live_bytes: 0,
+                peak_live_bytes: 0,
+                large_allocs: 0,
+                mapped_pages: 0,
+                map_calls: 0,
+                unmap_calls: 0,
+                per_class_allocs: [0; 64],
+            }
+        }
+    }
 }
 
 /// Return this thread's cached free blocks to their pages.
