@@ -187,8 +187,7 @@ impl LargeRegionCache {
     }
 }
 
-static LARGE_CACHE: sys::Mutex<LargeRegionCache> =
-    sys::Mutex::new(LargeRegionCache::new());
+static LARGE_CACHE: sys::Mutex<LargeRegionCache> = sys::Mutex::new(LargeRegionCache::new());
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     alloc_large_ex(size, align).0
@@ -220,10 +219,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         }
         if let Some(i) = best {
             let last = c.len - 1;
-            let (base, pages) = (
-                c.entries[i].0,
-                core::mem::replace(&mut c.entries[i].1, 0),
-            );
+            let (base, pages) = (c.entries[i].0, core::mem::replace(&mut c.entries[i].1, 0));
             c.entries[i] = c.entries[last];
             c.len = last;
             c.bytes -= pages as usize * page::PAGE_SIZE;
@@ -286,8 +282,7 @@ unsafe fn free_large(p: *mut u8) {
     let mut unmap_now = false;
     {
         let mut c = LARGE_CACHE.lock();
-        let slot_ok = c.len < LARGE_CACHE_SLOTS
-            && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES;
+        let slot_ok = c.len < LARGE_CACHE_SLOTS && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES;
         if slot_ok {
             let idx = c.len;
             c.entries[idx] = (base, (mapped / page::PAGE_SIZE) as u32);
