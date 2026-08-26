@@ -11,7 +11,7 @@ pub(crate) const PAGE_MASK: usize = PAGE_SIZE - 1;
 /// Marks memory at a 64 KiB boundary as an allocator-managed small page.
 pub(crate) const PAGE_MAGIC: u64 = 0xA110_CCA7_E5A11E_5Du64;
 /// Marks memory at a 64 KiB boundary as a large, directly mapped region.
-pub(crate) const LARGE_MAGIC: u64 = 0xB10C_K5_A6E_0FF1CEu64;
+pub(crate) const LARGE_MAGIC: u64 = 0xB10C_5A6E_0FF1CEu64;
 
 /// Flag: page is currently linked into its size class' partial list.
 pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
