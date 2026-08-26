@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 static GLOBAL: allox::Allox = allox::Allox;
 
 use spinning_top::RawSpinlock;
-use talc::{source::Claim, DefaultBinning, TalcLock};
+use talc::{source::Claim, TalcLock};
 
 // talc needs an initial arena; give it a generous one so large allocations
 // don't fail. Lives in BSS: costs nothing on disk or RSS until touched.
