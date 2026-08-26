@@ -115,7 +115,7 @@ impl ThreadCache {
         }
         for (class, n) in self.pending.per_class.iter().enumerate() {
             if *n != 0 {
-                t.PER_CLASS_PLACEHOLDER[class].fetch_add(*n, Relaxed);
+                t.per_class[class].fetch_add(*n, Relaxed);
                 *n = 0;
             }
         }
@@ -124,7 +124,7 @@ impl ThreadCache {
             .bytes_in
             .load(Relaxed)
             .saturating_sub(t.bytes_out.load(Relaxed));
-        t.PEAK_LIVE_BYTES.fetch_max(live, Relaxed);
+        t.peak_live_bytes.fetch_max(live, Relaxed);
         self.pending.allocs = 0;
         self.pending.frees = 0;
         self.pending.bytes_in = 0;
