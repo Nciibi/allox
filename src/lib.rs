@@ -88,7 +88,7 @@ unsafe fn alloc_small(class: usize) -> *mut u8 {
     with_cache(
         |c| c.alloc(class),
         || {
-            let (chain, _) = HEAP.take_blocks(class);
+            let (chain, _, _) = HEAP.take_blocks(class);
             chain
         },
     )
