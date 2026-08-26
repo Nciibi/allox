@@ -94,18 +94,21 @@ impl ThreadCache {
             bin.len += 1;
         }
         if self.bins[class].len > FLUSH_LIMIT {
-            self.flush_bin(class);
+            self.flush_bin(class, false);
         }
     }
 
-    /// Return cached blocks of `class` down to [`FLUSH_TARGET`], grouped by
-    /// owning page so each page needs only one lock acquisition.
-    unsafe fn flush_bin(&mut self, class: usize) {
+    /// Return cached blocks of `class`, grouped by owning page so each page
+    /// needs only one lock acquisition. With `full`, drain the bin entirely;
+    /// otherwise shrink it to [`FLUSH_TARGET`] (retaining half reduces future
+    /// refills and future flushes).
+    unsafe fn flush_bin(&mut self, class: usize, full: bool) {
+        let floor = if full { 0 } else { FLUSH_TARGET };
         let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
         let mut ng = 0usize;
         let bin = &mut self.bins[class];
 
-        while bin.len > FLUSH_TARGET {
+        while bin.len > floor {
             let b = match pop_block(&mut bin.head) {
                 Some(b) => b,
                 None => break,
@@ -147,7 +150,7 @@ impl ThreadCache {
     pub(crate) unsafe fn flush_all(&mut self) {
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
-                self.flush_bin(class);
+                self.flush_bin(class, true);
             }
         }
     }
