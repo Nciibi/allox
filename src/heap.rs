@@ -84,11 +84,20 @@ unsafe fn unlink_partial(list: &mut *mut PageHeader, p: *mut PageHeader) -> bool
 
 /// Pop up to REFILL_BATCH blocks from the pages of one partial list,
 /// building a detached chain. Caller must hold the class' lock.
-unsafe fn fill_from_list(list: &mut *mut PageHeader, chain: &mut *mut u8, count: &mut u32) {
+/// `*virgin` stays true only if every contributing page is still OS-zero.
+unsafe fn fill_from_list(
+    list: &mut *mut PageHeader,
+    chain: &mut *mut u8,
+    count: &mut u32,
+    virgin: &mut bool,
+) {
     while *count < REFILL_BATCH {
         let page = *list;
         if page.is_null() {
             break;
+        }
+        if (*page).flags & FLAG_VIRGIN == 0 {
+            *virgin = false;
         }
         match pop_block(&mut (*page).free_head) {
             Some(b) => {
