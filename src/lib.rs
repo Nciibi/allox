@@ -114,17 +114,27 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     if base.is_null() {
         return ptr::null_mut();
     }
-    let hdr = base.cast::<LargeHeader>();
+    // Header lives directly before the user pointer: high alignment can push
+    // the user pointer past the first 64 KiB boundary of the region, so the
+    // region base is not a reliable place to find it.
+    let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
+    if ret + size > base as usize + mapped {
+        sys::unmap(base, mapped);
+        return ptr::null_mut();
+    }
+    let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
     (*hdr).magic = LARGE_MAGIC;
     (*hdr).mapped_size = mapped;
+    (*hdr).base = base;
     heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    align_up(base as usize + LARGE_HEADER_SIZE, align) as *mut u8
+    ret as *mut u8
 }
 
 unsafe fn free_large(p: *mut u8) {
-    let base = (p as usize & !PAGE_MASK) as *mut LargeHeader;
-    let mapped = (*base).mapped_size;
-    sys::unmap(base.cast::<u8>(), mapped);
+    let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
+    let mapped = (*hdr).mapped_size;
+    let base = (*hdr).base;
+    sys::unmap(base, mapped);
     heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
 }
 
