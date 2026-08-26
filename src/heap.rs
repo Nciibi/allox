@@ -121,11 +121,7 @@ unsafe fn fill_from_list(
 impl GlobalHeap {
     pub(crate) const fn new() -> Self {
         GlobalHeap {
-            classes: [const {
-                Mutex::new(ListHead {
-                    head: ptr::null_mut(),
-                })
-            }; NUM_CLASSES],
+            classes: [const { Mutex::new(ListHead::new()) }; NUM_CLASSES],
         }
     }
 
