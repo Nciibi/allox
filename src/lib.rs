@@ -62,28 +62,86 @@ impl Default for Allox {
     }
 }
 
-thread_local! {
-    // UnsafeCell, not RefCell: the borrow-flag check costs measurable time on
-    // the allocation fast path. Aliasing is impossible because the allocator
-    // never invokes user code while the cache is borrowed, so no reentrant
-    // allocation can observe two simultaneous `&mut`s.
-    static CACHE: core::cell::UnsafeCell<cache::ThreadCache> =
-        const { core::cell::UnsafeCell::new(cache::ThreadCache::new()) };
+/// Per-thread cache access.
+///
+/// std: const-initialized TLS, no destructor (DESIGN.md §4.5), UnsafeCell on
+/// the fast path. no_std: a single global cache behind the allocator's own
+/// spin mutex — embedded targets are single-threaded, and the allocator never
+/// re-enters this lock, so it stays deadlock-free.
+mod tls {
+    #[cfg(feature = "std")]
+    pub(crate) mod imp {
+        use super::super::cache::ThreadCache;
+        use core::cell::UnsafeCell;
+
+        thread_local! {
+            // UnsafeCell, not RefCell: the borrow-flag check costs measurable
+            // time on the fast path. Aliasing is impossible because the
+            // allocator never invokes user code while the cache is borrowed,
+            // so reentrant allocation cannot observe two `&mut`s.
+            static CACHE: UnsafeCell<ThreadCache> =
+                const { UnsafeCell::new(ThreadCache::new()) };
+        }
+
+        pub(crate) fn with<R>(
+            f: impl FnOnce(&mut ThreadCache) -> R,
+            fallback: impl FnOnce() -> R,
+        ) -> R {
+            let result = CACHE.try_with(|c| {
+                // Safety: see the CACHE declaration; no reentrancy possible.
+                f(unsafe { &mut *c.get() })
+            });
+            match result {
+                Ok(r) => r,
+                Err(_) => fallback(),
+            }
+        }
+
+        pub(crate) fn flush() {
+            with(|c| unsafe { c.flush_all() }, || {});
+        }
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub(crate) mod imp {
+        use super::super::cache::ThreadCache;
+        use crate::sys::{Mutex, MutexGuard};
+        use core::cell::UnsafeCell;
+
+        struct GlobalCache(UnsafeCell<ThreadCache>);
+        unsafe impl Send for GlobalCache {}
+
+        static CACHE: Mutex<GlobalCache> =
+            Mutex::new(GlobalCache(UnsafeCell::new(ThreadCache::new())));
+
+        fn locked() -> MutexGuard<'static, GlobalCache> {
+            CACHE.lock()
+        }
+
+        pub(crate) fn with<R>(
+            f: impl FnOnce(&mut ThreadCache) -> R,
+            fallback: impl FnOnce() -> R,
+        ) -> R {
+            let _ = fallback; // the global cache is always available
+            let guard = locked();
+            f(unsafe { &mut *guard.0.get() })
+        }
+
+        pub(crate) fn flush() {
+            with(|c| unsafe { c.flush_all() }, || {});
+        }
+    }
+
+    pub(crate) use imp::flush;
+    pub(crate) use imp::with;
 }
 
-/// Run `f` with this thread's cache; if TLS is unavailable (thread exiting),
-/// run the lock-based fallback instead. Never panics, never unwinds.
 #[inline]
 fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl FnOnce() -> R) -> R {
-    let result = CACHE.try_with(|c| {
-        // Safety: see the `CACHE` declaration; no reentrancy is possible.
-        f(unsafe { &mut *c.get() })
-    });
-    match result {
-        Ok(r) => r,
-        Err(_) => fallback(),
-    }
+    tls::with(f, fallback)
 }
+
+unsafe fn alloc_small(class: usize) -> *mut u8 {
 
 /// Return this thread's cached free blocks to their pages.
 ///
