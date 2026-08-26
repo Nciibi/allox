@@ -166,7 +166,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
         return;
     }
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
-    if *hdr == LARGE_MAGIC {
+    if (*hdr).magic == LARGE_MAGIC {
         free_large(p);
         return;
     }
@@ -322,13 +322,13 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         return 0;
     }
     let base = p as usize & !PAGE_MASK;
-    let magic = *(base as *const u64);
-    if magic == page::PAGE_MAGIC {
+    if *(base as *const u64) == page::PAGE_MAGIC {
         let page = base as *mut page::PageHeader;
         classes::CLASSES[(*page).class as usize]
-    } else if magic == LARGE_MAGIC {
-        let hdr = base as *mut LargeHeader;
-        (*hdr).mapped_size - (p as usize - base)
+    } else if (*(p as usize - LARGE_HEADER_SIZE) as *const LargeHeader).magic == LARGE_MAGIC
+    {
+        let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+        (*hdr).mapped_size - (p as usize - (*hdr).base as usize)
     } else {
         0
     }
