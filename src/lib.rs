@@ -39,7 +39,6 @@ mod sys;
 use crate::classes::{class_for_size, MAX_SMALL_SIZE, MIN_ALIGN};
 use crate::page::{align_up, LargeHeader, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK};
 use core::alloc::GlobalAlloc;
-use core::cell::RefCell;
 use core::ptr;
 use heap::HEAP;
 
