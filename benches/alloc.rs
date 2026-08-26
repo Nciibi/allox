@@ -108,7 +108,12 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
                             unsafe { *p = ops as u8 };
                             live.push((p, size));
                             live_bytes += size;
-                            if rng.next() % 100 < free_pct && !live.is_empty() {
+                            // Steady state: always free when over half full,
+                            // so the tracking Vec stays cache-resident and
+                            // never becomes the benchmark.
+                            if live.len() > 4096
+                                || (rng.next() % 100 < free_pct && !live.is_empty())
+                            {
                                 let idx = (rng.next() as usize) % live.len();
                                 let (p, s) = live.swap_remove(idx);
                                 live_bytes -= s;
