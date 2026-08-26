@@ -6,11 +6,9 @@
 //! only one lock acquisition).
 
 use crate::classes::NUM_CLASSES;
-use crate::heap::{GlobalHeap, REFILL_BATCH};
-use crate::page::{
-    pop_block, push_block, CLASSES_REEXPORT, HEADER_SIZE, PAGE_MAGIC, PAGE_SIZE, PAGE_MASK,
-    PageHeader,
-};
+use crate::heap::REFILL_BATCH;
+use crate::page::{pop_block, push_block, HEADER_SIZE, PAGE_MAGIC, PAGE_MASK, PageHeader};
+use crate::classes::CLASSES;
 use core::ptr;
 
 /// Flush when a bin exceeds this many cached blocks.
