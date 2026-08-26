@@ -201,8 +201,7 @@ fn main() {
             .iter_mut()
             .map(|s| median(s.as_mut_slice()))
             .collect();
-        let [allox_s, talc_s, dlm_s, sys_s] =
-            [medians[0], medians[1], medians[2], medians[3]];
+        let [allox_s, talc_s, dlm_s, sys_s] = [medians[0], medians[1], medians[2], medians[3]];
         if allox_s > talc_s {
             wins_vs_talc += 1;
         }

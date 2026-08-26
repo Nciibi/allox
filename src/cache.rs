@@ -417,4 +417,3 @@ fn invalid(msg: &'static str) -> ! {
 fn invalid(msg: &'static str) -> ! {
     panic!("{}", msg)
 }
-

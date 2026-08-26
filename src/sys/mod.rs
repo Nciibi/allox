@@ -5,21 +5,21 @@
 
 #[cfg(unix)]
 pub(crate) mod unix;
-#[cfg(windows)]
-pub(crate) mod windows;
 #[cfg(target_family = "wasm")]
 pub(crate) mod wasm;
+#[cfg(windows)]
+pub(crate) mod windows;
 
 use core::cell::UnsafeCell;
 
-#[cfg(unix)]
-pub(crate) use unix::{map, unmap};
-#[cfg(windows)]
-pub(crate) use windows::{map, unmap, RawMutex};
-#[cfg(all(not(windows), not(unix)))]
-pub(crate) use wasm::{map, unmap};
 #[cfg(all(target_family = "wasm", not(windows)))]
 pub(crate) use spin_raw::RawMutex;
+#[cfg(unix)]
+pub(crate) use unix::{map, unmap};
+#[cfg(all(not(windows), not(unix)))]
+pub(crate) use wasm::{map, unmap};
+#[cfg(windows)]
+pub(crate) use windows::{map, unmap, RawMutex};
 
 #[cfg(not(windows))]
 mod spin_raw {
