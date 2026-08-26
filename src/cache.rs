@@ -62,10 +62,6 @@ pub(crate) struct ThreadCache {
 
 /// Thread-local telemetry deltas, flushed every [`FLUSH_OPS`] operations.
 #[cfg(feature = "telemetry")]
-const FLUSH_OPS: u32 = 8192;
-
-#[cfg(feature = "telemetry")]
-#[derive(Default)]
 pub(crate) struct Pending {
     ops: u32,
     allocs: u64,
@@ -73,6 +69,20 @@ pub(crate) struct Pending {
     bytes_in: u64,
     bytes_out: u64,
     per_class: [u64; NUM_CLASSES],
+}
+
+#[cfg(feature = "telemetry")]
+impl Pending {
+    const fn new() -> Self {
+        Pending {
+            ops: 0,
+            allocs: 0,
+            frees: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            per_class: [0; NUM_CLASSES],
+        }
+    }
 }
 
 impl ThreadCache {
