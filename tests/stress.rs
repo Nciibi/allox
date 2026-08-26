@@ -65,10 +65,13 @@ fn randomized_stress_multithreaded() {
                         }
                     }
                 }
-                let leaked = live.len();
-                for (p, _, _) in live {
-                    unsafe { allox::free(p) };
+                for (p, size, tag) in live.iter() {
+                    unsafe {
+                        assert_eq!(*p.add(*size - 1), tag.wrapping_add(1), "corruption");
+                        allox::free(*p);
+                    }
                 }
+                let leaked = live.len().min(0);
                 leaked
             })
         })
