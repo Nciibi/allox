@@ -62,7 +62,10 @@ pub(crate) struct ThreadCache {
 
 /// Thread-local telemetry deltas, flushed every [`FLUSH_OPS`] operations.
 #[cfg(feature = "telemetry")]
-pub(crate) struct Pending {
+const FLUSH_OPS: u32 = 8192;
+
+/// Thread-local telemetry deltas, flushed to the global atomics in batches.
+#[cfg(feature = "telemetry")]
     ops: u32,
     allocs: u64,
     frees: u64,
