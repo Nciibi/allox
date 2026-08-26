@@ -142,31 +142,6 @@ fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl Fn
 }
 
 unsafe fn alloc_small(class: usize) -> *mut u8 {
-
-/// Return this thread's cached free blocks to their pages.
-///
-/// Useful for thread-pool workers between tasks; otherwise blocks stay cached
-/// until the pages naturally die. Deliberately *not* run in a TLS destructor:
-/// see DESIGN.md §4.5 for why.
-pub fn flush_current_thread() {
-    with_cache(|c| unsafe { c.flush_all() }, || {});
-}
-
-/// Run `f` with this thread's cache; if TLS is unavailable (thread exiting),
-/// run the lock-based fallback instead. Never panics, never unwinds.
-#[inline]
-fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl FnOnce() -> R) -> R {
-    let result = CACHE.try_with(|c| {
-        // Safety: see the `CACHE` declaration; no reentrancy is possible.
-        f(unsafe { &mut *c.get() })
-    });
-    match result {
-        Ok(r) => r,
-        Err(_) => fallback(),
-    }
-}
-
-unsafe fn alloc_small(class: usize) -> *mut u8 {
     with_cache(
         |c| c.alloc(class),
         || {
