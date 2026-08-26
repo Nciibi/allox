@@ -79,3 +79,22 @@ pub(crate) fn align_up(v: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two());
     (v + align - 1) & !(align - 1)
 }
+
+/// Intrusive free-list ops: a free block's first word holds the next pointer.
+
+#[inline]
+pub(crate) unsafe fn push_block(head: &mut *mut u8, b: *mut u8) {
+    *b.cast::<*mut u8>() = *head;
+    *head = b;
+}
+
+#[inline]
+pub(crate) unsafe fn pop_block(head: &mut *mut u8) -> Option<*mut u8> {
+    let b = *head;
+    if b.is_null() {
+        None
+    } else {
+        *head = *b.cast::<*mut u8>();
+        Some(b)
+    }
+}
