@@ -25,6 +25,28 @@ pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
+/// Global telemetry counters, written in batches from thread-local
+/// accumulators (see `cache.rs`) so the hot path stays contention-free.
+#[cfg(feature = "telemetry")]
+pub(crate) struct TelemetryCounters {
+    pub(crate) total_allocs: AtomicU64,
+    pub(crate) total_frees: AtomicU64,
+    pub(crate) live_bytes: core::sync::atomic::AtomicI64,
+    pub(crate) peak_live_bytes: AtomicU64,
+    pub(crate) large_allocs: AtomicU64,
+    pub(crate) per_class: [AtomicU64; NUM_CLASSES],
+}
+
+#[cfg(feature = "telemetry")]
+pub(crate) static TELEMETRY: TelemetryCounters = TelemetryCounters {
+    total_allocs: AtomicU64::new(0),
+    total_frees: AtomicU64::new(0),
+    live_bytes: core::sync::atomic::AtomicI64::new(0),
+    peak_live_bytes: AtomicU64::new(0),
+    large_allocs: AtomicU64::new(0),
+    per_class: [const { AtomicU64::new(0) }; NUM_CLASSES],
+};
+
 pub(crate) struct ListHead {
     /// Partial pages (spare free blocks), doubly linked via prev/next.
     head: *mut PageHeader,
