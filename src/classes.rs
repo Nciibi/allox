@@ -13,6 +13,7 @@ pub(crate) const MAX_SMALL_SIZE: usize = 16 * 1024;
 pub(crate) const NUM_CLASSES: usize = 64;
 
 // `usize::div_ceil` is not const-stable at our MSRV; keep manual rounding.
+#[allow(clippy::manual_div_ceil)]
 const fn build_classes() -> [usize; NUM_CLASSES] {
     let mut table = [MAX_SMALL_SIZE; NUM_CLASSES];
     let mut size = MIN_ALIGN;
