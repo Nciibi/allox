@@ -22,6 +22,9 @@ struct Inner {
     partial: [*mut PageHeader; NUM_CLASSES],
 }
 
+// Raw pointers are only manipulated while holding the enclosing Mutex.
+unsafe impl Send for Inner {}
+
 pub(crate) struct GlobalHeap {
     inner: Mutex<Inner>,
 }
