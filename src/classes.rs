@@ -32,11 +32,25 @@ const fn build_classes() -> [usize; NUM_CLASSES] {
 
 pub(crate) const CLASSES: [usize; NUM_CLASSES] = build_classes();
 
-/// Index of the smallest size class that fits `size`.
-///
-/// Requires `1 <= size <= MAX_SMALL_SIZE`.
-#[inline]
-pub(crate) const fn class_for_size(size: usize) -> usize {
+/// Direct-mapped size -> class table: index by `(size + 15) / 16`.
+/// One kilobyte of read-mostly data; turns class lookup into a shift,
+/// an add and a load instead of a scan.
+const CLASS_LUT: [u8; MAX_SMALL_SIZE / MIN_ALIGN + 1] = build_lut();
+
+const fn build_lut() -> [u8; MAX_SMALL_SIZE / MIN_ALIGN + 1] {
+    let mut lut = [0u8; MAX_SMALL_SIZE / MIN_ALIGN + 1];
+    let mut q = 0;
+    while q <= MAX_SMALL_SIZE / MIN_ALIGN {
+        // Largest size rounding into this slot is q * 16.
+        lut[q] = class_for_size_scan(q * MIN_ALIGN) as u8;
+        q += 1;
+    }
+    lut
+}
+
+/// Index of the smallest size class that fits `size` (linear fallback used
+/// to build the LUT at compile time).
+const fn class_for_size_scan(size: usize) -> usize {
     let mut i = 0;
     while i < NUM_CLASSES - 1 {
         if CLASSES[i] >= size {
@@ -45,6 +59,18 @@ pub(crate) const fn class_for_size(size: usize) -> usize {
         i += 1;
     }
     NUM_CLASSES - 1
+}
+
+/// Index of the smallest size class that fits `size`.
+///
+/// Requires `1 <= size <= MAX_SMALL_SIZE`.
+#[inline]
+pub(crate) const fn class_for_size(size: usize) -> usize {
+    if size <= MAX_SMALL_SIZE {
+        CLASS_LUT[(size + MIN_ALIGN - 1) / MIN_ALIGN] as usize
+    } else {
+        NUM_CLASSES - 1
+    }
 }
 
 #[cfg(test)]
