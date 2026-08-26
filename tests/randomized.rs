@@ -68,7 +68,12 @@ unsafe fn alloc_slot(rng: &mut Rng) -> Slot {
     };
     let p = allox::aligned_alloc(align, size);
     assert!(!p.is_null(), "OOM {}@{}", size, align);
-    let slot = Slot { p, size, align, tag: (rng.next() & 0xFF) as u8 };
+    let slot = Slot {
+        p,
+        size,
+        align,
+        tag: (rng.next() & 0xFF) as u8,
+    };
     for i in 0..slot.size {
         *p.add(i) = slot.pattern(i);
     }
@@ -103,8 +108,7 @@ fn randomized_churn_all_paths_multithreaded() {
                             let idx = (rng.next() as usize) % live.len();
                             let old_size = live[idx].size;
                             if old_size < 400_000 {
-                                let new_size =
-                                    old_size + 1 + (rng.next() % 4096) as usize;
+                                let new_size = old_size + 1 + (rng.next() % 4096) as usize;
                                 let mut s = live.swap_remove(idx);
                                 unsafe {
                                     s.verify();
@@ -119,8 +123,7 @@ fn randomized_churn_all_paths_multithreaded() {
                                     };
                                     check.verify();
                                     for i in old_size..new_size {
-                                        *np.add(i) =
-                                            s.tag.wrapping_mul(31).wrapping_add(i as u8);
+                                        *np.add(i) = s.tag.wrapping_mul(31).wrapping_add(i as u8);
                                     }
                                     s.p = np;
                                     s.size = new_size;
