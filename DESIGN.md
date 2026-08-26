@@ -114,6 +114,9 @@ abort. Debug builds additionally walk the page freelist to catch double frees.
 Generated at compile time: start 16 B, grow ~12.5% rounded up to 16 B, cap
 16384 B (~58 classes). Internal fragmentation <= 12.5%, same bound as
 mimalloc/tcmalloc. Minimum block = 16 B = max useful fundamental alignment.
+A 1 KiB direct-mapped table (index `(size+15)/16`) turns class lookup into
+a shift and a load; measured necessary after the scan version showed up in
+mixed-size profiles.
 
 ### 4.3 Allocation paths
 
