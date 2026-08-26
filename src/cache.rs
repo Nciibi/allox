@@ -108,22 +108,22 @@ impl ThreadCache {
             t.TOTAL_FREES.fetch_add(self.pending.frees, Relaxed);
         }
         if self.pending.bytes_in != 0 {
-            let added = t
-                .LIVE_BYTES
-                .fetch_add(self.pending.bytes_in as i64, Relaxed);
-            let _ = added;
+            t.bytes_in.fetch_add(self.pending.bytes_in, Relaxed);
         }
         if self.pending.bytes_out != 0 {
-            let _ = t.LIVE_BYTES.fetch_sub(self.pending.bytes_out as i64, Relaxed);
+            t.bytes_out.fetch_add(self.pending.bytes_out, Relaxed);
         }
         for (class, n) in self.pending.per_class.iter().enumerate() {
             if *n != 0 {
-                t.PER_CLASS[class].fetch_add(*n, Relaxed);
+                t.PER_CLASS_PLACEHOLDER[class].fetch_add(*n, Relaxed);
                 *n = 0;
             }
         }
         // Sampled peak: exact between flush points by design.
-        let live = t.LIVE_BYTES.load(Relaxed).max(0) as u64;
+        let live = t
+            .bytes_in
+            .load(Relaxed)
+            .saturating_sub(t.bytes_out.load(Relaxed));
         t.PEAK_LIVE_BYTES.fetch_max(live, Relaxed);
         self.pending.allocs = 0;
         self.pending.frees = 0;
