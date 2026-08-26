@@ -313,13 +313,13 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         classes::CLASSES[(*page).class as usize]
     } else if magic == LARGE_MAGIC {
         let hdr = base as *mut LargeHeader;
-        (*hdr).mapped_size - ((p as usize - (base + LARGE_HEADER_SIZE)) + 0)
+        (*hdr).mapped_size - (p as usize - base)
     } else {
         0
     }
 }
 
-/// Statistics snapshot.
+/// Snapshot current statistics.
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
     /// Pages (64 KiB units) currently mapped from the OS, including large
@@ -333,10 +333,11 @@ pub struct Stats {
 
 /// Snapshot current statistics.
 pub fn stats() -> Stats {
+    use core::sync::atomic::Ordering::Relaxed;
     Stats {
-        mapped_pages: heap::MAPPED_PAGES.load(core::sync::atomic::Ordering::Relaxed),
-        map_calls: heap::MAP_CALLS(),
-        unmap_calls: heap::UNMAP_CALLS(),
+        mapped_pages: heap::MAPPED_PAGES.load(Relaxed),
+        map_calls: heap::MAP_CALLS.load(Relaxed),
+        unmap_calls: heap::UNMAP_CALLS.load(Relaxed),
     }
 }
 
