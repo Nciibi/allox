@@ -63,13 +63,13 @@ impl<T> core::ops::Deref for MutexGuard<'_, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        &self.mutex.value.get().cast::<T>().read_ref()
+        unsafe { &*self.mutex.value.get() }
     }
 }
 impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        self.mutex.value.get().cast::<T>().read_mut()
+        unsafe { &mut *self.mutex.value.get() }
     }
 }
 impl<T> Drop for MutexGuard<'_, T> {
