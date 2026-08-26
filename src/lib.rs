@@ -426,14 +426,8 @@ pub mod telemetry {
         let t = &crate::heap::TELEMETRY;
         let total_allocs = t.total_allocs.load(Relaxed);
         let total_frees = t.total_frees.load(Relaxed);
-        let allocated = {
-            // bytes in/out are tracked as net live to keep the hot path at
-            // two counters; reconstruct gross numbers from live + frees is
-            // not possible, so expose live directly and approximate gross.
-            0
-        };
-        let _ = allocated;
-        let live = t.live_bytes.load(Relaxed).max(0) as u64;
+        let allocated_bytes = t.bytes_in.load(Relaxed);
+        let freed_bytes = t.bytes_out.load(Relaxed);
         let mut per_class = [0u64; 64];
         for (i, c) in t.per_class.iter().enumerate() {
             per_class[i] = c.load(Relaxed);
@@ -442,9 +436,9 @@ pub mod telemetry {
             total_allocs,
             total_frees,
             live_allocs: total_allocs.saturating_sub(total_frees),
-            allocated_bytes: live, // see note below
-            freed_bytes: 0,
-            live_bytes: live,
+            allocated_bytes,
+            freed_bytes,
+            live_bytes: allocated_bytes.saturating_sub(freed_bytes),
             peak_live_bytes: t.peak_live_bytes.load(Relaxed),
             large_allocs: t.large_allocs.load(Relaxed),
             mapped_pages: crate::heap::MAPPED_PAGES.load(Relaxed),
