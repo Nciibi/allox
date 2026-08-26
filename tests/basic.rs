@@ -40,20 +40,18 @@ fn realloc_preserves_contents() {
         let mut cap = 16usize;
         let mut p = malloc(cap);
         assert!(!p.is_null());
-        for i in 0..cap {
-            *p.add(i) = (i % 251) as u8;
-        }
+        let mut expected: Vec<u8> = (0..cap).map(|i| (i % 251) as u8).collect();
+        core::ptr::copy_nonoverlapping(expected.as_ptr(), p, cap);
         while cap < 300_000 {
             let new_cap = cap * 2 + 7;
             let np = realloc(p, new_cap);
             assert!(!np.is_null());
-            for i in 0..cap {
-                assert_eq!(*np.add(i), (i % 251) as u8, "cap {} i {}", cap, i);
-            }
+            assert_eq!(core::slice::from_raw_parts(np, cap), &expected[..]);
             for i in cap..new_cap {
                 // fresh bytes are writable
                 *np.add(i) = 1;
             }
+            expected.resize(new_cap, 1);
             p = np;
             cap = new_cap;
         }
