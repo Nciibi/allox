@@ -70,6 +70,9 @@ impl PageHeader {
 pub(crate) struct LargeHeader {
     pub(crate) magic: u64,
     pub(crate) mapped_size: usize,
+    /// True base of the OS mapping (may differ from the page this header
+    /// appears in, when alignment pushed the user pointer across a boundary).
+    pub(crate) base: *mut u8,
 }
 
 pub(crate) const LARGE_HEADER_SIZE: usize = 32; // padded to keep user ptr 16-aligned
