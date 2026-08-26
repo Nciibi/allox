@@ -92,9 +92,10 @@ unsafe fn fill_from_list(list: &mut *mut PageHeader, chain: &mut *mut u8, count:
 impl GlobalHeap {
     pub(crate) const fn new() -> Self {
         GlobalHeap {
-            classes: [Mutex::new(ListHead {
-                head: ptr::null_mut(),
-            }); NUM_CLASSES],
+            classes: [
+                const { Mutex::new(ListHead { head: ptr::null_mut() }) };
+                NUM_CLASSES
+            ],
         }
     }
 
