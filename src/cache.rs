@@ -98,14 +98,20 @@ impl ThreadCache {
         }
     }
 
-    /// Return every cached block of `class` to their owning pages.
+    /// Return cached blocks of `class` down to [`FLUSH_TARGET`], grouped by
+    /// owning page so each page needs only one lock acquisition.
     unsafe fn flush_bin(&mut self, class: usize) {
         let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
         let mut ng = 0usize;
         let bin = &mut self.bins[class];
 
-        while let Some(b) = pop_block(&mut bin.head) {
-            let page = PageHeader::of(b);
+        while bin.len > FLUSH_TARGET {
+            let b = match pop_block(&mut bin.head) {
+                Some(b) => b,
+                None => break,
+            };
+            bin.len -= 1;
+            let page = PageHeader::of(p);
             *b.cast::<*mut u8>() = ptr::null_mut();
             let mut slot = None;
             for g in groups.iter_mut().take(ng) {
