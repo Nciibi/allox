@@ -17,6 +17,9 @@ name = "alloc"
 harness = false
 
 [dev-dependencies]
+# Benchmark comparators only — never dependencies of the library itself.
+talc = "5"
+spinning_top = "0.3"
 
 [profile.release]
 opt-level = 3
