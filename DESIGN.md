@@ -166,19 +166,19 @@ so reentrant allocation cannot occur.
   partial-page list; no code path ever holds two class locks at once. Thread
   caches are lock-free; contention only on batched refill/trim (amortized
   ~64 blocks per lock acquisition, spread over 64 independent locks).
-- Our `sys::Mutex` is a spin-then-yield lock: it can never allocate (unlike
-  `std::sync::Mutex`), eliminating the recursion hazard inside `GlobalAlloc`.
-  Slow paths are rare and batched, so brief spinning before yielding suffices.
+- `sys::Mutex`: on Windows, an SRWLock — contended threads park in the kernel
+  instead of burning CPU (SRWLOCK is a zero-initialized pointer, so it stays
+  const-constructible). On other platforms, adaptive spin with bounded
+  spinning and OS yield where available. It can never allocate, eliminating
+  the recursion hazard inside `GlobalAlloc`.
 - Note: because freed blocks go to the *freeing* thread's cache (no block
   ownership), mimalloc-style atomic cross-thread free lists are unnecessary;
   lock sharding addresses the remaining contention directly.
-- Future option if profiling demands: futex/SRWLock-backed parking for the
-  class mutexes under heavy contention.
 
 ### 4.4.1 Measured results (Windows x86-64, median of 5)
-See README.md for the full table. Headline: 5/5 wins vs talc and the system
-allocator; multi-threaded wins are structural (lock-free fast paths vs a
-single global heap mutex). Two lessons worth preserving:
+See README.md for the full four-way table (allox / talc / dlmalloc / system).
+Headline: 5/5 wins vs all comparators; multi-threaded wins are structural
+(lock-free fast paths vs a single global heap mutex). Lessons worth preserving:
 1. Flush/refill round-trips dominated mixed workloads until caches became
    byte-budgeted and effectively unlimited per thread.
 2. Benchmark harnesses must keep their tracking structures cache-resident,
