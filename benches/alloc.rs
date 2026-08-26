@@ -23,7 +23,7 @@ impl Rng {
     }
 }
 
-fn bench<A: GlobalAlloc>(name: &str, alloc: &A, threads: usize, seconds: u64, size_range: (usize, usize)) {
+fn bench<A: GlobalAlloc + ?Sized>(name: &str, alloc: &A, threads: usize, seconds: u64, size_range: (usize, usize)) {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n, 16).unwrap();
 
@@ -32,7 +32,7 @@ fn bench<A: GlobalAlloc>(name: &str, alloc: &A, threads: usize, seconds: u64, si
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng = Rng(0xDAAN_2025 ^ ((t as u64 + 1) * 0x9E3779B97F4A7C15));
+                    let mut rng = Rng(0xDA2_2025 ^ ((t as u64 + 1) * 0x9E3779B97F4A7C15));
                     let mut ops = 0u64;
                     let mut live: Vec<(*mut u8, usize)> = Vec::with_capacity(1024);
                     while Instant::now() < stop {
@@ -85,7 +85,7 @@ fn run_suite(label: &str, alloc: &'static dyn GlobalAllocSync) {
         (1, (20000, 65536)),
     ] {
         bench(
-            &format!("{label}"),
+            label,
             alloc,
             threads,
             3,
