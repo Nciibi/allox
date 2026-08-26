@@ -325,7 +325,8 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     if *(base as *const u64) == page::PAGE_MAGIC {
         let page = base as *mut page::PageHeader;
         classes::CLASSES[(*page).class as usize]
-    } else if (*(p as usize - LARGE_HEADER_SIZE) as *const LargeHeader).magic == LARGE_MAGIC
+    } else if (*(p.wrapping_sub(LARGE_HEADER_SIZE) as *const LargeHeader)).magic
+        == LARGE_MAGIC
     {
         let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
         (*hdr).mapped_size - (p as usize - (*hdr).base as usize)
