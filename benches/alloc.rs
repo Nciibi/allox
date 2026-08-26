@@ -91,7 +91,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
                             ops += 1;
                         }
                         // keep memory bounded under low free_pct
-                        if live.len() > 200_000 {
+                        if live.len() > 16_384 {
                             for (p, s) in live.drain(..) {
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
                             }
@@ -134,6 +134,7 @@ fn main() {
     for wl in WORKLOADS {
         let mut scores = Vec::new();
         for a in &allocators {
+            eprintln!("  running {} / {}...", wl.name, a.0);
             scores.push(run(a.1, wl, SECS));
         }
         let [allox_s, talc_s, sys_s] = [scores[0], scores[1], scores[2]];
