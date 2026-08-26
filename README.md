@@ -108,7 +108,9 @@ notes, and rationale.
 
 v0.1 — working and tested (unit, integration as `#[global_allocator]`,
 multi-threaded randomized stress with full integrity verification, C ABI).
-Not yet audited; API may still change before 0.2.
+Fastest pure-Rust allocator on the benchmarked hosted workloads as of the
+table above. Not yet audited; API may still change before 0.2.
+Linux/macOS results pending CI runs on those platforms.
 
 ## Development
 
