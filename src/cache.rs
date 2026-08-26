@@ -111,7 +111,7 @@ impl ThreadCache {
                 None => break,
             };
             bin.len -= 1;
-            let page = PageHeader::of(p);
+            let page = PageHeader::of(b);
             *b.cast::<*mut u8>() = ptr::null_mut();
             let mut slot = None;
             for g in groups.iter_mut().take(ng) {
@@ -137,7 +137,6 @@ impl ThreadCache {
                 }
             }
         }
-        bin.len = 0;
 
         for g in groups.iter_mut().take(ng) {
             crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
