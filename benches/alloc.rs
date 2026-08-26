@@ -13,14 +13,25 @@ use std::time::{Duration, Instant};
 static GLOBAL: allox::Allox = allox::Allox;
 
 use spinning_top::RawSpinlock;
-use talc::{source::Claim, TalcLock};
+use talc::{source::GlobalAllocSource, TalcLock};
 
-// talc needs an initial arena; give it a generous one so large allocations
-// don't fail. Lives in BSS: costs nothing on disk or RSS until touched.
-static TALC: TalcLock<RawSpinlock, Claim> = TalcLock::new(unsafe {
-    static mut ARENA: [u8; 512 * 1024 * 1024] = [0; 512 * 1024 * 1024];
-    Claim::array(&raw mut ARENA)
-});
+// talc configured for a fair hosted fight: GlobalAllocSource lets it claim
+// AND release memory dynamically through the system allocator, exactly like
+// allox's OS-backed pages. (Its documented Claim-based setup cannot grow,
+// which made large workloads degenerate into OOM.)
+static TALC: TalcLock<RawSpinlock, GlobalAllocSource<std::alloc::System>> =
+    TalcLock::new(GlobalAllocSource::new(std::alloc::System));
+
+// Third comparator: dlmalloc — the pure-Rust port that is wasm32's default.
+struct Dlmalloc;
+unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        dlmalloc::GlobalDlmalloc.alloc(l)
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        dlmalloc::GlobalDlmalloc.dealloc(p, l)
+    }
+}
 
 struct Rng(u64);
 
