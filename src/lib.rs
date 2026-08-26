@@ -408,8 +408,24 @@ pub mod telemetry {
     use core::sync::atomic::Ordering::Relaxed;
 
     /// A point-in-time view of allocator-wide activity.
-    #[derive(Clone, Copy, Debug, Default)]
+    #[derive(Clone, Copy, Debug)]
     pub struct Telemetry {
+        /// All counters zero.
+        pub const EMPTY: Self = Telemetry {
+            total_allocs: 0,
+            total_frees: 0,
+            live_allocs: 0,
+            allocated_bytes: 0,
+            freed_bytes: 0,
+            live_bytes: 0,
+            peak_live_bytes: 0,
+            large_allocs: 0,
+            mapped_pages: 0,
+            map_calls: 0,
+            unmap_calls: 0,
+            per_class_allocs: [0; 64],
+        };
+
         /// Allocation calls observed (any size).
         pub total_allocs: u64,
         /// Deallocation calls observed.
