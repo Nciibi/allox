@@ -135,7 +135,11 @@ fn main() {
 
     let mut wins_vs_talc = 0;
     let mut wins_vs_sys = 0;
+    let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     for wl in WORKLOADS {
+        if !filter.is_empty() && !wl.name.contains(&filter) {
+            continue;
+        }
         let mut scores = Vec::new();
         for a in &allocators {
             eprintln!("  running {} / {}...", wl.name, a.0);
