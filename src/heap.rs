@@ -159,6 +159,7 @@ impl GlobalHeap {
 
     /// Lock access to a class' partial list for external validation
     /// (debug double-free detection).
+    #[cfg(debug_assertions)]
     pub(crate) fn debug_lock(&self, class: usize) -> MutexGuard<'_, ListHead> {
         self.classes[class].lock()
     }
