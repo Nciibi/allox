@@ -68,6 +68,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
                     let mut rng =
                         Rng(0x9E3779B97F4A7C15 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut live: Vec<(*mut u8, usize)> = Vec::with_capacity(1024);
+                    let mut live_bytes = 0usize;
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         for _ in 0..10_000 {
