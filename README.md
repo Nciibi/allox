@@ -47,6 +47,26 @@ println!("{} pages mapped", s.mapped_pages);
 allox::flush_current_thread(); // return this thread's caches (thread pools)
 ```
 
+**Allocation telemetry** (`telemetry` feature): totals, live bytes, peak
+usage, large-alloc counts, and a per-size-class allocation histogram.
+Counters accumulate thread-locally without atomics and are published in
+batches, so production hot paths pay only register adds (~4% worst-case,
+zero with the feature off):
+
+```toml
+[dependencies]
+allox = { version = "0.1", features = ["telemetry"] }
+```
+
+```rust,ignore
+let t = allox::telemetry::snapshot();
+println!("live: {} bytes across {} allocations", t.live_bytes, t.live_allocs);
+println!("peak: {}", t.peak_live_bytes);
+for (class, n) in t.per_class_allocs.iter().enumerate() {
+    if *n > 0 { println!("class {class}: {n} allocs"); }
+}
+```
+
 ## Benchmarks
 
 Median of 5 interleaved runs, Windows x86-64, `cargo bench` (ops/s,
