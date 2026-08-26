@@ -151,12 +151,6 @@ impl ThreadCache {
 /// it never races with list mutation.
 #[cfg(debug_assertions)]
 unsafe fn debug_validate_free(p: *mut u8) {
-    use core::process::abort_unless;
-    let _ = abort_unless; // placeholder removed below
-}
-
-#[cfg(debug_assertions)]
-unsafe fn debug_validate_free_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
@@ -166,7 +160,7 @@ unsafe fn debug_validate_free_impl(p: *mut u8) {
         invalid("allox: dealloc of pointer outside allocator pages");
     }
     let class = (*page).class as usize;
-    let block_size = CLASSES_REEXPORT[class];
+    let block_size = CLASSES[class];
     let offset = p as usize - base;
     if offset < HEADER_SIZE || (offset - HEADER_SIZE) % block_size != 0 {
         invalid("allox: dealloc of misaligned interior pointer");
