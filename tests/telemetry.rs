@@ -2,6 +2,7 @@
 //!
 //! Counters are process-global, so everything runs in one #[test] to stay
 //! deterministic regardless of Cargo's default parallel test threads.
+#![cfg(feature = "telemetry")]
 
 #[global_allocator]
 static GLOBAL: allox::Allox = allox::Allox;
