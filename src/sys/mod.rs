@@ -16,9 +16,60 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
 pub(crate) use unix::{map, unmap};
 #[cfg(windows)]
-pub(crate) use windows::{map, unmap};
-#[cfg(target_family = "wasm")]
+pub(crate) use windows::{map, unmap, RawMutex};
+#[cfg(all(not(windows), not(unix)))]
 pub(crate) use wasm::{map, unmap};
+#[cfg(all(target_family = "wasm", not(windows)))]
+pub(crate) use spin_raw::RawMutex;
+
+#[cfg(not(windows))]
+mod spin_raw {
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    pub(crate) struct RawMutex {
+        locked: AtomicBool,
+    }
+
+    impl RawMutex {
+        pub(crate) const fn new() -> Self {
+            RawMutex {
+                locked: AtomicBool::new(false),
+            }
+        }
+
+        #[inline]
+        pub(crate) fn lock(&self) {
+            let mut spins = 0u32;
+            loop {
+                if !self.locked.swap(true, Ordering::Acquire) {
+                    return;
+                }
+                while self.locked.load(Ordering::Relaxed) && spins < 64 {
+                    core::hint::spin_loop();
+                    spins += 1;
+                }
+                if self.locked.load(Ordering::Relaxed) {
+                    #[cfg(feature = "std")]
+                    std::thread::yield_now();
+                    #[cfg(not(feature = "std"))]
+                    {
+                        // No OS to schedule us out; keep spinning.
+                        core::hint::spin_loop();
+                        core::hint::spin_loop();
+                        core::hint::spin_loop();
+                        core::hint::spin_loop();
+                    }
+                    spins = 0;
+                }
+            }
+        }
+
+        #[inline]
+        pub(crate) fn unlock(&self) {
+            self.locked.store(false, Ordering::Release);
+        }
+    }
+}
 
 /// Mutex built on a platform raw mutex.
 ///
