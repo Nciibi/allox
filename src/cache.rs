@@ -16,7 +16,7 @@ use core::ptr;
 /// This bounds total thread-cache waste to a few MB while keeping hot bins
 /// warm enough that flush/refill round-trips through the global heap stay
 /// rare (they are the dominant slow-path cost under mixed workloads).
-const CACHE_BYTES_PER_CLASS: u32 = 256 * 1024;
+const CACHE_BYTES_PER_CLASS: u32 = 1024 * 1024;
 
 /// Start flushing a class' bin once it exceeds this many blocks...
 #[inline]
