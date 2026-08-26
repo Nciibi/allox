@@ -215,12 +215,7 @@ unsafe impl GlobalAlloc for Allox {
     }
 
     unsafe fn alloc_zeroed(&self, layout: core::alloc::Layout) -> *mut u8 {
-        let p = self.alloc(layout);
-        if !p.is_null() && layout.size() != 0 {
-            // Recycled pages are not guaranteed zero by the OS.
-            ptr::write_bytes(p, 0, layout.size());
-        }
-        p
+        alloc_zeroed_impl(layout.size(), layout.align())
     }
 }
 
@@ -250,11 +245,7 @@ pub unsafe fn calloc(nmemb: usize, size: usize) -> *mut u8 {
         Some(t) if t <= isize::MAX as usize => t,
         _ => return ptr::null_mut(),
     };
-    let p = alloc_impl(total, 1);
-    if !p.is_null() && total != 0 {
-        ptr::write_bytes(p, 0, total);
-    }
-    p
+    alloc_zeroed_impl(total, 1)
 }
 
 /// Resize an allocation from [`malloc`]/[`calloc`]/[`realloc`].
