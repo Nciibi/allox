@@ -4,7 +4,6 @@
 //! Run with: cargo bench
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::thread;
 use std::time::{Duration, Instant};
 
 #[global_allocator]
