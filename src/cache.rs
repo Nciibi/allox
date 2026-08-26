@@ -18,7 +18,7 @@ use core::ptr;
 
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
-const THREAD_CACHE_BUDGET: usize = 512 * 1024 * 1024;
+const THREAD_CACHE_BUDGET: usize = 64 * 1024 * 1024;
 
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
