@@ -6,8 +6,6 @@
 // Binaries need a main; the JS host drives the exported function instead.
 fn main() {}
 
-use std::alloc::Layout;
-
 struct Rng(u64);
 
 impl Rng {
