@@ -9,9 +9,9 @@ pub(crate) const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 pub(crate) const PAGE_MASK: usize = PAGE_SIZE - 1;
 
 /// Marks memory at a 64 KiB boundary as an allocator-managed small page.
-pub(crate) const PAGE_MAGIC: u64 = 0xA110_CCA7_E5A11E_5Du64;
+pub(crate) const PAGE_MAGIC: u64 = 0xA110_CCA7_E5A1_1E5D;
 /// Marks memory at a 64 KiB boundary as a large, directly mapped region.
-pub(crate) const LARGE_MAGIC: u64 = 0xB10C_5A6E_0FF1CEu64;
+pub(crate) const LARGE_MAGIC: u64 = 0x00B1_0C5A_6E0F_F1CE;
 
 /// Flag: page is currently linked into its size class' partial list.
 pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
@@ -83,7 +83,7 @@ pub(crate) fn align_up(v: usize, align: usize) -> usize {
     (v + align - 1) & !(align - 1)
 }
 
-/// Intrusive free-list ops: a free block's first word holds the next pointer.
+// Intrusive free-list ops: a free block's first word holds the next pointer.
 
 #[inline]
 pub(crate) unsafe fn push_block(head: &mut *mut u8, b: *mut u8) {
