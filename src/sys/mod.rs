@@ -11,7 +11,6 @@ pub(crate) mod windows;
 pub(crate) mod wasm;
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(unix)]
 pub(crate) use unix::{map, unmap};
