@@ -84,6 +84,75 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             virgin: [0; NUM_CLASSES],
+            #[cfg(feature = "telemetry")]
+            pending: Pending {
+                ops: 0,
+                allocs: 0,
+                frees: 0,
+                bytes_in: 0,
+                bytes_out: 0,
+                per_class: [0; NUM_CLASSES],
+            },
+        }
+    }
+
+    /// Publish accumulated telemetry deltas to the global atomics.
+    #[cfg(feature = "telemetry")]
+    fn publish(&mut self) {
+        use core::sync::atomic::Ordering::Relaxed;
+        let t = &crate::heap::TELEMETRY;
+        if self.pending.allocs != 0 {
+            t.TOTAL_ALLOCS.fetch_add(self.pending.allocs, Relaxed);
+        }
+        if self.pending.frees != 0 {
+            t.TOTAL_FREES.fetch_add(self.pending.frees, Relaxed);
+        }
+        if self.pending.bytes_in != 0 {
+            let added = t
+                .LIVE_BYTES
+                .fetch_add(self.pending.bytes_in as i64, Relaxed);
+            let _ = added;
+        }
+        if self.pending.bytes_out != 0 {
+            let _ = t.LIVE_BYTES.fetch_sub(self.pending.bytes_out as i64, Relaxed);
+        }
+        for (class, n) in self.pending.per_class.iter().enumerate() {
+            if *n != 0 {
+                t.PER_CLASS[class].fetch_add(*n, Relaxed);
+                *n = 0;
+            }
+        }
+        // Sampled peak: exact between flush points by design.
+        let live = t.LIVE_BYTES.load(Relaxed).max(0) as u64;
+        t.PEAK_LIVE_BYTES.fetch_max(live, Relaxed);
+        self.pending.allocs = 0;
+        self.pending.frees = 0;
+        self.pending.bytes_in = 0;
+        self.pending.bytes_out = 0;
+        self.pending.ops = 0;
+    }
+
+    #[inline]
+    #[cfg(feature = "telemetry")]
+    fn note_alloc(&mut self, class: usize) {
+        self.pending.ops += 1;
+        self.pending.allocs += 1;
+        self.pending.bytes_in += CLASSES[class] as u64;
+        self.pending.per_class[class] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "telemetry")]
+    fn note_free(&mut self, class: usize) {
+        self.pending.ops += 1;
+        self.pending.frees += 1;
+        self.pending.bytes_out += CLASSES[class] as u64;
+        self.pending.per_class[class] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
         }
     }
 
