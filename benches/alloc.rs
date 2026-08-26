@@ -169,14 +169,15 @@ fn main() {
     let allocators = [
         Named("allox", &GLOBAL),
         Named("talc ", &TALC),
+        Named("dlmalloc", &DLMALLOC),
         Named("system", &System),
     ];
 
     println!(
-        "{:<18} {:>12} {:>12} {:>12} {:>10} {:>10}",
-        "workload", "allox", "talc", "system", "a/talc", "a/sys"
+        "{:<18} {:>11} {:>11} {:>11} {:>11} {:>9} {:>9} {:>9}",
+        "workload", "allox", "talc", "dlmalloc", "system", "a/talc", "a/dlm", "a/sys"
     );
-    println!("{}", "-".repeat(80));
+    println!("{}", "-".repeat(100));
 
     let mut wins_vs_talc = 0;
     let mut wins_vs_sys = 0;
