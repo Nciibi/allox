@@ -70,22 +70,23 @@ for (class, n) in t.per_class_allocs.iter().enumerate() {
 ## Benchmarks
 
 Median of 5 interleaved runs, Windows x86-64, `cargo bench` (ops/s,
-higher is better). Comparators run identical workloads through their
-`GlobalAlloc` implementations. talc uses its documented global-allocator
-configuration with a 512 MiB claimed arena.
+higher is better). All comparators run identical workloads through their
+`GlobalAlloc` implementations. talc uses `GlobalAllocSource` (dynamic
+growth/shrink through the system allocator) — its strongest hosted
+configuration, not a strawman arena.
 
-| Workload | allox | talc | system | allox/talc | allox/sys |
-|---|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 47.6 M/s | 29.2 M/s | 10.9 M/s | **1.63×** | **4.36×** |
-| mixed-small 1T (16–4096 B) | 28.9 M/s | 9.6 M/s | 8.1 M/s | **3.02×** | **3.59×** |
-| tight-small 8T (64 B) | 220.2 M/s | 2.1 M/s | 51.4 M/s | **102×** | **4.29×** |
-| mixed-small 8T (16–4096 B) | 142.3 M/s | 1.9 M/s | 29.2 M/s | **75×** | **4.87×** |
-| mixed-all 8T (16–65536 B) | 106 K/s | 0 (OOM) | 53 K/s | **∞** | **2.00×** |
+| Workload | allox | talc | dlmalloc | system | vs talc | vs dlm | vs sys |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| tight-small 1T (64 B) | 40.8 M/s | 26.3 M/s | 21.4 M/s | 11.0 M/s | **1.55×** | **1.91×** | **3.70×** |
+| mixed-small 1T (16–4096 B) | 29.3 M/s | 9.3 M/s | 5.7 M/s | 7.8 M/s | **3.15×** | **5.17×** | **3.77×** |
+| tight-small 8T (64 B) | 209.6 M/s | 2.0 M/s | 3.8 M/s | 44.9 M/s | **105×** | **55×** | **4.67×** |
+| mixed-small 8T (16–4096 B) | 132.1 M/s | 1.8 M/s | 1.6 M/s | 26.6 M/s | **73×** | **82×** | **4.96×** |
+| mixed-all 8T (16–65536 B) | 1.27 M/s | 1.08 M/s | 0.67 M/s | 53 K/s | **1.18×** | **1.91×** | **23.8×** |
 
-Why the multi-threaded gaps are structural, not tuning: every allox
-allocation fast path is lock-free per thread (sharded class locks are only
-touched by batched slow paths), while single-heap allocators serialize on
-one mutex. Reproduce with `cargo bench`.
+5/5 wins against every comparator. Why the multi-threaded gaps are
+structural: every allox fast path is lock-free per thread (sharded class
+locks are touched only by batched slow paths), while single-heap
+allocators serialize on one mutex. Reproduce with `cargo bench`.
 
 ## Design
 
