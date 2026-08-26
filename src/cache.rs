@@ -95,14 +95,7 @@ impl ThreadCache {
             cached_bytes: 0,
             virgin: [0; NUM_CLASSES],
             #[cfg(feature = "telemetry")]
-            pending: Pending {
-                ops: 0,
-                allocs: 0,
-                frees: 0,
-                bytes_in: 0,
-                bytes_out: 0,
-                per_class: [0; NUM_CLASSES],
-            },
+            pending: Pending::new(),
         }
     }
 
@@ -112,10 +105,10 @@ impl ThreadCache {
         use core::sync::atomic::Ordering::Relaxed;
         let t = &crate::heap::TELEMETRY;
         if self.pending.allocs != 0 {
-            t.TOTAL_ALLOCS.fetch_add(self.pending.allocs, Relaxed);
+            t.total_allocs.fetch_add(self.pending.allocs, Relaxed);
         }
         if self.pending.frees != 0 {
-            t.TOTAL_FREES.fetch_add(self.pending.frees, Relaxed);
+            t.total_frees.fetch_add(self.pending.frees, Relaxed);
         }
         if self.pending.bytes_in != 0 {
             t.bytes_in.fetch_add(self.pending.bytes_in, Relaxed);
@@ -123,7 +116,7 @@ impl ThreadCache {
         if self.pending.bytes_out != 0 {
             t.bytes_out.fetch_add(self.pending.bytes_out, Relaxed);
         }
-        for (class, n) in self.pending.per_class.iter().enumerate() {
+        for (class, n) in self.pending.per_class.iter_mut().enumerate() {
             if *n != 0 {
                 t.per_class[class].fetch_add(*n, Relaxed);
                 *n = 0;
