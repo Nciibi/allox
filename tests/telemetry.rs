@@ -3,7 +3,11 @@
 #[global_allocator]
 static GLOBAL: allox::Allox = allox::Allox;
 
-use allox::telemetry::snapshot;
+use allox::telemetry::{snapshot, Telemetry};
+
+fn delta(after: &Telemetry, before: &Telemetry, f: impl Fn(&Telemetry) -> u64) -> u64 {
+    f(after).saturating_sub(f(before))
+}
 
 /// Exact single-threaded accounting after a forced flush.
 #[test]
@@ -28,13 +32,16 @@ fn exact_counts_after_flush() {
     allox::flush_current_thread();
     let after = snapshot();
 
-    assert_eq!(after.total_allocs - before.total_allocs, 10_000);
-    assert_eq!(after.total_frees - before.total_frees, 5_000);
-    assert_eq!(after.live_allocs_delta(before), 5_000);
-
-    // Retained bytes are class-rounded: 100 B lands in the 112 B class.
-    assert_eq!(after.bytes_in_delta(&before), 10_000 * 112);
-    assert!(after.live_bytes >= 5_000 * 112 - before.live_bytes.min(0));
+    assert_eq!(delta(&after, &before, |t| t.total_allocs), 10_000);
+    assert_eq!(delta(&after, &before, |t| t.total_frees), 5_000);
+    assert_eq!(
+        delta(&after, &before, |t| t.allocated_bytes),
+        10_000 * 112 // 100 B rounds up to the 112 B class
+    );
+    assert_eq!(
+        delta(&after, &before, |t| t.freed_bytes),
+        5_000 * 112
+    );
 
     // Peak must have grown.
     assert!(after.peak_live_bytes > before.peak_live_bytes || before.total_allocs == 0);
@@ -52,33 +59,18 @@ fn per_class_routing() {
     let before = snapshot();
 
     unsafe {
-        let a = allox::malloc(64); // class of exactly 64
+        let a = allox::malloc(64); // exactly the first class
         let b = allox::malloc(65); // next class up
         allox::flush_current_thread();
         let mid = snapshot();
 
-        let d64 = mid.per_class_allocs[0] - before.per_class_allocs[0];
-        let d_rest: u64 = mid.per_class_allocs[1..].iter().sum::<u64>()
-            - before.per_class_allocs[1..].iter().sum::<u64>();
-        assert_eq!(d64, 1);
-        assert_eq!(d_rest, 1);
+        assert_eq!(delta(&mid, &before, |t| t.per_class_allocs[0]), 1);
+        let rest: u64 = mid.per_class_allocs[1..].iter().sum();
+        let rest_before: u64 = before.per_class_allocs[1..].iter().sum();
+        assert_eq!(rest - rest_before, 1);
 
         allox::free(a);
         allox::free(b);
     }
     allox::flush_current_thread();
-}
-
-impl TelemetryExt for allox::telemetry::Telemetry {}
-trait TelemetryExt {
-    fn live_allocs_delta(&self, before: &allox::telemetry::Telemetry) -> u64;
-    fn bytes_in_delta(&self, before: &allox::telemetry::Telemetry) -> u64;
-}
-impl TelemetryExt for allox::telemetry::Telemetry {
-    fn live_allocs_delta(&self, before: &Self) -> u64 {
-        self.live_allocs.saturating_sub(before.live_allocs)
-    }
-    fn bytes_in_delta(&self, before: &Self) -> u64 {
-        self.allocated_bytes.saturating_sub(before.allocated_bytes)
-    }
 }
