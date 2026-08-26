@@ -160,8 +160,13 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
 }
 
 /// Like `alloc_impl` but reports whether the returned memory is already
-/// OS-zero, so callers can skip the memset. Large allocations are always
-/// freshly mapped and therefore always zeroed.
+/// OS-zero, so callers can skip most of the memset. Large allocations are
+/// always freshly mapped and therefore always fully zeroed.
+///
+/// Safety/semantics of `zeroed == true`: the block was never allocated since
+/// its page was carved, so the OS zeroing survives everywhere *except* the
+/// first word, which held the intrusive freelist link — callers must clear
+/// that word themselves.
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
@@ -171,15 +176,20 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         return alloc_large(size, align);
     }
     let class = class_for_size(size);
-    let (p, zeroed) = with_cache(
+    let (p, virgin) = with_cache(
         |c| c.alloc_zeroed(class),
         || {
             let (chain, _, virgin) = HEAP.take_blocks(class);
             (chain, virgin)
         },
     );
-    if !p.is_null() && !zeroed {
-        ptr::write_bytes(p, 0, size);
+    if !p.is_null() {
+        if virgin {
+            // Only the freelist link word is dirty.
+            p.cast::<u64>().write(0);
+        } else {
+            ptr::write_bytes(p, 0, size);
+        }
     }
     p
 }
