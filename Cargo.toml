@@ -8,19 +8,21 @@ license = "MIT OR Apache-2.0"
 categories = ["memory-management", "no-std"]
 keywords = ["allocator", "malloc", "global-allocator", "memory"]
 readme = "README.md"
+exclude = ["target", "scripts", "*.md.tmp"]
 
 [lib]
 name = "allox"
 
 [features]
+default = ["std"]
+# Hosted-platform support (TLS fast path, abort-on-corruption diagnostics,
+# OS-thread yielding in the heap mutex). Disable for no_std/embedded targets,
+# where a single global cache behind the allocator's spin mutex is used.
+std = []
 # Built-in allocation telemetry (thread-local counters, batched publication).
 # Opt-in so production builds pay exactly zero for it; enable and query via
 # `allox::telemetry::snapshot()`.
 telemetry = []
-
-[[bench]]
-name = "alloc"
-harness = false
 
 [dev-dependencies]
 # Benchmark comparators only — never dependencies of the library itself.
