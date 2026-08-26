@@ -548,7 +548,8 @@ pub mod telemetry {
 ///
 /// Useful for thread-pool workers between tasks; otherwise blocks stay cached
 /// until the pages naturally die. Deliberately *not* run in a TLS destructor:
-/// see DESIGN.md §4.5 for why.
+/// see DESIGN.md §4.5 for why. With `std` disabled this flushes the single
+/// global cache.
 pub fn flush_current_thread() {
-    with_cache(|c| unsafe { c.flush_all() }, || {});
+    tls::flush();
 }
