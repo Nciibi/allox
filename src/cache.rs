@@ -55,6 +55,24 @@ pub(crate) struct ThreadCache {
     /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
     /// iff the remaining length drops below this count.
     virgin: [u32; NUM_CLASSES],
+    /// Telemetry accumulators, published to the global atomics in batches.
+    #[cfg(feature = "telemetry")]
+    pending: Pending,
+}
+
+/// Thread-local telemetry deltas, flushed every [`FLUSH_OPS`] operations.
+#[cfg(feature = "telemetry")]
+const FLUSH_OPS: u32 = 8192;
+
+#[cfg(feature = "telemetry")]
+#[derive(Default)]
+pub(crate) struct Pending {
+    ops: u32,
+    allocs: u64,
+    frees: u64,
+    bytes_in: u64,
+    bytes_out: u64,
+    per_class: [u64; NUM_CLASSES],
 }
 
 impl ThreadCache {
