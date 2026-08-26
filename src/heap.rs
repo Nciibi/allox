@@ -8,7 +8,7 @@
 //! blocks. No code path ever holds two class locks at once.
 
 use crate::classes::NUM_CLASSES;
-use crate::page::{pop_block, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE, PageHeader};
+use crate::page::{pop_block, PageHeader, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE};
 use crate::sys::{self, Mutex, MutexGuard};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
