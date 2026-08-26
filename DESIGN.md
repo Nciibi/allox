@@ -144,9 +144,22 @@ Ownership rule (v1): a freed block goes to the *freeing* thread's cache
 regardless of which thread allocated it. Blocks carry no affinity; correctness
 never depends on ownership, only performance.
 
+**Cache retention policy (measured, important):** freed blocks are extremely
+likely to be re-allocated by the same thread; round-tripping them through the
+global heap costs ~5x on mixed workloads (lock + list surgery + re-carve).
+Therefore thread caches grow without per-bin limits and are trimmed only when
+the thread's aggregate cached bytes exceed THREAD_CACHE_BUDGET (64 MiB),
+halving the largest bin first. Worst-case overhead: budget bytes per thread.
+Trim passes are chunked (2048 blocks) to bound stack use for huge bins.
+
 realloc: same-class small resize is identity; otherwise alloc-copy-free.
 alloc_zeroed: alloc + explicit zero (OS-zero guarantee only holds for fresh
 pages; recycled cache memory must be zeroed in software).
+
+Thread-local state is const-initialized `UnsafeCell<ThreadCache>` — no lazy
+init, no destructor, no borrow-flag cost on the fast path. Aliasing is sound
+because the allocator never invokes user code while the cache is borrowed,
+so reentrant allocation cannot occur.
 
 ### 4.4 Concurrency model
 - Sharded locking: each of the ~64 size classes has its own mutex guarding its
