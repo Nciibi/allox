@@ -57,11 +57,11 @@ impl RawMutex {
 
     #[inline]
     pub(crate) fn lock(&self) {
-        unsafe { AcquireSRWLockExclusive(&self.0) }
+        unsafe { AcquireSRWLockExclusive(&self.0 as *const SrwLock as *mut SrwLock) }
     }
 
     #[inline]
     pub(crate) fn unlock(&self) {
-        unsafe { ReleaseSRWLockExclusive(&self.0) }
+        unsafe { ReleaseSRWLockExclusive(&self.0 as *const SrwLock as *mut SrwLock) }
     }
 }
