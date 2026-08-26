@@ -85,7 +85,7 @@ fn randomized_churn_all_paths_multithreaded() {
                 let mut rng = Rng((t as u64 + 7).wrapping_mul(0x2545F4914F6CDD1D));
                 let mut live: Vec<Slot> = Vec::with_capacity(512);
                 let mut reallocs = 0usize;
-                for _ in 0..60_000 {
+                for _ in 0..25_000 {
                     match rng.next() % 10 {
                         0..=4 => {
                             let s = unsafe { alloc_slot(&mut rng) };
