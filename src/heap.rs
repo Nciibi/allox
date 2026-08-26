@@ -15,8 +15,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 pub(crate) const REFILL_BATCH: u32 = 32;
 
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
-static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
-static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 struct Inner {
     partial: [*mut PageHeader; NUM_CLASSES],

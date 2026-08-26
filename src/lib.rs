@@ -37,10 +37,7 @@ mod page;
 mod sys;
 
 use crate::classes::{class_for_size, MAX_SMALL_SIZE, MIN_ALIGN};
-use crate::page::{
-    align_up, LargeHeader, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK,
-};
-use crate::sys::MutexGuard;
+use crate::page::{align_up, LargeHeader, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK};
 use core::alloc::GlobalAlloc;
 use core::cell::RefCell;
 use core::ptr;
@@ -153,8 +150,8 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
-    let magic = *(p as usize & !PAGE_MASK) as *const u64;
-    match *magic {
+    let magic = *((p as usize & !PAGE_MASK) as *const u64);
+    match magic {
         page::PAGE_MAGIC => dealloc_small(p),
         LARGE_MAGIC => free_large(p),
         _ => corrupt_pointer(),
@@ -260,8 +257,8 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
         return malloc(size);
     }
     let old_class_ok = {
-        let magic = *(p as usize & !PAGE_MASK) as *const u64;
-        *magic == page::PAGE_MAGIC
+        let magic = *((p as usize & !PAGE_MASK) as *const u64);
+        magic == page::PAGE_MAGIC
     };
     if old_class_ok && size != 0 {
         let page = page::PageHeader::of(p);
