@@ -36,6 +36,22 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
 
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build --target wasm32-unknown-unknown --example wasm_smoke
+      - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
+      - run: cargo build --release --target wasm32-unknown-unknown --example wasm_smoke
+      - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/examples/wasm_smoke.wasm
+
   miri:
     runs-on: ubuntu-latest
     steps:

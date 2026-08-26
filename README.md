@@ -130,6 +130,19 @@ notes, and rationale.
 | `jemallocator` / `mimalloc` | Require a working C toolchain for every target; break cross-compilation |
 | `talc` / other pure-Rust allocators | Linked-list designs without thread caching or virtual-memory integration — they scale poorly past a few threads |
 
+## WebAssembly
+
+allox compiles for `wasm32-unknown-unknown` with no imports and no build
+tooling — linear memory grows via `memory.grow` (64 KiB pages, matching our
+page size). Since WASM cannot release memory pages, freed pages are recycled
+through the delayed-reclamation cache and dead pages beyond the cap stay
+mapped (the same trade-off dlmalloc makes).
+
+```text
+cargo build --target wasm32-unknown-unknown --example wasm_smoke
+node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
+```
+
 ## Status
 
 v0.1 — working and tested (unit, integration as `#[global_allocator]`,
