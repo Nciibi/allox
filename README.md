@@ -87,6 +87,12 @@ mimalloc-inspired, adapted for Rust's world:
   mutex; slow paths are batched (~64 blocks per lock acquisition).
 - **Large / over-aligned allocations** are served by directly mapped regions
   tagged with a magic header; invalid frees are detected and abort.
+- **Delayed page reclamation**: fully-freed pages are kept mapped (capped at
+  4 per class, ~16 MiB worst case) and recycled on the next refill instead of
+  paying unmap/map syscalls on churn.
+- **Zero-init fast path**: `calloc`/`alloc_zeroed` from never-used ("virgin")
+  memory skips the memset — only the freelist link word is cleared. Recycled
+  memory is still always explicitly zeroed.
 - **Debug builds validate every free**: pointer bounds, class alignment, and
   double-free detection.
 - **No TLS destructors, no allocation inside the allocator**: const-init
