@@ -11,7 +11,7 @@
 //! #[global_allocator]
 //! static GLOBAL: Allox = Allox;
 //!
-//! let v: Vec<u8> = (0..1000).collect();
+//! let v: Vec<u32> = (0..1000).collect();
 //! assert_eq!(v.len(), 1000);
 //! ```
 //!
