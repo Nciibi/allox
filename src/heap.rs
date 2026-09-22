@@ -422,12 +422,75 @@ unsafe fn mfill_from_list(
     }
 }
 
-impl MediumHeap {
-    pub(crate) const fn new() -> Self {
-        MediumHeap {
-            classes: [const { Mutex::new(MSpanList::new()) }; NUM_MEDIUM],
+/// Post-lock fate of a released span: kept (nothing to do), parked cold
+/// (caller discards outside the lock), or over caps (caller unmaps).
+enum SpanFate {
+    Keep,
+    Cold,
+    Unmap(usize),
+}
+
+/// Splice `chain` (n blocks of `span`) back onto the span. Shared core for
+/// the blocking and try paths; syscalls happen in the caller, outside locks.
+unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mut u8, n: u32) -> SpanFate {
+    let mclass = (*span).mclass as usize;
+    let _ = mclass;
+    // Freed blocks are dirty by definition.
+    (*span).flags &= !FLAG_VIRGIN;
+    let mut tail = chain;
+    while !(*tail.cast::<*mut u8>()).is_null() {
+        tail = *tail.cast::<*mut u8>();
+    }
+    *tail.cast::<*mut u8>() = (*span).free_head;
+    (*span).free_head = chain;
+    (*span).free_count += n;
+    (*span).used -= n;
+    if (*span).used == 0 {
+        munlink_partial(&mut list.head, span);
+        let span_bytes = (*span).mapped_bytes();
+        // Byte-scaled retention: count cap AND byte cap. Keeps several
+        // spans for small-medium classes, at most ~2 MiB per class hot.
+        if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS
+            && list.empty_bytes + span_bytes <= MAX_EMPTY_SPAN_BYTES_PER_CLASS
+        {
+            // Delayed reclamation: keep the span mapped for reuse.
+            (*span).next = list.empty;
+            list.empty = span;
+            list.empty_count += 1;
+            list.empty_bytes += span_bytes;
+            SpanFate::Keep
+        } else if list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS {
+            // Cold: drop physical, keep virtual. Re-carved on reuse.
+            (*span).next = list.cold;
+            list.cold = span;
+            list.cold_count += 1;
+            list.cold_bytes += span_bytes;
+            SpanFate::Cold
+        } else {
+            SpanFate::Unmap(span_bytes)
+        }
+    } else {
+        if (*span).flags & FLAG_IN_PARTIAL == 0 {
+            mlink_partial(&mut list.head, span);
+        }
+        SpanFate::Keep
+    }
+}
+
+unsafe fn mact_fate(span: *mut SpanMaster, fate: SpanFate) {
+    match fate {
+        SpanFate::Keep => {}
+        SpanFate::Cold => {
+            sys::discard(span.cast::<u8>(), (*span).mapped_bytes());
+        }
+        SpanFate::Unmap(bytes) => {
+            sys::unmap(span.cast::<u8>(), bytes);
+            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
         }
     }
+}
 
     /// Acquire up to MEDIUM_REFILL_BATCH free blocks of `mclass` as an
     /// intrusive chain. Returns `(null, 0, _)` only on OS exhaustion.
