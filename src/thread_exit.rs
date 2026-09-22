@@ -46,7 +46,6 @@ mod imp {
         // ~everything when several threads exit at once (thundering herd on
         // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
-        eprintln!("[allox-debug] thread-exit flush firing");
         crate::tls_flush_full();
     }
 
@@ -56,7 +55,6 @@ mod imp {
             // SAFETY: out-pointer valid for the call; destructor is a plain
             // extern fn with no allocator interaction beyond try-flush.
             let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
-            eprintln!("[allox-debug] pthread_key_create -> {} key {:?}", r, k);
             if r == 0 {
                 Some(k)
             } else {
