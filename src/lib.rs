@@ -178,8 +178,7 @@ unsafe fn dealloc_small(p: *mut u8) {
     );
 }
 
-unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
-    with_cache(
+unsafe fn alloc_medium(mclass: usize) -> *mut u8 {    with_cache(
         |c| c.alloc_medium(mclass),
         || {
             let (chain, _, _) = MEDIUM_HEAP.take_blocks(mclass);
