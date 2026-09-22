@@ -54,13 +54,6 @@ pub(crate) fn set_budget(bytes: usize) {
 pub(crate) const LARGE_STASH_SLOTS: usize = 8;
 pub(crate) const LARGE_STASH_CAP_BYTES: usize = 8 * 1024 * 1024;
 
-/// Medium blocks cached per thread class, by COUNT not bytes: a byte budget
-/// that holds 500k 64 B blocks holds 800 40 KiB blocks (0.5 ms of traffic),
-/// so byte-budgeting medium bins guarantees 0% bin hits and a heap refill
-/// per alloc. Count-capping (two refills) keeps bins hot independent of
-/// block size; worst case is `NUM_MEDIUM * CAP * max_block` per thread.
-pub(crate) const MEDIUM_BIN_CAP: u32 = 256;
-
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
 const FLUSH_CHUNK: u32 = 2048;
