@@ -524,14 +524,11 @@ unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mu
     }
 }
 
-unsafe fn mact_fate(span: *mut SpanMaster, fate: SpanFate) {
+unsafe fn mact_fate(base: *mut u8, fate: SpanFate) {
     match fate {
         SpanFate::Keep => {}
-        SpanFate::Cold => {
-            sys::discard(span.cast::<u8>(), (*span).mapped_bytes());
-        }
         SpanFate::Unmap(bytes) => {
-            sys::unmap(span.cast::<u8>(), bytes);
+            sys::unmap(base, bytes);
             MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
             UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
             SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
