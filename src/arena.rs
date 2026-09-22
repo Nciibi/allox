@@ -266,6 +266,12 @@ impl Arena {
     /// base, or null when unavailable — reservation failed, bump exhausted,
     /// or the commit itself failed. Null is never OOM-by-itself: callers
     /// fall back to legacy mapping paths.
+    ///
+    /// Counter ownership: NONE here. The caller counts exactly one fresh OS
+    /// mapping per non-null return (in `MAP_CALLS`/`MAPPED_PAGES`), whether
+    /// the slice came from a hole re-commit or a bump commit — both are one
+    /// kernel mapping op. Hole pops, parks, and abandonments change no
+    /// counters (still mapped either way).
     pub(crate) unsafe fn commit(&self, pages: usize) -> *mut u8 {
         let len = match pages.checked_mul(ARENA_ALIGN) {
             Some(l) if l > 0 => l,
