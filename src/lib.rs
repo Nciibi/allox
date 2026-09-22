@@ -437,20 +437,23 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     if base.is_null() {
         return (ptr::null_mut(), false);
     }
+    // Count the fresh mapping exactly once here (arena and legacy alike —
+    // both are one kernel mapping op). All disposals below balance it via
+    // unmap_or_return (arena parks keep it counted; legacy unmaps decrement).
+    heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    heap::MAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     // Header lives directly before the user pointer: high alignment can push
     // the user pointer past the first 64 KiB boundary of the region, so the
     // region base is not a reliable place to find it.
     let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
     if ret + size > base as usize + mapped {
-        sys::unmap(base, mapped);
+        unmap_or_return(base, mapped);
         return (ptr::null_mut(), false);
     }
     let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
     (*hdr).magic = LARGE_MAGIC;
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
-    heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    heap::MAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     #[cfg(feature = "telemetry")]
     {
         use core::sync::atomic::Ordering::Relaxed;
