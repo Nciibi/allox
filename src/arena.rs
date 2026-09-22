@@ -189,7 +189,7 @@ impl Arena {
                         munmap(raw as *mut core::ffi::c_void, aligned - raw);
                     }
                 }
-                let tail = aligned + ARENA_SIZE;
+                let tail = aligned + self.size;
                 if tail != raw + total {
                     unsafe {
                         munmap(tail as *mut core::ffi::c_void, raw + total - tail);
