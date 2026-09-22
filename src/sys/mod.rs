@@ -127,3 +127,40 @@ impl<T> Drop for MutexGuard<'_, T> {
         self.mutex.raw.unlock();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Mutex;
+
+    #[test]
+    fn mutex_excludes_and_releases() {
+        static M: Mutex<u32> = Mutex::new(0);
+        {
+            let mut g = M.lock();
+            *g += 1;
+        }
+        assert_eq!(*M.lock(), 1);
+    }
+
+    /// Contended slow-path hammering: must stay correct and complete (this
+    /// is the shape heap slow paths take; parking backends must not lose
+    /// wakeups under it).
+    #[cfg(feature = "std")]
+    #[test]
+    fn mutex_survives_contention() {
+        static M: Mutex<u64> = Mutex::new(0);
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..10_000 {
+                        *M.lock() += 1;
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(*M.lock(), 80_000);
+    }
+}
