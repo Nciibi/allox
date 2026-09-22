@@ -352,8 +352,6 @@ impl Arena {
     }
 }
 
-use super::discard as _sys_discard_placeholder;
-
 static ARENA: Arena = Arena::new();
 
 /// Commit `pages` from the process arena; null on unavailable (see
