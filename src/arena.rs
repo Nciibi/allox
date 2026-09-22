@@ -303,7 +303,7 @@ impl Arena {
         loop {
             let off = self.bump.load(Ordering::Relaxed);
             let end = match off.checked_add(len) {
-                Some(e) if e <= ARENA_SIZE => e,
+                Some(e) if e <= self.size => e,
                 _ => return ptr::null_mut(), // exhausted: legacy fallback
             };
             match self
