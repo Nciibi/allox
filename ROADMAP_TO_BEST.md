@@ -134,6 +134,25 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    P1e exit-flush + cold-array bugfix + small cold → DONE (see below).
    NEXT: P2 futex/parking mutex (unix spin convoy hypothesis) + refill
    tuning, or spans-for-big-sizes (large-only hit rate).
+
+## P2 results — parking mutex on hosted unix (pthread, lazy init)
+
+What shipped: `src/sys/unix.rs` gained a pthread-mutex `RawMutex`
+(128 B opaque storage, one-time init under a guard spin, default attrs —
+no asm, no deps, allocation-free by POSIX); `src/sys/mod.rs` gates are now
+windows → SRWLock, unix+std → pthread, everything else → spin. Plus a
+`mutex_survives_contention` unit test and a DESIGN §4.4 doc update.
+
+Measured (Linux Ryzen 5 1600): mixed-all 8T flat (13.55M → 13.7M),
+spawn-churn flat (2.86M → 2.72M), large-only 8T noisy (0.5–1.3M).
+Hypothesis NOT confirmed — sharding + thread caches already keep these
+locks uncontended, where pthread ≈ spin (one CAS either way). Kept anyway:
+strictly more robust under preemption/oversubscription (spin convoys are
+real, just not the binding constraint here), zero regressions, full suite
+green (12 binaries), all feature combos warning-free. The remaining MT gaps
+(spawn-churn 0.22x, large-only 8T 0.11x vs mimalloc) are per-op/syscall
+volume, not lock parking — next levers are arena mapping and
+spans-for-big-sizes.
 4. P1 exit-flush + drift cap → after spans.
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.
