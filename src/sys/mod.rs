@@ -15,11 +15,11 @@ use core::cell::UnsafeCell;
 #[cfg(not(windows))]
 pub(crate) use spin_raw::RawMutex;
 #[cfg(unix)]
-pub(crate) use unix::{map, unmap};
+pub(crate) use unix::{discard, map, unmap};
 #[cfg(all(not(windows), not(unix)))]
-pub(crate) use wasm::{map, unmap};
+pub(crate) use wasm::{discard, map, unmap};
 #[cfg(windows)]
-pub(crate) use windows::{map, unmap, RawMutex};
+pub(crate) use windows::{discard, map, unmap, RawMutex};
 
 #[cfg(not(windows))]
 mod spin_raw {
