@@ -610,11 +610,12 @@ impl MediumHeap {
     /// Return a chain of `n` blocks, all belonging to `span`, to that span.
     pub(crate) unsafe fn release_blocks(&self, span: *mut SpanMaster, chain: *mut u8, n: u32) {
         let mclass = (*span).mclass as usize;
+        let base = span.cast::<u8>();
         let fate = {
             let mut list = self.classes[mclass].lock();
             mrelease_inner(&mut list, span, chain, n)
         };
-        mact_fate(span, fate);
+        mact_fate(base, fate);
     }
 
     /// Lock access to a class' partial list for external validation
