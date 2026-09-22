@@ -126,6 +126,9 @@ pub(crate) struct ThreadCache {
     /// Medium bins (multi-page spans), same discipline as small bins.
     mbins: [Bin; NUM_MEDIUM],
     mvirgin: [u32; NUM_MEDIUM],
+    /// Whether this thread armed the OS thread-exit flush. Set once on the
+    /// first slow path; fast paths never touch it (nor the hook machinery).
+    exit_armed: bool,
     /// Per-thread stash of freed large regions: (base, mapped_pages).
     /// Touched only by the owning thread (or the global-cache lock holder in
     /// no_std, which is still mutually exclusive), so no synchronization.
@@ -169,8 +172,7 @@ impl Pending {
 }
 
 impl ThreadCache {
-    pub(crate) const fn new() -> Self {
-        ThreadCache {
+    pub(crate) const fn new() -> Self {        ThreadCache {
             bins: [Bin {
                 head: ptr::null_mut(),
                 len: 0,
@@ -182,6 +184,7 @@ impl ThreadCache {
                 len: 0,
             }; NUM_MEDIUM],
             mvirgin: [0; NUM_MEDIUM],
+            exit_armed: false,
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
             large_bytes: 0,
@@ -271,6 +274,17 @@ impl ThreadCache {
         self.pending.per_class[NUM_CLASSES + mclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
+        }
+    }
+
+    /// Arm the OS thread-exit flush once per thread. Called on slow paths
+    /// only (refill/trim/large) — fast paths stay untouched. Threads whose
+    /// caches never leave the fast path hold nothing worth reclaiming.
+    #[inline]
+    pub(crate) fn arm_exit_hook(&mut self) {
+        if !self.exit_armed {
+            self.exit_armed = true;
+            crate::thread_exit::ensure_hook();
         }
     }
 
