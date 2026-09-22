@@ -479,7 +479,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
         return;
     }
     let span = SpanMaster::of(p);
-    if !span.is_null() {
+    if !span.is_null() && (*span).contains(p) {
         dealloc_medium(p, span);
         return;
     }

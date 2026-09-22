@@ -179,6 +179,19 @@ impl SpanMaster {
     pub(crate) unsafe fn mapped_bytes(&self) -> usize {
         self.npages as usize * PAGE_SIZE
     }
+
+    /// Ownership check: master magic intact, class in range, and `p` inside
+    /// the span extent. Guards the free path against (astronomically rare)
+    /// magic collisions with user data — collisions fail safe to the large
+    /// check / corrupt-pointer abort instead of heap corruption.
+    #[inline]
+    pub(crate) unsafe fn contains(&self, p: *mut u8) -> bool {
+        self.magic == SPAN_MAGIC
+            && (self.mclass as usize) < NUM_MEDIUM
+            && self.npages > 0
+            && (p as usize) > (self as *const _ as usize)
+            && (p as usize) < (self as *const _ as usize) + self.mapped_bytes()
+    }
 }
 
 #[repr(C, align(16))]
