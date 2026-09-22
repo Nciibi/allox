@@ -113,32 +113,49 @@ const fn count_medium() -> usize {
     n
 }
 
+/// Last value of the geometric chain (without the explicit top-up).
+const fn geo_last_medium() -> usize {
+    let mut size = medium_step(MAX_SMALL_SIZE);
+    let mut last = size;
+    while size <= MEDIUM_BLOCK_CAP {
+        last = size;
+        let next = medium_step(size);
+        if next <= size {
+            break;
+        }
+        size = next;
+    }
+    last
+}
+
 /// Number of medium size classes: the geometric chain plus one explicit top
-/// class covering the remainder up to a full page chunk (see below).
-pub(crate) const NUM_MEDIUM: usize = count_medium();
+/// class when the chain stops short of a full page chunk (see below).
+pub(crate) const NUM_MEDIUM: usize = if geo_last_medium() < TOP_MEDIUM_BLOCK {
+    count_medium() + 1
+} else {
+    count_medium()
+};
 
 /// Explicit top class: the biggest block that still fits beside headers in
 /// a 64 KiB chunk (master chunk: 65536 - 64). One block per page, eight per
 /// span — same per-lock amortization as every other medium class. Without
 /// it, requests in (geo_last, 65472] would fall to the mmap large path;
-/// that 6% tail of e.g. mixed-all dominated large-path syscalls.
+/// that ~6% tail of e.g. mixed-all dominated large-path syscalls.
 pub(crate) const TOP_MEDIUM_BLOCK: usize = 65536 - MEDIUM_CHUNK_RESERVE;
 
 const fn build_medium() -> [usize; NUM_MEDIUM] {
     let mut table = [0usize; NUM_MEDIUM];
     let mut size = medium_step(MAX_SMALL_SIZE);
     let mut i = 0;
-    // Geometric chain fills every slot except possibly the last...
-    while i < NUM_MEDIUM {
-        // ...which is pinned to the explicit top class when the chain would
-        // otherwise stop short of a full chunk.
-        if i + 1 == NUM_MEDIUM && size < TOP_MEDIUM_BLOCK {
-            table[i] = TOP_MEDIUM_BLOCK;
-        } else {
-            table[i] = size;
-        }
+    // Geometric chain first...
+    while i < NUM_MEDIUM && size <= MEDIUM_BLOCK_CAP {
+        table[i] = size;
         size = medium_step(size);
         i += 1;
+    }
+    // ...then the explicit top class if the chain stopped short.
+    if i < NUM_MEDIUM {
+        table[i] = TOP_MEDIUM_BLOCK;
     }
     table
 }
