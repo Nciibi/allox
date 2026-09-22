@@ -508,7 +508,7 @@ impl ThreadCache {
             }
             if best != usize::MAX {
                 let len = self.bins[best].len;
-                self.flush_bin(best, len / 2);
+                self.flush_bin(best, len / 2, heap_release);
                 continue;
             }
             // Small bins have nothing worth trimming; shed the largest
@@ -528,7 +528,7 @@ impl ThreadCache {
                 break;
             }
             let len = self.mbins[mbest].len;
-            self.flush_mbin(mbest, len / 2);
+            self.flush_mbin(mbest, len / 2, mheap_release);
         }
     }
 
@@ -658,9 +658,7 @@ impl ThreadCache {
                         if ng >= MAX_MFLUSH_GROUPS {
                             // No room to group: release solo (blocking path
                             // always succeeds; try path may abandon).
-                            if !release(master, b, 1) {
-                                continue;
-                            }
+                            let _ = release(master, b, 1);
                             continue;
                         }
                         groups[ng] = MGroup {
