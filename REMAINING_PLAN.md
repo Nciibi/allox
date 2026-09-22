@@ -116,7 +116,7 @@ suspicion. No blind experiments (the count-cap regression taught this).
   macOS-specific branches: `MAP_ANONYMOUS` value, `pthread_key_t` width,
   `MAP_FIXED` without `NOREPLACE`).
 * 32-bit build + arena fallback tests in CI.
-* CHANGELOG 0.1.0 entry$1 API review (telemetry array already grew pre-1.0
+* CHANGELOG 0.1.0 entry, API review (telemetry array already grew pre-1.0
   — acceptable, note it), version-bump hygiene, `cargo publish --dry-run`.
 * External audit scoping for the unsafe core (page/heap/cache/lib
   unsafe blocks + new arena/exit code). Not a launch blocker for 0.2
