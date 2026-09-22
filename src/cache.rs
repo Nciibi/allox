@@ -427,9 +427,21 @@ impl ThreadCache {
     }
 
     /// Take a stashed large region with at least `pages_needed` pages.
-    /// Best-fit over at most LARGE_STASH_SLOTS entries; returns the region's
-    /// (base, mapped_pages). Lock-free: owning thread only.
+    /// Exact-size matches win over merely-fitting ones (see
+    /// `LargeRegionCache::take_fit` for why); best-fit otherwise. Lock-free:
+    /// owning thread only.
     pub(crate) fn take_large_stash(&mut self, pages_needed: u32) -> Option<(*mut u8, u32)> {
+        for i in 0..self.large_len as usize {
+            if self.large[i].1 == pages_needed {
+                let last = self.large_len as usize - 1;
+                let entry = self.large[i];
+                self.large[i] = self.large[last];
+                self.large[last] = (ptr::null_mut(), 0);
+                self.large_len = last as u32;
+                self.large_bytes -= entry.1 as usize * crate::page::PAGE_SIZE;
+                return Some(entry);
+            }
+        }
         let mut best: Option<usize> = None;
         for i in 0..self.large_len as usize {
             let (_, pages) = self.large[i];
