@@ -276,3 +276,9 @@ verified). Bonus: layout routing skips ~4 loads + branches per free.
   no_std + release green. Next: Phase 1 arena (reservation + MAP_FIXED
   commits + hole lists), which additionally kills span/page trim and buys
   locality.
+* Recheck (post-Phase-0 review): free-function `realloc` probed spans
+  unconditionally — reachable with live unaligned large pointers, same
+  fault class. Gated on `!old_large_ok`. Also flagged (pre-existing, out
+  of scope): `GlobalAlloc::realloc` same-class identity with
+  `layout.size() == 0` can return the dangling pointer for nonzero
+  `new_size`; needs its own fix + test.
