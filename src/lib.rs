@@ -187,14 +187,18 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 /// Cache of recently freed large regions, recycled on the next matching
 /// large allocation instead of paying unmap+map syscalls.
 ///
-/// Two tiers (P1):
+/// Three tiers:
 /// - per-thread stash in `ThreadCache` (lock-free): absorbs same-thread
 ///   reuse without any synchronization.
-/// - sharded global overflow (independent mutexes): spreads cross-thread
-///   cross-thread contention that used to serialize on one lock, and keeps
-///   each best-fit scan to `LARGE_SHARD_SLOTS` entries instead of 64.
+/// - sharded hot cache (independent mutexes): spreads cross-thread
+///   contention; best-fit over a bounded entry list.
+/// - sharded cold cache: physical dropped via `sys::discard`, virtual
+///   retained for reuse. Absorbs churn bursts without the unmap/remap storm
+///   (same trick as medium-span cold retention in `heap.rs`).
 ///
-/// Worst-case retention is the global cap plus each live thread's stash cap.
+/// Worst-case retention is the hot+cold caps plus each live thread's stash.
+/// Cold bytes are virtual-only after discard; RSS impact is bounded by live
+/// demand, not by the caps.
 const NUM_LARGE_SHARDS: usize = 8;
 /// Slots per shard: generous, because the byte cap (not the slot count)
 /// bounds retention — 64 slots × 16 B = 1 KiB of static storage per shard.
@@ -202,11 +206,21 @@ const NUM_LARGE_SHARDS: usize = 8;
 /// slot-starve there (the old single 64-slot cache never did).
 const LARGE_SHARD_SLOTS: usize = 64;
 const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
+/// Cold (discarded, virtually retained) bytes per shard. Deep on 64-bit
+/// where virtual is free; shallow on 32-bit address spaces.
+#[cfg(target_pointer_width = "64")]
+const LARGE_COLD_CAP_BYTES: usize = 64 * 1024 * 1024; // 8 x 64 MiB virtual
+#[cfg(not(target_pointer_width = "64"))]
+const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
+const LARGE_COLD_SLOTS: usize = 64;
 
 struct LargeRegionCache {
     len: usize,
     bytes: usize,
     entries: [(*mut u8, u32); LARGE_SHARD_SLOTS], // (base, mapped_pages)
+    cold_len: usize,
+    cold_bytes: usize,
+    cold: [(*mut u8, u32); LARGE_COLD_SLOTS],
 }
 
 // Raw pointers are only touched while holding the enclosing mutex.
@@ -218,7 +232,53 @@ impl LargeRegionCache {
             len: 0,
             bytes: 0,
             entries: [(ptr::null_mut(), 0); LARGE_SHARD_SLOTS],
+            cold_len: 0,
+            cold_bytes: 0,
+            cold: [(ptr::null_mut(), 0); LARGE_COLD_SLOTS],
         }
+    }
+
+    /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
+    /// Removes and returns `(base, mapped_pages)`. Caller holds the lock.
+    /// Both tiers need only a header rewrite (fresh=false); cold contents
+    /// were discarded, hot contents are dirty — calloc memsets either way.
+    fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32)> {
+        let mut best: Option<usize> = None;
+        for i in 0..self.len {
+            let (_, pages) = self.entries[i];
+            if (pages as usize) * page::PAGE_SIZE >= mapped
+                && best.map_or(true, |b| self.entries[i].1 < self.entries[b].1)
+            {
+                best = Some(i);
+            }
+        }
+        if let Some(i) = best {
+            let last = self.len - 1;
+            let entry = self.entries[i];
+            self.entries[i] = self.entries[last];
+            self.entries[last] = (ptr::null_mut(), 0);
+            self.len = last;
+            self.bytes -= entry.1 as usize * page::PAGE_SIZE;
+            return Some(entry);
+        }
+        let mut cbest: Option<usize> = None;
+        for i in 0..self.cold_len {
+            let (_, pages) = self.cold[i];
+            if (pages as usize) * page::PAGE_SIZE >= mapped
+                && cbest.map_or(true, |b| self.cold[i].1 < self.cold[b].1)
+            {
+                cbest = Some(i);
+            }
+        }
+        cbest.map(|i| {
+            let last = self.cold_len - 1;
+            let entry = self.cold[i];
+            self.cold[i] = self.cold[last];
+            self.cold[last] = (ptr::null_mut(), 0);
+            self.cold_len = last;
+            self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
+            entry
+        })
     }
 }
 
