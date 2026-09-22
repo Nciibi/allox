@@ -146,6 +146,7 @@ mod tls {
     }
 
     pub(crate) use imp::flush;
+    pub(crate) use imp::flush_best_effort;
     pub(crate) use imp::with;
 }
 
