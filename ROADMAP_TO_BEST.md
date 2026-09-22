@@ -178,6 +178,27 @@ Scoreboard (Linux Ryzen 5 1600, median of 3 × 2 s):
   large caches, virtual retention like spans got).
 * `spawn-churn`: 276k, 0.15x — dead-thread reclamation (exit-flush NEXT).
 
+## P1d results — large cold tier + exact-fit-first (1 s/1 rep probes)
+
+What shipped (`src/lib.rs`, `src/cache.rs`): large shards gained a cold
+tier (discard physical via `sys::discard`, retain virtual; 64 MB/shard on
+64-bit) with post-lock discard, mirroring span cold. Both shard (`take_fit`)
+and thread-stash (`take_large_stash`) selection went exact-fit-first:
+under size variance, best-fit eats big regions for small requests and
+starves future big requests; exact-first preserves per-size reuse pools.
+
+* `large-only 8T`: 455k → 1.31M (+2.7x), now beats talc/system (3.5x).
+  Still 0.11x mimalloc (12M) — remaining gap is syscall volume (41k
+  maps/s × over-map trim = ~160k VMA ops/s kernel-serialized across
+  threads), not cache depth. Next levers: arena mapping (1 VMA op/miss
+  instead of 3–4) or spans for big sizes (no syscalls at all).
+* `large-only 1T`: flat at 150k (miss-rate bound under 32K–1M uniform
+  variance; exact pools need more depth per size than 136 slots hold).
+* `mixed-all 1T` tail effect: large maps 35k/s → 14/s (exact-fit keeps the
+  64K-tail pool clean). Total maps 44k → 17.5k.
+* No regressions: `mixed-small 8T` 141M, `tight-small 1T` 49M,
+  `mixed-all 1T` 1.56M. Full suite green (incl. 33 s randomized churn).
+
 Net: 6.5/10 workloads win-or-tie vs the BEST comparator (was: best
 pure-Rust on small only). 1 s single samples understate steady state by
 ~2.7x on mixed-all (warmup); use ≥2 s × 3 reps for tuning decisions.
