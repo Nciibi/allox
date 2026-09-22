@@ -30,8 +30,9 @@ talc = "5"
 spinning_top = "0.3"
 dlmalloc = { version = "0.2", features = ["global"] }
 # P0 honest scoreboard: C comparators, dev-only so the lib stays zero-deps / no-C.
+# NOTE: tikv-jemallocator needs make+autoconf (absent here); enable in CI where
+# those exist. mimalloc + snmalloc-rs(build_cc) only need cc/c++.
 mimalloc = "0.1"
-tikv-jemallocator = "0.6"
 snmalloc-rs = { version = "0.7", features = ["build_cc"] }
 
 [[bench]]
