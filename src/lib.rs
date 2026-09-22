@@ -815,20 +815,23 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     if p.is_null() {
         return 0;
     }
+    // Large-offset check first: fault-safe for every live pointer (masked
+    // reads can dangle outside unaligned large regions — see dealloc_impl).
+    // Cold path, so the extra load on small/medium is irrelevant.
+    if (*(p.wrapping_sub(LARGE_HEADER_SIZE) as *const LargeHeader)).magic == LARGE_MAGIC {
+        let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+        return (*hdr).mapped_size - (p as usize - (*hdr).base as usize);
+    }
     let base = p as usize & !PAGE_MASK;
     if *(base as *const u64) == page::PAGE_MAGIC {
         let page = base as *mut page::PageHeader;
         classes::CLASSES[(*page).class as usize]
     } else {
-        // Span before large: a medium block's header-ward bytes must never be
+        // Span before abort: a medium block's header-ward bytes must never be
         // mistaken for a large header (checked with contains, not just magic).
         let span = SpanMaster::of(p);
         if !span.is_null() && (*span).contains(p) {
             classes::MEDIUM_CLASSES[(*span).mclass as usize]
-        } else if (*(p.wrapping_sub(LARGE_HEADER_SIZE) as *const LargeHeader)).magic == LARGE_MAGIC
-        {
-            let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
-            (*hdr).mapped_size - (p as usize - (*hdr).base as usize)
         } else {
             0
         }
