@@ -403,10 +403,9 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
             (*hdr).base = base;
             return (ret as *mut u8, false);
         }
-        // Alignment made the cached region unusable; drop it.
-        sys::unmap(base, region_size);
-        heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-        heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        // Alignment made the cached region unusable; drop it (arena-owned
+        // slices park in holes, legacy ones truly unmap — counters follow).
+        unmap_or_return(base, region_size);
     }
 
     // Tier 2+3: best-fit region from the sharded recycle cache (hot, then
