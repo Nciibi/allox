@@ -53,7 +53,7 @@ mod imp {
         let key = HOOK_KEY.get_or_init(|| {
             let mut k: Key = 0;
             // SAFETY: out-pointer valid for the call; destructor is a plain
-            // extern fn with no allocator interaction beyond try-flush.
+            // extern fn with no allocator interaction beyond the full flush.
             let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
             if r == 0 {
                 Some(k)
