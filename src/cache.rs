@@ -12,10 +12,10 @@
 
 use crate::classes::CLASSES;
 use crate::classes::NUM_CLASSES;
-use crate::heap::REFILL_BATCH;
+use crate::heap::{MAPPED_PAGES, REFILL_BATCH, UNMAP_CALLS};
 use crate::page::{pop_block, push_block, PageHeader};
+use crate::sys;
 use core::ptr;
-
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
 /// Total bytes one thread's cache may retain before trimming starts.
@@ -423,6 +423,21 @@ impl ThreadCache {
         }
         self.cached_bytes = 0;
         self.virgin = [0; NUM_CLASSES];
+        // Stashed large regions are unmapped directly (no global lock held
+        // here beyond the caller's cache ownership) so an explicit flush
+        // actually returns memory instead of shuffling it to shared shards.
+        for i in 0..self.large_len as usize {
+            let (base, pages) = self.large[i];
+            if !base.is_null() {
+                let size = pages as usize * crate::page::PAGE_SIZE;
+                sys::unmap(base, size);
+                MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                self.large[i] = (ptr::null_mut(), 0);
+            }
+        }
+        self.large_len = 0;
+        self.large_bytes = 0;
         #[cfg(feature = "telemetry")]
         self.publish();
     }
