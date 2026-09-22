@@ -39,6 +39,7 @@ mod imp {
 
     unsafe extern "C" fn thread_exit_flush(_value: *mut c_void) {
         // Panic-free by construction (bounded loops, atomics, syscalls only).
+        eprintln!("[allox-debug] thread-exit flush firing");
         crate::tls_flush_best_effort();
     }
 
@@ -48,6 +49,7 @@ mod imp {
             // SAFETY: out-pointer valid for the call; destructor is a plain
             // extern fn with no allocator interaction beyond try-flush.
             let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
+            eprintln!("[allox-debug] pthread_key_create -> {} key {:?}", r, k);
             if r == 0 {
                 Some(k)
             } else {
