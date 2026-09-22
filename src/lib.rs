@@ -582,6 +582,31 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     p
 }
 
+/// Validate a large-region header for `p`: magic matches AND the range is
+/// self-consistent (nonzero 64 KiB-multiple size, header strictly below `p`,
+/// `p` inside `[base, base+mapped)`). Returns `(base, mapped_size)`.
+///
+/// The range check turns a coincidental 8-byte magic match in adjacent user
+/// data (2⁻⁶⁴ on its own) into a ~2⁻¹⁰⁰ non-event, which matters now that
+/// this probe runs before the exact small-page check.
+#[inline]
+unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
+    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+    if (*hdr).magic != LARGE_MAGIC {
+        return None;
+    }
+    let mapped = (*hdr).mapped_size;
+    let base = (*hdr).base as usize;
+    if mapped == 0 || mapped & PAGE_MASK != 0 {
+        return None;
+    }
+    let off = p as usize).wrapping_sub(base);
+    if off == 0 || off >= mapped {
+        return None;
+    }
+    Some((base as *mut u8, mapped))
+}
+
 unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
