@@ -105,16 +105,6 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
-
-        pub(crate) fn flush_best_effort() {
-            let r = CACHE.try_with(|c| {
-                eprintln!("[allox-debug] flush_best_effort: TLS ok");
-                unsafe { c.get().as_mut().map(|cc| cc.try_flush_all()) };
-            });
-            if r.is_err() {
-                eprintln!("[allox-debug] flush_best_effort: TLS GONE");
-            }
-        }
     }
 
     #[cfg(not(feature = "std"))]
@@ -145,22 +135,10 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
-
-        pub(crate) fn flush_best_effort() {
-            with(|c| unsafe { c.try_flush_all() }, || {});
-        }
     }
 
     pub(crate) use imp::flush;
-    pub(crate) use imp::flush_best_effort;
     pub(crate) use imp::with;
-}
-
-/// Best-effort flush of the calling thread's cache: try-locks and unmaps
-/// only, never blocks. Entry point for the OS thread-exit hook; also safe
-/// to call any time. Panic-free by construction.
-pub(crate) unsafe fn tls_flush_best_effort() {
-    tls::flush_best_effort();
 }
 
 /// Full flush of the calling thread's cache (may block on heap locks).

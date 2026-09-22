@@ -256,30 +256,6 @@ impl GlobalHeap {
         }
     }
 
-    /// Best-effort `release_blocks` for thread-exit flush: never blocks.
-    /// Returns false (chain abandoned — same as today's dead-thread leak,
-    /// just rarer) when the class lock is held.
-    pub(crate) unsafe fn try_release_blocks(
-        &self,
-        page: *mut PageHeader,
-        chain: *mut u8,
-        n: u16,
-    ) -> bool {
-        let class = (*page).class as usize;
-        let Some(mut list) = self.classes[class].try_lock() else {
-            return false;
-        };
-        let unmap_now = release_inner(&mut list, page, chain, n);
-        drop(list);
-        if unmap_now {
-            sys::unmap(page.cast::<u8>(), PAGE_SIZE);
-            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-            SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-        }
-        true
-    }
-
     /// Lock access to a class' partial list for external validation
     /// (debug double-free detection).
     #[cfg(debug_assertions)]
@@ -577,24 +553,6 @@ impl MediumHeap {
             mrelease_inner(&mut list, span, chain, n)
         };
         mact_fate(span, fate);
-    }
-
-    /// Best-effort `release_blocks` for thread-exit flush: never blocks.
-    /// Returns false (chain abandoned) when the class lock is held.
-    pub(crate) unsafe fn try_release_blocks(
-        &self,
-        span: *mut SpanMaster,
-        chain: *mut u8,
-        n: u32,
-    ) -> bool {
-        let mclass = (*span).mclass as usize;
-        let Some(mut list) = self.classes[mclass].try_lock() else {
-            return false;
-        };
-        let fate = mrelease_inner(&mut list, span, chain, n);
-        drop(list);
-        mact_fate(span, fate);
-        true
     }
 
     /// Lock access to a class' partial list for external validation
