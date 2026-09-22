@@ -7,8 +7,10 @@
 //! construction cannot happen while any thread still caches one of its
 //! blocks. No code path ever holds two class locks at once.
 
-use crate::classes::NUM_CLASSES;
-use crate::page::{pop_block, PageHeader, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE};
+use crate::classes::{span_pages_for, NUM_CLASSES, NUM_MEDIUM};
+use crate::page::{
+    pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE,
+};
 use crate::sys::{self, Mutex};
 #[cfg(debug_assertions)]
 use crate::sys::MutexGuard;
