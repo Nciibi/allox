@@ -162,16 +162,24 @@ unsafe fn dealloc_small(p: *mut u8) {
 }
 
 /// Cache of recently freed large regions, recycled on the next matching
-/// large allocation instead of paying unmap+map syscalls. Fixed table —
-/// the allocator must never allocate internally. Worst-case retention is
-/// `LARGE_CACHE_CAP_BYTES`.
-const LARGE_CACHE_SLOTS: usize = 64;
-const LARGE_CACHE_CAP_BYTES: usize = 64 * 1024 * 1024;
+/// large allocation instead of paying unmap+map syscalls.
+///
+/// Two tiers (P1):
+/// - per-thread stash in `ThreadCache` (lock-free, 4 slots / 4 MiB): absorbs
+///   same-thread reuse without any synchronization.
+/// - sharded global overflow (`LARGE_SHARDS` independent mutexes): spreads
+///   cross-thread contention that used to serialize on one lock, and keeps
+///   each best-fit scan to `LARGE_SHARD_SLOTS` entries instead of 64.
+///
+/// Worst-case retention is the global cap plus each live thread's stash cap.
+const LARGE_SHARDS: usize = 8;
+const LARGE_SHARD_SLOTS: usize = 16;
+const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
 
 struct LargeRegionCache {
     len: usize,
     bytes: usize,
-    entries: [(*mut u8, u32); LARGE_CACHE_SLOTS], // (base, mapped_pages)
+    entries: [(*mut u8, u32); LARGE_SHARD_SLOTS], // (base, mapped_pages)
 }
 
 // Raw pointers are only touched while holding the enclosing mutex.
@@ -182,12 +190,21 @@ impl LargeRegionCache {
         LargeRegionCache {
             len: 0,
             bytes: 0,
-            entries: [(ptr::null_mut(), 0); LARGE_CACHE_SLOTS],
+            entries: [(ptr::null_mut(), 0); LARGE_SHARD_SLOTS],
         }
     }
 }
 
-static LARGE_CACHE: sys::Mutex<LargeRegionCache> = sys::Mutex::new(LargeRegionCache::new());
+static LARGE_SHARDS: [sys::Mutex<LargeRegionCache>; LARGE_SHARDS] =
+    [const { sys::Mutex::new(LargeRegionCache::new()) }; LARGE_SHARDS];
+
+/// Pick a shard from the region size salted by the calling thread, so equal
+/// sizes from different threads spread while similar sizes on one thread
+/// still meet for reuse. `salt` is the thread-cache address (0 off-thread).
+#[inline]
+fn large_shard(mapped_pages: usize, salt: usize) -> usize {
+    (mapped_pages ^ (salt >> 6)) % LARGE_SHARDS
+}
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     alloc_large_ex(size, align).0
