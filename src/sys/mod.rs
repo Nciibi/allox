@@ -12,7 +12,7 @@ pub(crate) mod windows;
 
 use core::cell::UnsafeCell;
 
-#[cfg(all(target_family = "wasm", not(windows)))]
+#[cfg(not(windows))]
 pub(crate) use spin_raw::RawMutex;
 #[cfg(unix)]
 pub(crate) use unix::{map, unmap};

@@ -9,7 +9,9 @@
 
 use crate::classes::NUM_CLASSES;
 use crate::page::{pop_block, PageHeader, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE};
-use crate::sys::{self, Mutex, MutexGuard};
+use crate::sys::{self, Mutex};
+#[cfg(debug_assertions)]
+use crate::sys::MutexGuard;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
