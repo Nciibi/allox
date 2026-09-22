@@ -87,6 +87,9 @@ pub(crate) struct ThreadCache {
     /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
     /// iff the remaining length drops below this count.
     virgin: [u32; NUM_CLASSES],
+    /// Medium bins (multi-page spans), same discipline as small bins.
+    mbins: [Bin; NUM_MEDIUM],
+    mvirgin: [u32; NUM_MEDIUM],
     /// Per-thread stash of freed large regions: (base, mapped_pages).
     /// Touched only by the owning thread (or the global-cache lock holder in
     /// no_std, which is still mutually exclusive), so no synchronization.
@@ -111,7 +114,8 @@ pub(crate) struct Pending {
     frees: u64,
     bytes_in: u64,
     bytes_out: u64,
-    per_class: [u64; NUM_CLASSES],
+    /// Small classes at 0..NUM_CLASSES, medium classes after.
+    per_class: [u64; TOTAL_CLASSES],
 }
 
 #[cfg(feature = "telemetry")]
@@ -123,7 +127,7 @@ impl Pending {
             frees: 0,
             bytes_in: 0,
             bytes_out: 0,
-            per_class: [0; NUM_CLASSES],
+            per_class: [0; TOTAL_CLASSES],
         }
     }
 }
@@ -137,6 +141,11 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             virgin: [0; NUM_CLASSES],
+            mbins: [Bin {
+                head: ptr::null_mut(),
+                len: 0,
+            }; NUM_MEDIUM],
+            mvirgin: [0; NUM_MEDIUM],
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
             large_bytes: 0,
