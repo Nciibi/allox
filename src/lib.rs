@@ -163,6 +163,14 @@ pub(crate) unsafe fn tls_flush_best_effort() {
     tls::flush_best_effort();
 }
 
+/// Full flush of the calling thread's cache (may block on heap locks).
+/// Used by the OS thread-exit hook, where blocking is safe (no allocator
+/// locks are ever held at thread exit, and heap locks never cycle with OS
+/// teardown locks). Panic-free by construction.
+pub(crate) unsafe fn tls_flush_full() {
+    tls::flush();
+}
+
 #[inline]
 fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl FnOnce() -> R) -> R {
     tls::with(f, fallback)

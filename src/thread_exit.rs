@@ -38,9 +38,16 @@ mod imp {
     static HOOK_KEY: std::sync::OnceLock<Option<Key>> = std::sync::OnceLock::new();
 
     unsafe extern "C" fn thread_exit_flush(_value: *mut c_void) {
+        // Blocking flush: at thread exit no allocator locks are held (all
+        // critical sections are scoped and user-code-free), so waiting on a
+        // class lock can only stall behind another bounded critical section
+        // — never deadlock. pthread-key destructors hold no locks that heap
+        // locks could cycle with. Try-only flushing was measured to abandon
+        // ~everything when several threads exit at once (thundering herd on
+        // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
         eprintln!("[allox-debug] thread-exit flush firing");
-        crate::tls_flush_best_effort();
+        crate::tls_flush_full();
     }
 
     pub(crate) fn ensure_hook() {
@@ -80,9 +87,11 @@ mod imp {
     static HOOK_SLOT: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
 
     unsafe extern "system" fn fls_flush(_value: *mut c_void) {
-        // Panic-free by construction; try-locks only (never parks, so this
-        // is safe inside the Fls callback where blocking is delicate).
-        crate::tls_flush_best_effort();
+        // Blocking is safe here too: SRWLock never touches the loader lock,
+        // and allocator critical sections never touch it either, so no wait
+        // cycle exists even though Fls callbacks run during thread teardown.
+        // Panic-free by construction (see above).
+        crate::tls_flush_full();
     }
 
     pub(crate) fn ensure_hook() {
