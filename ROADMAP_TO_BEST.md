@@ -247,7 +247,7 @@ Two real bugs found along the way (both caught by the new tests):
 
 * Exit-flush generations test: +1050 mappings/gen without hook vs
   187→203→223→232→228 (flat) with hook.
-* `spawn-churn`: 1.04M → 2.86M (small cold killed the 17k/s unmap storm;
+* `spawn-churn`: 1.04M → **2.86M** (small cold killed the 17k/s unmap storm;
   probe now shows 1 map, 0 unmaps), RSS GBs → 44 MB. Beats talc (1.46x),
   0.8x system, 0.22x mimalloc. Remaining gap decomposed via `spawn-empty`:
   spawn itself is 40µs for everyone; the rest is per-op + exit work needing
@@ -255,3 +255,24 @@ Two real bugs found along the way (both caught by the new tests):
 * `mixed-all 8T`: 10.6M → 13.55M (0.71x mimalloc, beats system 12.4M).
 * No regressions: `tight-small 1T` 44.6M, `mixed-small 1T` 28.9M.
   Full suite green (11 binaries incl. new `thread_exit`).
+
+## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
+
+What shipped: `sys::map_any` (plain 4 KiB `mmap`, unix-only; alias to `map`
+elsewhere) used by `alloc_large_ex` — large regions are offset-header
+located, never masked, so 64 KiB alignment bought nothing. Required a
+dispatch overhaul when stress segfaulted: unaligned bases let masked
+pre-checks round *outside* the region into unmapped memory. Fix:
+`dealloc_impl`/`usable_size`/free-`realloc` check the large-offset header
+first (always in-bounds for live pointers) with range validation
+(`large_header_of`: magic + nonzero 64 KiB-multiple size + header strictly
+below `p` + `p` in range), and `GlobalAlloc::{dealloc,realloc}` route by
+contract layout via `dealloc_with_layout` (zero probing reads, debug
+verified). Bonus: layout routing skips ~4 loads + branches per free.
+
+* `large-only 1T`: 150k → 210k (+40%), vs system 0.84x (was 0.6x).
+* `mixed-all 1T`: 1.56M → 2.24M (+44%).
+* `tight-small 1T`: flat at 43.7M. Full suite (10 binaries) + telemetry +
+  no_std + release green. Next: Phase 1 arena (reservation + MAP_FIXED
+  commits + hole lists), which additionally kills span/page trim and buys
+  locality.
