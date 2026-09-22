@@ -131,8 +131,9 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    Contention fixed; miss-rate gap remains and needs spans (P1c).
 3. P1c medium spans (16-64K via multi-page spans) → DONE (see results).
    P1d large cold + exact-fit → DONE (see results).
-   NEXT: exit-flush (spawn-churn 0.15x) or arena mapping (large-only 8T
-   syscall volume) or spans-for-big-sizes (large-only hit rate).
+   P1e exit-flush + cold-array bugfix + small cold → DONE (see below).
+   NEXT: P2 futex/parking mutex (unix spin convoy hypothesis) + refill
+   tuning, or spans-for-big-sizes (large-only hit rate).
 4. P1 exit-flush + drift cap → after spans.
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.

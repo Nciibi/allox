@@ -192,13 +192,19 @@ free_count: u16, used: u16, class: u16, flags: u16.
 ThreadCache: `[Bin; N_CLASSES]` where Bin { head: *mut u8, len: u32 },
 plus total count. Const-initializable so TLS needs no lazy init or Drop.
 
-### 4.5 The thread-exit problem (deliberate trade-off)
+### 4.5 The thread-exit problem (solved with an OS hook, not TLS dtors)
 TLS destructors from inside an allocator risk rust#116390-style breakage and
 Windows loader-lock deadlocks. Decision: const-initialized, destructor-less
-TLS. Cached blocks of dead threads stay accounted as `used` on their pages
-until those pages are naturally reclaimed; `allox_flush_thread()` exists for
-explicit reclamation (documented for thread-pool users). Revisit with a
-best-effort try-lock flush registered via a mechanism outside TLS dtors.
+TLS, plus one OS key per process (pthread_key / FlsAlloc, `src/thread_exit.rs`)
+whose destructor runs the normal blocking `flush_all` at thread exit. Blocking
+is safe there: no allocator locks are ever held at thread exit, heap critical
+sections are bounded and user-code-free, and neither pthread-key destructors
+nor Fls callbacks hold a lock our heap could cycle with. (Try-only flushing
+was measured to abandon nearly everything when several threads exit at once.)
+Hooks arm lazily on slow paths, so fast paths pay nothing and threads that
+never allocate are untouched. `flush_current_thread()` remains for explicit
+reclamation (thread pools, the main thread on return-from-main). Measured:
+per-generation mapped growth went from +1050 mappings (linear leak) to flat.
 
 ## 5. Public API
 
