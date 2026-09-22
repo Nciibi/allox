@@ -462,7 +462,9 @@ unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mu
             list.empty_count += 1;
             list.empty_bytes += span_bytes;
             SpanFate::Keep
-        } else if list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS {
+                } else if list.cold_len as usize<Element as usize> < MAX_COLD_SPAN_SLOTS
+                    && list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS
+                {
             // Cold: drop physical, keep virtual. Re-carved on reuse.
             (*span).next = list.cold;
             list.cold = span;
@@ -526,16 +528,17 @@ impl MediumHeap {
                 mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
             }
 
-            if count == 0 && !list.cold.is_null() {
-                // Cold span: virtual reservation survived, contents didn't.
-                // Re-carve (no syscalls) and treat as non-virgin so calloc
-                // always memsets — safe even if the discard was a no-op.
-                let span = list.cold;
-                list.cold = (*span).next;
-                (*span).next = ptr::null_mut();
-                list.cold_count -= 1;
-                list.cold_bytes -= (*span).mapped_bytes();
-                let pages = (*span).npages;
+            if count == 0 && list.cold_len > 0 {
+                // Cold span: virtual reservation survived, contents didn't
+                // (discard zeroes headers too — npages comes from the array,
+                // never from inside the span). Re-carve (no syscalls) and
+                // treat as non-virgin so calloc always memsets — safe even
+                // if the discard was a no-op.
+                list.cold_len -= 1;
+                let (base, pages) = list.cold[list.cold_len as usize];
+                list.cold[list.cold_len as usize] = (ptr::null_mut(), 0);
+                list.cold_bytes -= pages as usize * PAGE_SIZE;
+                let span = base.cast::<SpanMaster>();
                 (*span).init(mclass, pages);
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
