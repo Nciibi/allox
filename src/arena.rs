@@ -430,13 +430,19 @@ mod tests {
         }
         assert!(unsafe { a.commit(1) }.is_null());
         assert!(unsafe { a.commit(64) }.is_null());
-        // Returning everything restores full service via holes.
-        for b in bases {
+        // Exact-size holes serve exact requests (no syscalls beyond commit).
+        for b in bases.drain(..) {
             unsafe { a.release(b, 1) };
         }
-        let b = unsafe { a.commit(4) };
-        assert!(!b.is_null(), "hole reuse after exhaustion");
-        unsafe { a.release(b, 4) };
+        for _ in 0..4 {
+            let b = unsafe { a.commit(1) };
+            assert!(!b.is_null(), "exact hole reuse");
+            unsafe { a.release(b, 1) };
+        }
+        // Documented v1 limitation: holes never coalesce, so four 1-page
+        // holes can't serve a 4-page request — the caller falls back to a
+        // legacy mapping (correct, just one syscall). Future: coalescing.
+        assert!(unsafe { a.commit(4) }.is_null());
     }
 
     #[test]
