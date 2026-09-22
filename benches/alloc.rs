@@ -454,7 +454,7 @@ fn main() {
     ];
 
     println!(
-        "{:<15} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11} {:>9} {:>10} {:>10}",
+        "{:<15} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11} {:>9} {:>10} {:>10} {:>10}",
         "workload",
         "allox",
         "talc",
@@ -464,9 +464,10 @@ fn main() {
         "snmalloc",
         "a/talc",
         "mapcalls",
+        "unmaps",
         "peakRSS",
     );
-    println!("{}", "-".repeat(125));
+    println!("{}", "-".repeat(137));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     for wl in WORKLOADS {
