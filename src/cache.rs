@@ -353,12 +353,13 @@ impl ThreadCache {
     }
 
     /// Medium fast-path allocation. Returns null only on OS exhaustion.
+    /// Retention is count-based (MEDIUM_BIN_CAP), not byte-budgeted — see
+    /// the const docs for why byte budgets collapse medium hit rates.
     pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
         let bin = &mut self.mbins[mclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= MEDIUM_CLASSES[mclass];
             if below < self.mvirgin[mclass] {
                 self.mvirgin[mclass] -= 1;
             }
@@ -380,7 +381,6 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= MEDIUM_CLASSES[mclass];
             let zeroed = below < self.mvirgin[mclass];
             if zeroed {
                 self.mvirgin[mclass] -= 1;
@@ -398,11 +398,10 @@ impl ThreadCache {
     }
 
     /// Medium slow path: pull one span's worth of blocks from the heap.
+    /// Refill only runs on an empty bin, so the result (<=15 blocks) always
+    /// fits under MEDIUM_BIN_CAP — no trim needed here.
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
-        if self.cached_bytes > thread_cache_budget() / 2 {
-            self.trim();
-        }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
         if chain.is_null() {
             return (ptr::null_mut(), false);
@@ -412,7 +411,6 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
         bin.head = rest;
         bin.len += count - 1;
-        self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
         self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
         (first, virgin)
     }
@@ -425,11 +423,10 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
-        self.cached_bytes += MEDIUM_CLASSES[mclass];
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
-        if self.cached_bytes > thread_cache_budget() {
-            self.trim();
+        if bin.len > MEDIUM_BIN_CAP {
+            self.flush_mbin(mclass, MEDIUM_BIN_CAP / 2);
         }
     }
 
