@@ -462,16 +462,17 @@ unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mu
             list.empty_count += 1;
             list.empty_bytes += span_bytes;
             SpanFate::Keep
-                } else if list.cold_len as usize<Element as usize> < MAX_COLD_SPAN_SLOTS
+                } else if (list.cold_len as usize) < MAX_COLD_SPAN_SLOTS
                     && list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS
                 {
-            // Cold: drop physical, keep virtual. Re-carved on reuse.
-            (*span).next = list.cold;
-            list.cold = span;
-            list.cold_count += 1;
-            list.cold_bytes += span_bytes;
-            SpanFate::Cold
-        } else {
+                    // Cold: drop physical, keep virtual. Array-stored (base,
+                    // npages) so the discard can't destroy the linkage.
+                    let idx = list.cold_len as usize;
+                    list.cold[idx] = (span.cast::<u8>(), (*span).npages);
+                    list.cold_len += 1;
+                    list.cold_bytes += span_bytes;
+                    SpanFate::Cold
+                } else {
             SpanFate::Unmap(span_bytes)
         }
     } else {
