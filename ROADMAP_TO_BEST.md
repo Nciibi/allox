@@ -205,3 +205,34 @@ starves future big requests; exact-first preserves per-size reuse pools.
 Net: 6.5/10 workloads win-or-tie vs the BEST comparator (was: best
 pure-Rust on small only). 1 s single samples understate steady state by
 ~2.7x on mixed-all (warmup); use ≥2 s × 3 reps for tuning decisions.
+
+## P1e results — exit-flush + cold-array bugfix + small cold
+
+What shipped: `src/thread_exit.rs` (pthread_key/FlsAlloc hook, slow-path
+arming via `exit_armed`, blocking `flush_all` in the destructor — try-only
+was measured to abandon ~everything under concurrent exits), `heap.rs`
+`release_inner`/`mrelease_inner` cores, `cache.rs` flush regroup (blocking
+only; try machinery deleted), `__debug_map_split` now 4-way, `spawn-empty`
+bench workload (pure spawn calibration: ~25k threads/s for ALL allocators).
+
+Two real bugs found along the way (both caught by the new tests):
+1. Span cold list stored intrusive links INSIDE discarded spans — madvise
+   zeroes them, destroying the list (silent virtual leak + remap churn in
+   release; `debug_assert!(count > 0)` fire in debug). Fixed with
+   array-stored (base, npages) like large cold. Lesson: never store
+   metadata inside discardable ranges.
+2. Test-metric design: mapped_pages can't distinguish leaks from
+   intentional cold/empty retention. `tests/thread_exit.rs` now asserts
+   cross-generation convergence (flat) instead of absolute counts, with a
+   verified-sensitive threshold (hook disabled → +1050 mappings/gen linear).
+
+* Exit-flush generations test: +1050 mappings/gen without hook vs
+  187→203→223→232→228 (flat) with hook.
+* `spawn-churn`: 1.04M → 2.86M (small cold killed the 17k/s unmap storm;
+  probe now shows 1 map, 0 unmaps), RSS GBs → 44 MB. Beats talc (1.46x),
+  0.8x system, 0.22x mimalloc. Remaining gap decomposed via `spawn-empty`:
+  spawn itself is 40µs for everyone; the rest is per-op + exit work needing
+  P2 lock/parking work (unix spin-convoy hypothesis for the MT remainder).
+* `mixed-all 8T`: 10.6M → 13.55M (0.71x mimalloc, beats system 12.4M).
+* No regressions: `tight-small 1T` 44.6M, `mixed-small 1T` 28.9M.
+  Full suite green (11 binaries incl. new `thread_exit`).
