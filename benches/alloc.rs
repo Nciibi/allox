@@ -87,6 +87,11 @@ enum Kind {
     /// Spawn churn: repeatedly spawn a short-lived thread that does a burst
     /// of allocs/frees then exits. Exposes dead-thread reclamation costs.
     SpawnChurn,
+    /// Spawn empty: threads spawn and immediately exit. Pure pthread
+    /// spawn/join cost with zero allocator interaction (threads never arm
+    /// the exit hook) — identical for every comparator, calibrates how
+    /// much of spawn-churn is spawn vs allocator work.
+    SpawnEmpty,
 }
 
 struct Workload {
@@ -170,6 +175,13 @@ const WORKLOADS: &[Workload] = &[
         size_range: (16, 4096),
         free_pct: 50,
         kind: Kind::SpawnChurn,
+    },
+    Workload {
+        name: "spawn-empty",
+        threads: 4,
+        size_range: (16, 4096),
+        free_pct: 50,
+        kind: Kind::SpawnEmpty,
     },
 ];
 
