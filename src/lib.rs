@@ -37,11 +37,15 @@ mod heap;
 mod page;
 mod sys;
 
-use crate::classes::{class_for_size, MAX_SMALL_SIZE, MIN_ALIGN};
-use crate::page::{align_up, LargeHeader, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK};
+use crate::classes::{
+    class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN, TOTAL_CLASSES,
+};
+use crate::page::{
+    align_up, LargeHeader, SpanMaster, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK,
+};
 use core::alloc::GlobalAlloc;
 use core::ptr;
-use heap::HEAP;
+use heap::{HEAP, MEDIUM_HEAP};
 
 /// The allocator handle. Implementor of [`GlobalAlloc`]; also usable through
 /// the free functions [`malloc`], [`calloc`], [`realloc`], [`free`] and
