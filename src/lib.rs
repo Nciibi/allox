@@ -616,8 +616,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
     // masked reads can round down *outside* an unaligned large region into
     // unmapped memory and fault. Small pages stay hot path second (one extra
     // predictable branch); spans last.
-    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
-    if (*hdr).magic == LARGE_MAGIC {
+    if large_header_of(p).is_some() {
         free_large(p);
         return;
     }
