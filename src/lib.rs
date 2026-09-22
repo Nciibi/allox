@@ -221,10 +221,36 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         None => return (ptr::null_mut(), false),
     };
     let mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
+    let mapped_pages = (mapped / page::PAGE_SIZE) as u32;
 
-    // Best-fit region from the recycle cache.
+    // Tier 1: per-thread stash, no locks. Also yields a salt (the cache
+    // address) that spreads the tier-2 shard choice across threads.
+    let (stashed, salt): (Option<(*mut u8, u32)>, usize) = with_cache(
+        |c| {
+            let salt = c as *mut _ as usize;
+            (c.take_large_stash(mapped_pages), salt)
+        },
+        || (None, 0),
+    );
+    if let Some((base, pages)) = stashed {
+        let region_size = pages as usize * page::PAGE_SIZE;
+        let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
+        if ret + size <= base as usize + region_size {
+            let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
+            (*hdr).magic = LARGE_MAGIC;
+            (*hdr).mapped_size = region_size;
+            (*hdr).base = base;
+            return (ret as *mut u8, false);
+        }
+        // Alignment made the cached region unusable; drop it.
+        sys::unmap(base, region_size);
+        heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+        heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    // Tier 2: best-fit region from the sharded recycle cache.
     {
-        let mut c = LARGE_CACHE.lock();
+        let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
         let mut best: Option<usize> = None;
         for i in 0..c.len {
             let (_, pages) = c.entries[i];
@@ -294,15 +320,29 @@ unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
     let base = (*hdr).base;
+    let pages = (mapped / page::PAGE_SIZE) as u32;
 
-    // Park the region for reuse instead of unmapping.
+    // Tier 1: per-thread stash — the freeing thread usually reallocates next.
+    let stashed = with_cache(|c| c.push_large_stash(base, pages), || false);
+    if stashed {
+        return;
+    }
+
+    // Tier 2: park the region on its shard for cross-thread reuse.
     let mut unmap_now = false;
     {
-        let mut c = LARGE_CACHE.lock();
-        let slot_ok = c.len < LARGE_CACHE_SLOTS && c.bytes + mapped <= LARGE_CACHE_CAP_BYTES;
+        // Salt with our own cache address so frees spread like allocs do;
+        // exact pairing doesn't matter, only contention spreading.
+        let salt: usize = with_cache(
+            |c| c as *mut _ as usize,
+            || p as usize,
+        );
+        let mut c = LARGE_SHARDS[large_shard(pages as usize, salt)].lock();
+        let slot_ok =
+            c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES;
         if slot_ok {
             let idx = c.len;
-            c.entries[idx] = (base, (mapped / page::PAGE_SIZE) as u32);
+            c.entries[idx] = (base, pages);
             c.len = idx + 1;
             c.bytes += mapped;
         } else {
