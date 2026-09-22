@@ -446,7 +446,12 @@ impl MediumHeap {
     /// Return a chain of `n` blocks, all belonging to `span`, to that span.
     pub(crate) unsafe fn release_blocks(&self, span: *mut SpanMaster, chain: *mut u8, n: u32) {
         let mclass = (*span).mclass as usize;
-        let unmap = {
+        enum Fate {
+            Keep,
+            Cold,
+            Unmap(usize),
+        }
+        let fate = {
             let mut list = self.classes[mclass].lock();
             // Freed blocks are dirty by definition.
             (*span).flags &= !FLAG_VIRGIN;
@@ -462,35 +467,43 @@ impl MediumHeap {
                 munlink_partial(&mut list.head, span);
                 let span_bytes = (*span).mapped_bytes();
                 // Byte-scaled retention: count cap AND byte cap. Keeps several
-                // spans for small-medium classes, at most ~2 MiB per class.
-                let mut empty_bytes = 0usize;
-                let mut cur = list.empty;
-                while !cur.is_null() {
-                    empty_bytes += (*cur).mapped_bytes();
-                    cur = (*cur).next;
-                }
+                // spans for small-medium classes, at most ~2 MiB per class hot.
                 if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS
-                    && empty_bytes + span_bytes <= MAX_EMPTY_SPAN_BYTES_PER_CLASS
+                    && list.empty_bytes + span_bytes <= MAX_EMPTY_SPAN_BYTES_PER_CLASS
                 {
                     // Delayed reclamation: keep the span mapped for reuse.
                     (*span).next = list.empty;
                     list.empty = span;
                     list.empty_count += 1;
-                    None
+                    list.empty_bytes += span_bytes;
+                    Fate::Keep
+                } else if list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS {
+                    // Cold: drop physical, keep virtual. Re-carved on reuse.
+                    (*span).next = list.cold;
+                    list.cold = span;
+                    list.cold_count += 1;
+                    list.cold_bytes += span_bytes;
+                    Fate::Cold
                 } else {
-                    Some(span_bytes)
+                    Fate::Unmap(span_bytes)
                 }
             } else {
                 if (*span).flags & FLAG_IN_PARTIAL == 0 {
                     mlink_partial(&mut list.head, span);
                 }
-                None
+                Fate::Keep
             }
         };
-        if let Some(bytes) = unmap {
-            sys::unmap(span.cast::<u8>(), bytes);
-            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+        match fate {
+            Fate::Keep => {}
+            Fate::Cold => {
+                sys::discard(span.cast::<u8>(), (*span).mapped_bytes());
+            }
+            Fate::Unmap(bytes) => {
+                sys::unmap(span.cast::<u8>(), bytes);
+                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
