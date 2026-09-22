@@ -25,6 +25,8 @@ pub(crate) use windows::{discard, map, unmap, RawMutex};
 /// everything else (no_std targets, wasm) spins. Only ever taken on batched
 /// slow paths, and it can never allocate.
 #[cfg(not(any(windows, all(unix, feature = "std"))))]
+pub(crate) use spin_raw::RawMutex;
+#[cfg(not(any(windows, all(unix, feature = "std"))))]
 mod spin_raw {
     use core::sync::atomic::{AtomicBool, Ordering};
 
