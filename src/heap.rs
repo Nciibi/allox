@@ -398,9 +398,27 @@ impl MediumHeap {
                 list.empty = (*span).next;
                 (*span).next = ptr::null_mut();
                 list.empty_count -= 1;
+                list.empty_bytes -= (*span).mapped_bytes();
                 if (*span).flags & FLAG_VIRGIN == 0 {
                     virgin = false;
                 }
+                mlink_partial(&mut list.head, span);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+            }
+
+            if count == 0 && !list.cold.is_null() {
+                // Cold span: virtual reservation survived, contents didn't.
+                // Re-carve (no syscalls) and treat as non-virgin so calloc
+                // always memsets — safe even if the discard was a no-op.
+                let span = list.cold;
+                list.cold = (*span).next;
+                (*span).next = ptr::null_mut();
+                list.cold_count -= 1;
+                list.cold_bytes -= (*span).mapped_bytes();
+                let pages = (*span).npages;
+                (*span).init(mclass, pages);
+                (*span).flags &= !FLAG_VIRGIN;
+                virgin = false;
                 mlink_partial(&mut list.head, span);
                 mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
             }
