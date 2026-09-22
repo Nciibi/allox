@@ -165,13 +165,32 @@ unsafe fn dealloc_small(p: *mut u8) {
     );
 }
 
+unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
+    with_cache(
+        |c| c.alloc_medium(mclass),
+        || {
+            let (chain, _, _) = MEDIUM_HEAP.take_blocks(mclass);
+            chain
+        },
+    )
+}
+
+unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
+    with_cache(
+        |c| c.dealloc_medium(p, span),
+        || {
+            MEDIUM_HEAP.release_blocks(span, p, 1);
+        },
+    );
+}
+
 /// Cache of recently freed large regions, recycled on the next matching
 /// large allocation instead of paying unmap+map syscalls.
 ///
 /// Two tiers (P1):
-/// - per-thread stash in `ThreadCache` (lock-free, 4 slots / 4 MiB): absorbs
-///   same-thread reuse without any synchronization.
-/// - sharded global overflow (`LARGE_SHARDS` independent mutexes): spreads
+/// - per-thread stash in `ThreadCache` (lock-free): absorbs same-thread
+///   reuse without any synchronization.
+/// - sharded global overflow (independent mutexes): spreads cross-thread
 ///   cross-thread contention that used to serialize on one lock, and keeps
 ///   each best-fit scan to `LARGE_SHARD_SLOTS` entries instead of 64.
 ///
@@ -386,24 +405,46 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     if size == 0 {
         return align.max(1) as *mut u8;
     }
-    if align > MIN_ALIGN || size > MAX_SMALL_SIZE {
+    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
         return alloc_large(size, align);
+    }
+    if size > MAX_SMALL_SIZE {
+        return alloc_medium(medium_class_for_size(size));
     }
     alloc_small(class_for_size(size))
 }
 
-/// Like `alloc_impl` but zeroes the allocation. Virgin small blocks only
-/// need their freelist-link word cleared; recycled large regions are memset.
+/// Like `alloc_impl` but zeroes the allocation. Virgin small/medium blocks
+/// only need their freelist-link word cleared; recycled large regions are
+/// memset.
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
         return align.max(1) as *mut u8;
     }
-    if align > MIN_ALIGN || size > MAX_SMALL_SIZE {
+    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
         let (p, fresh) = alloc_large_ex(size, align);
         if !p.is_null() && !fresh {
             // Recycled region: dirtied by its previous life.
             ptr::write_bytes(p, 0, size);
+        }
+        return p;
+    }
+    if size > MAX_SMALL_SIZE {
+        let mclass = medium_class_for_size(size);
+        let (p, virgin) = with_cache(
+            |c| c.alloc_medium_zeroed(mclass),
+            || {
+                let (chain, _, virgin) = MEDIUM_HEAP.take_blocks(mclass);
+                (chain, virgin)
+            },
+        );
+        if !p.is_null() {
+            if virgin {
+                p.cast::<u64>().write(0);
+            } else {
+                ptr::write_bytes(p, 0, size);
+            }
         }
         return p;
     }
