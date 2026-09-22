@@ -744,14 +744,12 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     }
     // Large-offset check first (fault-safe for every live pointer; masked
     // reads can dangle outside unaligned large regions — see dealloc_impl).
+    // Large resizes always go alloc-copy-free below via usable_size.
     let old_large_ok = {
         let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
         (*hdr).magic == LARGE_MAGIC
     };
-    if old_large_ok {
-        // Large same-size class is not identity-tracked here; fall through
-        // to alloc-copy-free via usable_size below.
-    } else {
+    if !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
             magic == page::PAGE_MAGIC
