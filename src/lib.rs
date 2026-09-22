@@ -692,6 +692,18 @@ pub fn stats() -> Stats {
     }
 }
 
+/// Span-vs-large map split for tuning (see ROADMAP P2). Returns
+/// `(span_maps, span_unmaps)`; large maps are `map_calls - span_maps`.
+/// Hidden: not semver-covered, may change or vanish.
+#[doc(hidden)]
+pub fn __debug_map_split() -> (u64, u64) {
+    use core::sync::atomic::Ordering::Relaxed;
+    (
+        heap::SPAN_MAP_CALLS.load(Relaxed),
+        heap::SPAN_UNMAP_CALLS.load(Relaxed),
+    )
+}
+
 /// Built-in allocation telemetry.
 ///
 /// Enable with the `telemetry` feature (zero cost when disabled). Counters

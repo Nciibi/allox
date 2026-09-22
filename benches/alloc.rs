@@ -495,6 +495,7 @@ fn main() {
         let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
         let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
         let mapped_delta = s1.mapped_pages as i64 - s0.mapped_pages as i64;
+        let (e1s, e1u) = allox::__debug_map_split();
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
