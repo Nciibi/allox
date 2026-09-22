@@ -113,15 +113,30 @@ const fn count_medium() -> usize {
     n
 }
 
-/// Number of medium size classes (generated; ~13 for the 16 KiB → 60 KiB range).
+/// Number of medium size classes: the geometric chain plus one explicit top
+/// class covering the remainder up to a full page chunk (see below).
 pub(crate) const NUM_MEDIUM: usize = count_medium();
+
+/// Explicit top class: the biggest block that still fits beside headers in
+/// a 64 KiB chunk (master chunk: 65536 - 64). One block per page, eight per
+/// span — same per-lock amortization as every other medium class. Without
+/// it, requests in (geo_last, 65472] would fall to the mmap large path;
+/// that 6% tail of e.g. mixed-all dominated large-path syscalls.
+pub(crate) const TOP_MEDIUM_BLOCK: usize = 65536 - MEDIUM_CHUNK_RESERVE;
 
 const fn build_medium() -> [usize; NUM_MEDIUM] {
     let mut table = [0usize; NUM_MEDIUM];
     let mut size = medium_step(MAX_SMALL_SIZE);
     let mut i = 0;
+    // Geometric chain fills every slot except possibly the last...
     while i < NUM_MEDIUM {
-        table[i] = size;
+        // ...which is pinned to the explicit top class when the chain would
+        // otherwise stop short of a full chunk.
+        if i + 1 == NUM_MEDIUM && size < TOP_MEDIUM_BLOCK {
+            table[i] = TOP_MEDIUM_BLOCK;
+        } else {
+            table[i] = size;
+        }
         size = medium_step(size);
         i += 1;
     }
