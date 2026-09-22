@@ -276,6 +276,14 @@ pub(crate) struct MSpanList {
     /// Fully free spans held for reuse; singly linked via `next`.
     empty: *mut SpanMaster,
     empty_count: u32,
+    empty_bytes: usize,
+    /// Cold spans: virtual reservation retained, physical dropped via
+    /// discard (madvise). Re-carved on reuse — no syscalls in steady state,
+    /// which is what absorbs harness drain bursts (free ~3000 blocks, then
+    /// realloc) without the unmap/remap storm.
+    cold: *mut SpanMaster,
+    cold_count: u32,
+    cold_bytes: usize,
 }
 
 // Raw pointers are only manipulated while holding the enclosing Mutex.
@@ -287,6 +295,10 @@ impl MSpanList {
             head: ptr::null_mut(),
             empty: ptr::null_mut(),
             empty_count: 0,
+            empty_bytes: 0,
+            cold: ptr::null_mut(),
+            cold_count: 0,
+            cold_bytes: 0,
         }
     }
 }
