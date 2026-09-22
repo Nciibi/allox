@@ -536,8 +536,9 @@ impl MediumHeap {
                 // treat as non-virgin so calloc always memsets — safe even
                 // if the discard was a no-op.
                 list.cold_len -= 1;
-                let (base, pages) = list.cold[list.cold_len as usize];
-                list.cold[list.cold_len as usize] = (ptr::null_mut(), 0);
+                let cidx = list.cold_len as usize;
+                let (base, pages) = list.cold[cidx];
+                list.cold[cidx] = (ptr::null_mut(), 0);
                 list.cold_bytes -= pages as usize * PAGE_SIZE;
                 let span = base.cast::<SpanMaster>();
                 (*span).init(mclass, pages);
