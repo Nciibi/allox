@@ -389,3 +389,117 @@ pub(crate) fn contains(base: *mut u8, len: usize) -> bool {
 pub(crate) fn stats() -> (u64, u64, u64) {
     ARENA.stats()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MB: usize = 1024 * 1024;
+
+    #[test]
+    fn commits_are_64k_aligned_and_zeroed() {
+        let a = Arena::with_size(64 * MB);
+        for pages in [1usize, 3, 17, 129] {
+            let b = unsafe { a.commit(pages) };
+            assert!(!b.is_null(), "commit {} pages", pages);
+            assert_eq!(b as usize % ARENA_ALIGN, 0);
+            assert!(a.contains(b, pages * ARENA_ALIGN));
+            // Fresh zeros guaranteed: dirty it, release, recommit, re-read.
+            unsafe {
+                core::ptr::write_bytes(b, 0xAB, pages * ARENA_ALIGN);
+                a.release(b, pages);
+                let b2 = a.commit(pages);
+                assert!(!b2.is_null());
+                for i in 0..pages * ARENA_ALIGN {
+                    assert_eq!(*b2.add(i), 0, "stale byte at {}", i);
+                }
+                a.release(b2, pages);
+            }
+        }
+    }
+
+    #[test]
+    fn exhaustion_falls_back_to_null() {
+        // 256 KiB arena = 4 pages: exact-supply then graceful nulls.
+        let a = Arena::with_size(4 * ARENA_ALIGN);
+        let mut bases = Vec::new();
+        for _ in 0..4 {
+            let b = unsafe { a.commit(1) };
+            assert!(!b.is_null());
+            bases.push(b);
+        }
+        assert!(unsafe { a.commit(1) }.is_null());
+        assert!(unsafe { a.commit(64) }.is_null());
+        // Returning everything restores full service via holes.
+        for b in bases {
+            unsafe { a.release(b, 1) };
+        }
+        let b = unsafe { a.commit(4) };
+        assert!(!b.is_null(), "hole reuse after exhaustion");
+        unsafe { a.release(b, 4) };
+    }
+
+    #[test]
+    fn hole_reuse_avoids_new_commits() {
+        let a = Arena::with_size(64 * MB);
+        let mut bases = Vec::new();
+        for _ in 0..8 {
+            bases.push(unsafe { a.commit(2) });
+        }
+        let (c0, _, _) = a.stats();
+        assert_eq!(c0, 8);
+        for b in bases.drain(..) {
+            unsafe { a.release(b, 2) };
+        }
+        for _ in 0..8 {
+            let b = unsafe { a.commit(2) };
+            assert!(!b.is_null());
+            unsafe { a.release(b, 2) };
+        }
+        let (c1, r1, _) = a.stats();
+        assert_eq!(c1, c0 + 8, "every reuse still commits (fresh zeros)");
+        assert_eq!(r1, 8, "all served from holes, none from bump");
+    }
+
+    #[test]
+    fn split_remainder_stays_usable() {
+        let a = Arena::with_size(64 * MB);
+        let big = unsafe { a.commit(16) };
+        assert!(!big.is_null());
+        unsafe { a.release(big, 16) };
+        // Best-fit takes the 16-page hole for a 1-page request...
+        let small = unsafe { a.commit(1) };
+        assert!(!small.is_null());
+        // ...and the 15-page remainder must serve a later request.
+        let rest = unsafe { a.commit(15) };
+        assert!(!rest.is_null(), "split remainder lost");
+        unsafe {
+            a.release(small, 1);
+            a.release(rest, 15);
+        }
+    }
+
+    #[test]
+    fn commits_never_clobber_neighbors() {
+        // Guard mapping via the legacy path, then churn the arena around it.
+        let a = Arena::with_size(64 * MB);
+        let guard = unsafe { super::super::sys::map(ARENA_ALIGN) };
+        assert!(!guard.is_null());
+        unsafe { core::ptr::write_bytes(guard, 0x5A, ARENA_ALIGN) };
+        let mut v = Vec::new();
+        for i in 0..64usize {
+            let pages = 1 + (i * 7919) % 9;
+            let b = unsafe { a.commit(pages) };
+            assert!(!b.is_null());
+            unsafe { core::ptr::write_bytes(b, i as u8, pages * ARENA_ALIGN) };
+            v.push((b, pages));
+        }
+        for (b, pages) in v.drain(..) {
+            unsafe { a.release(b, pages) };
+        }
+        for i in 0..ARENA_ALIGN {
+            assert_eq!(unsafe { *guard.add(i) }, 0x5A, "clobbered at {}", i);
+        }
+        unsafe { super::super::sys::unmap(guard, ARENA_ALIGN) };
+    }
+}
