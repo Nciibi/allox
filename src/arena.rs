@@ -122,10 +122,16 @@ pub(crate) struct Arena {
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
+    /// Reservation size for this instance (global uses `ARENA_SIZE`).
+    size: usize,
 }
 
 impl Arena {
     pub(crate) const fn new() -> Self {
+        Self::with_size(ARENA_SIZE)
+    }
+
+    pub(crate) const fn with_size(size: usize) -> Self {
         Arena {
             state: AtomicU8::new(0),
             start: AtomicUsize::new(0),
@@ -136,6 +142,7 @@ impl Arena {
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
+            size,
         }
     }
 
