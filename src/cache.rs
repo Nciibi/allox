@@ -535,15 +535,8 @@ impl ThreadCache {
 
     /// Shrink `class`'s bin down to `floor_blocks` blocks, returning removed
     /// blocks to their owning pages in chunked, grouped batches so each page
-    /// needs only one lock acquisition per chunk. `release` decides blocking
-    /// vs best-effort (a `false` return abandons that group: same as today's
-    /// dead-thread leak, just rarer).
-    unsafe fn flush_bin(
-        &mut self,
-        class: usize,
-        floor_blocks: u32,
-        release: unsafe fn(*mut PageHeader, *mut u8, u16) -> bool,
-    ) {
+    /// needs only one lock acquisition per chunk.
+    unsafe fn flush_bin(&mut self, class: usize, floor_blocks: u32) {
         let block_size = CLASSES[class];
         let bin = &mut self.bins[class];
 
