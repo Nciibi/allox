@@ -335,25 +335,14 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
 
-    // Tier 2: best-fit region from the sharded recycle cache.
+    // Tier 2+3: best-fit region from the sharded recycle cache (hot, then
+    // cold). Cold hits need no syscall — virtual survived the discard.
     {
-        let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
-        let mut best: Option<usize> = None;
-        for i in 0..c.len {
-            let (_, pages) = c.entries[i];
-            if (pages as usize) * page::PAGE_SIZE >= mapped
-                && best.map_or(true, |b| c.entries[i].1 < c.entries[b].1)
-            {
-                best = Some(i);
-            }
-        }
-        if let Some(i) = best {
-            let last = c.len - 1;
-            let (base, pages) = (c.entries[i].0, core::mem::replace(&mut c.entries[i].1, 0));
-            c.entries[i] = c.entries[last];
-            c.len = last;
-            c.bytes -= pages as usize * page::PAGE_SIZE;
-            drop(c);
+        let taken = {
+            let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
+            c.take_fit(mapped)
+        };
+        if let Some((base, pages)) = taken {
             let region_size = pages as usize * page::PAGE_SIZE;
             let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
             if ret + size <= base as usize + region_size {
