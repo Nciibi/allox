@@ -359,6 +359,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     // address) that spreads the tier-2 shard choice across threads.
     let (stashed, salt): (Option<(*mut u8, u32)>, usize) = with_cache(
         |c| {
+            c.arm_exit_hook();
             let salt = c as *mut _ as usize;
             (c.take_large_stash(mapped_pages), salt)
         },
@@ -445,10 +446,13 @@ unsafe fn free_large(p: *mut u8) {
 
     // Tier 1: per-thread stash — the freeing thread usually reallocates next.
     // Single TLS visit: stash the region and report our shard salt together.
-    let (stashed, salt): (bool, usize) =
-        with_cache(|c| (c.push_large_stash(base, pages), c as *mut _ as usize), || {
-            (false, p as usize)
-        });
+    let (stashed, salt): (bool, usize) = with_cache(
+        |c| {
+            c.arm_exit_hook();
+            (c.push_large_stash(base, pages), c as *mut _ as usize)
+        },
+        || (false, p as usize),
+    );
     if stashed {
         return;
     }

@@ -511,6 +511,7 @@ impl ThreadCache {
     /// Bring total cached bytes under half the budget by repeatedly halving
     /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
+        self.arm_exit_hook();
         let target = thread_cache_budget() / 2;
         while self.cached_bytes > target {
             let mut best = usize::MAX;
