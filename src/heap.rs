@@ -155,9 +155,41 @@ unsafe fn fill_from_list(
     }
 }
 
+/// Splice `chain` (n blocks of `page`) back onto the page. Returns true when
+/// the page is fully free AND over the empty-cache caps (caller unmaps
+/// outside the lock). Shared core for the blocking and try paths.
+unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> bool {
+    // Freed blocks are dirty by definition.
+    (*page).flags &= !FLAG_VIRGIN;
+    let mut tail = chain;
+    while !(*tail.cast::<*mut u8>()).is_null() {
+        tail = *tail.cast::<*mut u8>();
+    }
+    *tail.cast::<*mut u8>() = (*page).free_head;
+    (*page).free_head = chain;
+    (*page).free_count += n;
+    (*page).used -= n;
+    if (*page).used == 0 {
+        unlink_partial(&mut list.head, page);
+        if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
+            // Delayed reclamation: keep the page mapped for reuse.
+            (*page).next = list.empty;
+            list.empty = page;
+            list.empty_count += 1;
+            false
+        } else {
+            true
+        }
+    } else {
+        if (*page).flags & FLAG_IN_PARTIAL == 0 {
+            link_partial(&mut list.head, page);
+        }
+        false
+    }
+}
+
 impl GlobalHeap {
-    pub(crate) const fn new() -> Self {
-        GlobalHeap {
+    pub(crate) const fn new() -> Self {        GlobalHeap {
             classes: [const { Mutex::new(ListHead::new()) }; NUM_CLASSES],
         }
     }
