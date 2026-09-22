@@ -49,8 +49,8 @@ pub(crate) fn set_budget(bytes: usize) {
 /// the global cache. Large allocs are rare vs small ones, but each miss costs
 /// syscalls, so even a 4-slot stash removes the global lock from the hot
 /// same-thread reuse path (the common benchmark shape).
-pub(crate) const LARGE_STASH_SLOTS: usize = 4;
-pub(crate) const LARGE_STASH_CAP_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const LARGE_STASH_SLOTS: usize = 8;
+pub(crate) const LARGE_STASH_CAP_BYTES: usize = 8 * 1024 * 1024;
 
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.

@@ -323,7 +323,11 @@ unsafe fn free_large(p: *mut u8) {
     let pages = (mapped / page::PAGE_SIZE) as u32;
 
     // Tier 1: per-thread stash — the freeing thread usually reallocates next.
-    let stashed = with_cache(|c| c.push_large_stash(base, pages), || false);
+    // Single TLS visit: stash the region and report our shard salt together.
+    let (stashed, salt): (bool, usize) =
+        with_cache(|c| (c.push_large_stash(base, pages), c as *mut _ as usize), || {
+            (false, p as usize)
+        });
     if stashed {
         return;
     }
@@ -333,10 +337,6 @@ unsafe fn free_large(p: *mut u8) {
     {
         // Salt with our own cache address so frees spread like allocs do;
         // exact pairing doesn't matter, only contention spreading.
-        let salt: usize = with_cache(
-            |c| c as *mut _ as usize,
-            || p as usize,
-        );
         let mut c = LARGE_SHARDS[large_shard(pages as usize, salt)].lock();
         let slot_ok =
             c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES;
