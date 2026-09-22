@@ -516,6 +516,17 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
+        // Medium same-class resize is identity too (spans never move).
+        if !p.is_null()
+            && layout.align() <= MIN_ALIGN
+            && layout.size() > MAX_SMALL_SIZE
+            && layout.size() <= MAX_MEDIUM_BLOCK
+            && new_size > MAX_SMALL_SIZE
+            && new_size <= MAX_MEDIUM_BLOCK
+            && medium_class_for_size(layout.size()) == medium_class_for_size(new_size)
+        {
+            return p;
+        }
         let new_p = self.alloc(core::alloc::Layout::from_size_align_unchecked(
             new_size,
             layout.align(),
@@ -583,6 +594,20 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
         let page = page::PageHeader::of(p);
         let old_class = (*page).class as usize;
         if size <= classes::MAX_SMALL_SIZE && class_for_size(size) == old_class {
+            return p;
+        }
+    }
+    let old_span_ok = {
+        let span = SpanMaster::of(p);
+        !span.is_null() && (*span).contains(p)
+    };
+    if old_span_ok && size != 0 {
+        let span = SpanMaster::of(p);
+        let old_mclass = (*span).mclass as usize;
+        if size > classes::MAX_SMALL_SIZE
+            && size <= classes::MAX_MEDIUM_BLOCK
+            && medium_class_for_size(size) == old_mclass
+        {
             return p;
         }
     }
