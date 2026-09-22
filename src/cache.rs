@@ -18,22 +18,6 @@ use crate::heap::{MAPPED_PAGES, MEDIUM_HEAP, REFILL_BATCH, UNMAP_CALLS};
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 use crate::sys;
 use core::ptr;
-
-// Release adapters so bin flushing works with blocking or try locks.
-unsafe fn heap_release(page: *mut PageHeader, chain: *mut u8, n: u16) -> bool {
-    crate::heap::HEAP.release_blocks(page, chain, n);
-    true
-}
-unsafe fn heap_try_release(page: *mut PageHeader, chain: *mut u8, n: u16) -> bool {
-    crate::heap::HEAP.try_release_blocks(page, chain, n)
-}
-unsafe fn mheap_release(span: *mut SpanMaster, chain: *mut u8, n: u32) -> bool {
-    crate::heap::MEDIUM_HEAP.release_blocks(span, chain, n);
-    true
-}
-unsafe fn mheap_try_release(span: *mut SpanMaster, chain: *mut u8, n: u32) -> bool {
-    crate::heap::MEDIUM_HEAP.try_release_blocks(span, chain, n)
-}
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
 /// Total bytes one thread's cache may retain before trimming starts.
