@@ -490,15 +490,17 @@ fn main() {
         // Syscall + RSS diagnostics: snapshot allox counters around one extra
         // allox-only probe run so numbers reflect steady-state behaviour.
         let s0 = allox::stats();
-        let (d0s, d0u) = allox::__debug_map_split();
+        let (d0sp, d0su, d0sm, d0smu) = allox::__debug_map_split();
         let _ = run(&GLOBAL, wl, secs.min(1).max(1));
         let s1 = allox::stats();
-        let (d1s, d1u) = allox::__debug_map_split();
+        let (d1sp, d1su, d1sm, d1smu) = allox::__debug_map_split();
         let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
         let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
         let mapped_delta = s1.mapped_pages as i64 - s0.mapped_pages as i64;
-        let span_maps = d1s.saturating_sub(d0s);
-        let span_unmaps = d1u.saturating_sub(d0u);
+        let span_maps = d1sp.saturating_sub(d0sp);
+        let span_unmaps = d1su.saturating_sub(d0su);
+        let small_maps = d1sm.saturating_sub(d0sm);
+        let _small_unmaps = d1smu.saturating_sub(d0smu);
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
@@ -512,7 +514,7 @@ fn main() {
             medians[4],
             medians[5],
             allox_s / talc_s.max(1.0),
-            format!("{}/{}/{}", map_delta, span_maps, mapped_delta),
+            format!("{}/{}/{}/{}", map_delta, span_maps, small_maps, mapped_delta),
             format!("{}/{}", unmap_delta, span_unmaps),
             rss,
         );

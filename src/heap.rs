@@ -34,6 +34,8 @@ pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 /// Read via `allox::__debug_map_split` (hidden; for tuning, see ROADMAP P2).
 pub(crate) static SPAN_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static SPAN_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static SMALL_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static SMALL_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// Global telemetry counters, written in batches from thread-local
 /// accumulators (see `cache.rs`) so the hot path stays contention-free.
@@ -195,6 +197,7 @@ impl GlobalHeap {
                 (*page).init(class);
                 MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SMALL_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[class].lock();
                 link_partial(&mut list.head, page);
                 fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
@@ -243,6 +246,7 @@ impl GlobalHeap {
             sys::unmap(page.cast::<u8>(), PAGE_SIZE);
             MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
             UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
         }
     }
 
