@@ -59,7 +59,7 @@ pub(crate) const LARGE_STASH_CAP_BYTES: usize = 8 * 1024 * 1024;
 /// so byte-budgeting medium bins guarantees 0% bin hits and a heap refill
 /// per alloc. Count-capping (two refills) keeps bins hot independent of
 /// block size; worst case is `NUM_MEDIUM * CAP * max_block` per thread.
-pub(crate) const MEDIUM_BIN_CAP: u32 = 32;
+pub(crate) const MEDIUM_BIN_CAP: u32 = 256;
 
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
