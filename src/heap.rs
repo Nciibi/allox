@@ -175,11 +175,17 @@ unsafe fn fill_from_list(
     }
 }
 
-/// Splice `chain` (n blocks of `page`) back onto the page. Returns a fate
-/// for fully-freed pages: `None` = relinked/kept hot, `Some(Cold)` = park
-/// cold (caller discards outside the lock), `Some(Unmap)` = caller unmaps.
-/// Partial pages relink inline and need no action.
-unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> bool {
+/// Post-lock fate of a released page: kept (nothing to do), parked cold
+/// (caller discards outside the lock), or over caps (caller unmaps).
+enum PageFate {
+    Keep,
+    Cold,
+    Unmap,
+}
+
+/// Splice `chain` (n blocks of `page`) back onto the page. Lock-only core;
+/// syscalls happen in the caller, outside the lock.
+unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> PageFate {
     // Freed blocks are dirty by definition.
     (*page).flags &= !FLAG_VIRGIN;
     let mut tail = chain;
@@ -197,20 +203,31 @@ unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut 
             (*page).next = list.empty;
             list.empty = page;
             list.empty_count += 1;
-            false
+            PageFate::Keep
+        } else if (list.cold_len as usize) < MAX_COLD_PAGE_SLOTS
+            && list.cold_bytes + PAGE_SIZE <= MAX_COLD_PAGE_BYTES_PER_CLASS
+        {
+            // Cold: drop physical, keep virtual. Array-stored base so the
+            // discard can't destroy the linkage. Re-carved on reuse.
+            let idx = list.cold_len as usize;
+            list.cold[idx] = page;
+            list.cold_len += 1;
+            list.cold_bytes += PAGE_SIZE;
+            PageFate::Cold
         } else {
-            true
+            PageFate::Unmap
         }
     } else {
         if (*page).flags & FLAG_IN_PARTIAL == 0 {
             link_partial(&mut list.head, page);
         }
-        false
+        PageFate::Keep
     }
 }
 
 impl GlobalHeap {
-    pub(crate) const fn new() -> Self {        GlobalHeap {
+    pub(crate) const fn new() -> Self {
+        GlobalHeap {
             classes: [const { Mutex::new(ListHead::new()) }; NUM_CLASSES],
         }
     }
