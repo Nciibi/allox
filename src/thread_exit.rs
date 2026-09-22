@@ -1,12 +1,14 @@
 //! Best-effort thread-exit flush without TLS destructors.
 //!
 //! DESIGN.md §4.5 explains why the allocator's own TLS carries no
-//! destructor. This module adds the missing half: a single OS key whose
-//! destructor does nothing but [`ThreadCache::try_flush_all`] — try-locks
-//! and unmaps only, never blocking — so dead threads stop pinning their
-//! caches behind them. Anything unreleasable is abandoned, exactly like
-//! today's always-leak; success is the common case (exiting threads race
-//! with almost nothing).
+//! destructor. This module adds the missing half: a single OS key
+//! (pthread_key / FlsAlloc) whose destructor flushs the exiting thread's
+//! cache with the normal blocking flush. Blocking is safe here — no
+//! allocator locks are ever held at thread exit, heap critical sections are
+//! bounded and user-code-free, and neither pthread-key destructors nor Fls
+//! callbacks hold a lock our heap could cycle with — while try-only
+//! flushing was measured to abandon nearly everything when several threads
+//! exit at once. Anything still unreleasable degrades to today's leak.
 //!
 //! Hooks fire only for threads that armed them (allocator slow paths set a
 //! per-thread flag and a nonzero key value; OS destructors ignore threads
