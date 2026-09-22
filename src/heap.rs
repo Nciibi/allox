@@ -30,6 +30,10 @@ const EMPTY_PAGE_CACHE_PER_CLASS: u32 = 4;
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Diagnostic split of MAP_CALLS by path (spans vs directly-mapped large).
+/// Read via `allox::__debug_map_split` (hidden; for tuning, see ROADMAP P2).
+pub(crate) static SPAN_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static SPAN_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// Global telemetry counters, written in batches from thread-local
 /// accumulators (see `cache.rs`) so the hot path stays contention-free.
@@ -436,6 +440,7 @@ impl MediumHeap {
                 (*span).init(mclass, pages as u32);
                 MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();
                 mlink_partial(&mut list.head, span);
                 mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
@@ -507,6 +512,7 @@ impl MediumHeap {
                 sys::unmap(span.cast::<u8>(), bytes);
                 MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
                 UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
