@@ -280,6 +280,11 @@ const MAX_EMPTY_SPAN_BYTES_PER_CLASS: usize = 2 * 1024 * 1024;
 /// Cap on cold (discarded-physical, retained-virtual) span bytes per class.
 /// Sized to swallow harness drain bursts (~96 MiB live freed at once across
 /// ~13 classes) so steady-state churn re-carves instead of mmap/munmap.
+#[cfg(target_pointer_width = "64")]
+const MAX_COLD_SPAN_BYTES_PER_CLASS: usize = 256 * 1024 * 1024;
+/// 32-bit address space can't afford deep virtual retention; keep cold as a
+/// small burst buffer and unmap the rest (physical is what matters there).
+#[cfg(not(target_pointer_width = "64"))]
 const MAX_COLD_SPAN_BYTES_PER_CLASS: usize = 16 * 1024 * 1024;
 
 pub(crate) struct MSpanList {
