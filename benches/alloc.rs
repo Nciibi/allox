@@ -493,11 +493,13 @@ fn main() {
         let _ = run(&GLOBAL, wl, secs.min(1).max(1));
         let s1 = allox::stats();
         let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
+        let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
+        let mapped_delta = s1.mapped_pages as i64 - s0.mapped_pages as i64;
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
         println!(
-            "{:<15} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>10} {:>10}",
+            "{:<15} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>10} {:>10} {:>10}",
             wl.name,
             medians[0],
             medians[1],
@@ -506,12 +508,13 @@ fn main() {
             medians[4],
             medians[5],
             allox_s / talc_s.max(1.0),
-            map_delta,
+            format!("{}/{}", map_delta, mapped_delta),
+            unmap_delta,
             rss,
         );
     }
 
-    println!("{}", "-".repeat(125));
+    println!("{}", "-".repeat(137));
     println!("note: harness Vecs allocate through allox (process global); identical for all.");
-    println!("mapcalls = allox MAP_CALLS delta during 1s probe; peakRSS = VmHWM KiB (linux).");
+    println!("mapcalls = allox MAP_CALLS delta / mapped-pages delta during 1s probe; unmaps = UNMAP_CALLS delta; peakRSS = VmHWM KiB (linux).");
 }
