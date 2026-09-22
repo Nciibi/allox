@@ -12,16 +12,19 @@ pub(crate) mod windows;
 
 use core::cell::UnsafeCell;
 
-#[cfg(not(windows))]
-pub(crate) use spin_raw::RawMutex;
-#[cfg(unix)]
+#[cfg(all(unix, feature = "std"))]
+pub(crate) use unix::{discard, map, unmap, RawMutex};
+#[cfg(all(unix, not(feature = "std")))]
 pub(crate) use unix::{discard, map, unmap};
 #[cfg(all(not(windows), not(unix)))]
 pub(crate) use wasm::{discard, map, unmap};
 #[cfg(windows)]
 pub(crate) use windows::{discard, map, unmap, RawMutex};
 
-#[cfg(not(windows))]
+/// Fallback spin mutex: Windows has SRWLock, hosted unix has pthread above;
+/// everything else (no_std targets, wasm) spins. Only ever taken on batched
+/// slow paths, and it can never allocate.
+#[cfg(not(any(windows, all(unix, feature = "std"))))]
 mod spin_raw {
     use core::sync::atomic::{AtomicBool, Ordering};
 
