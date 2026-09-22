@@ -357,7 +357,7 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> *mut u8 {
 /// would punch holes third parties could claim); legacy mappings need the
 /// real unmap plus counter updates.
 #[inline]
-unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
+pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     #[cfg(all(unix, feature = "std"))]
     {
         if crate::arena::contains(base, mapped) {
