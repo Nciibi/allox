@@ -600,7 +600,7 @@ unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
     if mapped == 0 || mapped & PAGE_MASK != 0 {
         return None;
     }
-    let off = p as usize).wrapping_sub(base);
+    let off = (p as usize).wrapping_sub(base);
     if off == 0 || off >= mapped {
         return None;
     }
