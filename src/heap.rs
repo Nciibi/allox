@@ -464,11 +464,10 @@ unsafe fn mfill_from_list(
     }
 }
 
-/// Post-lock fate of a released span: kept (nothing to do), parked cold
-/// (caller discards outside the lock), or over caps (caller unmaps).
+/// Post-lock fate of a released span: kept (nothing more to do) or over
+/// caps (caller unmaps). Cold parking discards inline (see below).
 enum SpanFate {
     Keep,
-    Cold,
     Unmap(usize),
 }
 
