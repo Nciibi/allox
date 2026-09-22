@@ -130,7 +130,9 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
 2. P1a sharded large cache + per-thread stash → DONE, measured below.
    Contention fixed; miss-rate gap remains and needs spans (P1c).
 3. P1c medium spans (16-64K via multi-page spans) → DONE (see results).
-   NEXT: large-path MT (per-thread large caches) + exit-flush.
+   P1d large cold + exact-fit → DONE (see results).
+   NEXT: exit-flush (spawn-churn 0.15x) or arena mapping (large-only 8T
+   syscall volume) or spans-for-big-sizes (large-only hit rate).
 4. P1 exit-flush + drift cap → after spans.
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.
