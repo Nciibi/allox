@@ -509,7 +509,7 @@ impl ThreadCache {
             }
             if best != usize::MAX {
                 let len = self.bins[best].len;
-                self.flush_bin(best, len / 2, heap_release);
+                self.flush_bin(best, len / 2);
                 continue;
             }
             // Small bins have nothing worth trimming; shed the largest
@@ -529,7 +529,7 @@ impl ThreadCache {
                 break;
             }
             let len = self.mbins[mbest].len;
-            self.flush_mbin(mbest, len / 2, mheap_release);
+            self.flush_mbin(mbest, len / 2);
         }
     }
 
@@ -667,16 +667,17 @@ impl ThreadCache {
         }
     }
 
-    /// Return all cached blocks (used at explicit shutdown/flush requests).
+    /// Return all cached blocks (used at explicit shutdown/flush requests,
+    /// and by the OS thread-exit hook).
     pub(crate) unsafe fn flush_all(&mut self) {
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
-                self.flush_bin(class, 0, heap_release);
+                self.flush_bin(class, 0);
             }
         }
         for mclass in 0..NUM_MEDIUM {
             if !self.mbins[mclass].head.is_null() {
-                self.flush_mbin(mclass, 0, mheap_release);
+                self.flush_mbin(mclass, 0);
             }
         }
         self.cached_bytes = 0;
