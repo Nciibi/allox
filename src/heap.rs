@@ -214,33 +214,7 @@ impl GlobalHeap {
         let class = (*page).class as usize;
         let unmap_now = {
             let mut list = self.classes[class].lock();
-            // Freed blocks are dirty by definition.
-            (*page).flags &= !FLAG_VIRGIN;
-            let mut tail = chain;
-            while !(*tail.cast::<*mut u8>()).is_null() {
-                tail = *tail.cast::<*mut u8>();
-            }
-            *tail.cast::<*mut u8>() = (*page).free_head;
-            (*page).free_head = chain;
-            (*page).free_count += n;
-            (*page).used -= n;
-            if (*page).used == 0 {
-                unlink_partial(&mut list.head, page);
-                if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
-                    // Delayed reclamation: keep the page mapped for reuse.
-                    (*page).next = list.empty;
-                    list.empty = page;
-                    list.empty_count += 1;
-                    false
-                } else {
-                    true
-                }
-            } else {
-                if (*page).flags & FLAG_IN_PARTIAL == 0 {
-                    link_partial(&mut list.head, page);
-                }
-                false
-            }
+            release_inner(&mut list, page, chain, n)
         };
         if unmap_now {
             sys::unmap(page.cast::<u8>(), PAGE_SIZE);
@@ -248,6 +222,30 @@ impl GlobalHeap {
             UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
             SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// Best-effort `release_blocks` for thread-exit flush: never blocks.
+    /// Returns false (chain abandoned — same as today's dead-thread leak,
+    /// just rarer) when the class lock is held.
+    pub(crate) unsafe fn try_release_blocks(
+        &self,
+        page: *mut PageHeader,
+        chain: *mut u8,
+        n: u16,
+    ) -> bool {
+        let class = (*page).class as usize;
+        let Some(mut list) = self.classes[class].try_lock() else {
+            return false;
+        };
+        let unmap_now = release_inner(&mut list, page, chain, n);
+        drop(list);
+        if unmap_now {
+            sys::unmap(page.cast::<u8>(), PAGE_SIZE);
+            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+        true
     }
 
     /// Lock access to a class' partial list for external validation
