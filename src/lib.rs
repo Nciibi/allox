@@ -729,9 +729,10 @@ pub mod telemetry {
         pub map_calls: u64,
         /// Total OS unmap calls.
         pub unmap_calls: u64,
-        /// Allocation count per size class; index `i` covers class `i`
-        /// whose block size is internal but stable for a given build.
-        pub per_class_allocs: [u64; 64],
+        /// Allocation count per size class; indices `0..NUM_CLASSES` cover
+        /// small classes, the rest cover medium classes. Block sizes are
+        /// internal but stable for a given build.
+        pub per_class_allocs: [u64; crate::classes::TOTAL_CLASSES],
     }
 
     /// Read the current telemetry snapshot.
@@ -741,7 +742,7 @@ pub mod telemetry {
         let total_frees = t.total_frees.load(Relaxed);
         let allocated_bytes = t.bytes_in.load(Relaxed);
         let freed_bytes = t.bytes_out.load(Relaxed);
-        let mut per_class = [0u64; 64];
+        let mut per_class = [0u64; crate::classes::TOTAL_CLASSES];
         for (i, c) in t.per_class.iter().enumerate() {
             per_class[i] = c.load(Relaxed);
         }
@@ -775,7 +776,7 @@ pub mod telemetry {
                 mapped_pages: 0,
                 map_calls: 0,
                 unmap_calls: 0,
-                per_class_allocs: [0; 64],
+                per_class_allocs: [0; crate::classes::TOTAL_CLASSES],
             }
         }
     }
