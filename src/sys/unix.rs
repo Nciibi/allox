@@ -79,6 +79,25 @@ pub(crate) unsafe fn unmap(p: *mut u8, size: usize) {
     let _ = munmap(p as *mut core::ffi::c_void, size);
 }
 
+/// Map `size` bytes without alignment guarantees (kernel 4 KiB suffices).
+/// For large regions only: they are found by offset header, never by address
+/// masking (see `alloc_large_ex`), so 64 KiB alignment buys nothing and the
+/// over-map+trim of [`map`] would waste 2 extra VMA ops per miss.
+pub(crate) unsafe fn map_any(size: usize) -> *mut u8 {
+    let p = mmap(
+        core::ptr::null_mut(),
+        size,
+        PROT_READ_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0,
+    );
+    if p as usize == usize::MAX {
+        return core::ptr::null_mut();
+    }
+    p as *mut u8
+}
+
 /// Drop physical pages but keep the virtual reservation: the range faults
 /// back (zero-filled) on next access. Best-effort — failure just means the
 /// caller must treat the range as still dirty.
