@@ -67,6 +67,15 @@ mod spin_raw {
         pub(crate) fn unlock(&self) {
             self.locked.store(false, Ordering::Release);
         }
+
+        /// Non-blocking acquisition for best-effort contexts (thread-exit
+        /// flush): never spins, never yields, never allocates.
+        #[inline]
+        pub(crate) fn try_lock(&self) -> bool {
+            self.locked
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        }
     }
 }
 
