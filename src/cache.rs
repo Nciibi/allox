@@ -423,9 +423,10 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
+        let len = bin.len;
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
-        if bin.len > MEDIUM_BIN_CAP {
+        if len > MEDIUM_BIN_CAP {
             self.flush_mbin(mclass, MEDIUM_BIN_CAP / 2);
         }
     }
