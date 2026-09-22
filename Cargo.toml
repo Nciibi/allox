@@ -32,7 +32,7 @@ dlmalloc = { version = "0.2", features = ["global"] }
 # P0 honest scoreboard: C comparators, dev-only so the lib stays zero-deps / no-C.
 mimalloc = "0.1"
 tikv-jemallocator = "0.6"
-snmalloc-rs = { version = "0.7", features = ["1mib", "build_cc"] }
+snmalloc-rs = { version = "0.7", features = ["build_cc"] }
 
 [[bench]]
 name = "alloc"
