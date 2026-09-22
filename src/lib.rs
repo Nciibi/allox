@@ -242,7 +242,35 @@ impl LargeRegionCache {
     /// Removes and returns `(base, mapped_pages)`. Caller holds the lock.
     /// Both tiers need only a header rewrite (fresh=false); cold contents
     /// were discarded, hot contents are dirty — calloc memsets either way.
+    ///
+    /// Exact-size matches win over merely-fitting ones: under size variance,
+    /// best-fit eats big regions for small requests, fragmenting the cache
+    /// so future big requests miss. Exact-first preserves each size class's
+    /// own reuse pool (temporal locality in churn is per-size).
     fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32)> {
+        let wanted = (mapped / page::PAGE_SIZE) as u32;
+        for i in 0..self.len {
+            if self.entries[i].1 == wanted {
+                let last = self.len - 1;
+                let entry = self.entries[i];
+                self.entries[i] = self.entries[last];
+                self.entries[last] = (ptr::null_mut(), 0);
+                self.len = last;
+                self.bytes -= entry.1 as usize * page::PAGE_SIZE;
+                return Some(entry);
+            }
+        }
+        for i in 0..self.cold_len {
+            if self.cold[i].1 == wanted {
+                let last = self.cold_len - 1;
+                let entry = self.cold[i];
+                self.cold[i] = self.cold[last];
+                self.cold[last] = (ptr::null_mut(), 0);
+                self.cold_len = last;
+                self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
+                return Some(entry);
+            }
+        }
         let mut best: Option<usize> = None;
         for i in 0..self.len {
             let (_, pages) = self.entries[i];
