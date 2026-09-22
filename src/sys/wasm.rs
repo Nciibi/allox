@@ -23,3 +23,6 @@ pub(crate) unsafe fn map(size: usize) -> *mut u8 {
 
 /// WASM cannot release linear-memory pages; kept mapped by design.
 pub(crate) unsafe fn unmap(_p: *mut u8, _size: usize) {}
+
+/// No physical/virtual split exists in linear memory; same as unmap.
+pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) {}
