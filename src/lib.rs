@@ -642,11 +642,8 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     debug_assert!(align.is_power_of_two());
     if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
         #[cfg(debug_assertions)]
-        {
-            let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
-            if (*hdr).magic != LARGE_MAGIC {
-                corrupt_pointer();
-            }
+        if large_header_of(p).is_none() {
+            corrupt_pointer();
         }
         free_large(p);
         return;
