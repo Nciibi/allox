@@ -656,7 +656,7 @@ unsafe impl GlobalAlloc for Allox {
         if layout.size() == 0 {
             return;
         }
-        dealloc_impl(p)
+        dealloc_with_layout(p, layout.size(), layout.align())
     }
 
     unsafe fn realloc(&self, p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
