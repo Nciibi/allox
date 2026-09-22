@@ -683,16 +683,15 @@ impl ThreadCache {
         self.cached_bytes = 0;
         self.virgin = [0; NUM_CLASSES];
         self.mvirgin = [0; NUM_MEDIUM];
-        // Stashed large regions are unmapped directly (no global lock held
+        // Stashed large regions are released directly (no global lock held
         // here beyond the caller's cache ownership) so an explicit flush
         // actually returns memory instead of shuffling it to shared shards.
+        // Arena-owned slices park in arena holes; legacy ones truly unmap.
         for i in 0..self.large_len as usize {
             let (base, pages) = self.large[i];
             if !base.is_null() {
                 let size = pages as usize * crate::page::PAGE_SIZE;
-                sys::unmap(base, size);
-                MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-                UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                crate::unmap_or_return(base, size);
                 self.large[i] = (ptr::null_mut(), 0);
             }
         }
