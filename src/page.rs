@@ -76,6 +76,111 @@ impl PageHeader {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Medium spans: contiguous runs of 64 KiB pages carved into blocks of one
+// medium class (16 KiB, 64 KiB]. The first page carries a SpanMaster; every
+// further page carries a 16-byte sub-header (SUBMAGIC + master pointer) at
+// its base. Blocks are sliced per page-chunk so none straddles a page base
+// or covers a header — which is why medium blocks cap at 65472 bytes.
+// Pointer -> master: mask to the 64 KiB page, match the magic, follow one
+// pointer for sub-pages. The small-page fast path (`PAGE_MAGIC` check first)
+// is unaffected.
+// ---------------------------------------------------------------------------
+
+/// Sub-header size at the base of each non-first span page.
+pub(crate) const SPAN_SUB_SIZE: usize = 16;
+
+// magic + prev + next + free_head + free_count/used + mclass/flags +
+// npages/pad = 56 bytes, padded by align(16) to 64.
+#[repr(C, align(16))]
+pub(crate) struct SpanMaster {
+    pub(crate) magic: u64,
+    pub(crate) prev: *mut SpanMaster,
+    pub(crate) next: *mut SpanMaster,
+    pub(crate) free_head: *mut u8,
+    pub(crate) free_count: u32,
+    /// Blocks held outside this span's own free list (live or thread-cached).
+    pub(crate) used: u32,
+    pub(crate) mclass: u16,
+    pub(crate) flags: u16,
+    /// Span length in 64 KiB pages (master page included).
+    pub(crate) npages: u32,
+    pub(crate) _pad: u32,
+}
+
+pub(crate) const SPAN_MASTER_SIZE: usize = core::mem::size_of::<SpanMaster>();
+
+impl SpanMaster {
+    /// The master owning `p`: mask to the 64 KiB page, then follow at most
+    /// one sub-header pointer. Returns null when `p` is not inside a span
+    /// (large region, foreign memory); the small-page check runs first in
+    /// all dispatch paths so this never misclassifies small blocks.
+    #[inline]
+    pub(crate) unsafe fn of(p: *mut u8) -> *mut SpanMaster {
+        let base = p as usize & !PAGE_MASK;
+        if *(base as *const u64) == SPAN_MAGIC {
+            return base as *mut SpanMaster;
+        }
+        if *(base as *const u64) == SPAN_SUBMAGIC {
+            return *(base.wrapping_add(8) as *const *mut SpanMaster);
+        }
+        ptr::null_mut()
+    }
+
+    /// Carve freshly mapped `npages` pages (base 64 KiB-aligned) into a full
+    /// free list of medium-`mclass` blocks. The span is born with no users.
+    pub(crate) unsafe fn init(&mut self, mclass: usize, npages: u32) {
+        debug_assert!(mclass < NUM_MEDIUM);
+        let block_size = MEDIUM_CLASSES[mclass];
+        let base = self as *mut _ as usize;
+        // Sub-headers on every non-first page, before carving blocks around
+        // them: a block never covers a page base.
+        let mut i = 1u32;
+        while i < npages {
+            let sub = (base + i as usize * PAGE_SIZE) as *mut u64;
+            *sub = SPAN_SUBMAGIC;
+            *((sub as *mut u8).add(8).cast::<*mut SpanMaster>()) = self;
+            i += 1;
+        }
+        let mut head: *mut u8 = ptr::null_mut();
+        let mut count = 0u32;
+        let mut page = 0u32;
+        while page < npages {
+            let chunk = base + page as usize * PAGE_SIZE;
+            let (start, end) = if page == 0 {
+                (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
+            } else {
+                (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
+            };
+            let mut b = start;
+            while b + block_size <= end {
+                *(b as *mut *mut u8) = head;
+                head = b as *mut u8;
+                count += 1;
+                b += block_size;
+            }
+            page += 1;
+        }
+        debug_assert!(count > 0);
+        self.magic = SPAN_MAGIC;
+        self.prev = ptr::null_mut();
+        self.next = ptr::null_mut();
+        self.free_head = head;
+        self.free_count = count;
+        self.used = 0;
+        self.mclass = mclass as u16;
+        self.flags = FLAG_VIRGIN;
+        self.npages = npages;
+        self._pad = 0;
+    }
+
+    /// Byte size of the whole span mapping (for unmap).
+    #[inline]
+    pub(crate) unsafe fn mapped_bytes(&self) -> usize {
+        self.npages as usize * PAGE_SIZE
+    }
+}
+
 #[repr(C, align(16))]
 pub(crate) struct LargeHeader {    pub(crate) magic: u64,
     pub(crate) mapped_size: usize,
