@@ -36,6 +36,7 @@ mod ffi;
 mod heap;
 mod page;
 mod sys;
+mod thread_exit;
 
 use crate::classes::{
     class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN,
@@ -104,6 +105,10 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
+
+        pub(crate) fn flush_best_effort() {
+            with(|c| unsafe { c.try_flush_all() }, || {});
+        }
     }
 
     #[cfg(not(feature = "std"))]
@@ -138,6 +143,13 @@ mod tls {
 
     pub(crate) use imp::flush;
     pub(crate) use imp::with;
+}
+
+/// Best-effort flush of the calling thread's cache: try-locks and unmaps
+/// only, never blocks. Entry point for the OS thread-exit hook; also safe
+/// to call any time. Panic-free by construction.
+pub(crate) unsafe fn tls_flush_best_effort() {
+    tls::flush_best_effort();
 }
 
 #[inline]
