@@ -376,5 +376,3 @@ pub(crate) fn contains(base: *mut u8, len: usize) -> bool {
 pub(crate) fn stats() -> (u64, u64, u64) {
     ARENA.stats()
 }
-    }
-}
