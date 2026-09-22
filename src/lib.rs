@@ -780,7 +780,11 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             }
         }
     }
-    let old_span_ok = {
+    let old_span_ok = if old_large_ok {
+        // Large pointers never reach the span check: SpanMaster::of masks,
+        // which can dangle outside unaligned large regions (see dealloc_impl).
+        false
+    } else {
         let span = SpanMaster::of(p);
         !span.is_null() && (*span).contains(p)
     };
