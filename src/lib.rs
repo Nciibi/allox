@@ -521,9 +521,7 @@ unsafe fn free_large(p: *mut u8) {
     match fate {
         Fate::Kept => {}
         Fate::Unmap => {
-            sys::unmap(base, mapped);
-            heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-            heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            unmap_or_return(base, mapped);
         }
     }
     #[cfg(feature = "telemetry")]
