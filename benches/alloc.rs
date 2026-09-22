@@ -320,7 +320,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                     }
                     // drain remainder
                     while let Ok((rp, rs)) = rx.try_recv() {
-                        unsafe { alloc.dealloc(rp, layout_for(rs)) };
+                        unsafe { alloc.dealloc(rp as *mut u8, layout_for(rs)) };
                     }
                     for (lp, ls) in local.drain(..) {
                         unsafe { alloc.dealloc(lp, layout_for(ls)) };
