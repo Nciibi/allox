@@ -37,6 +37,9 @@ mod heap;
 mod page;
 mod sys;
 mod thread_exit;
+/// Virtual-memory arena (unix + `std` only; legacy paths elsewhere).
+#[cfg(all(unix, feature = "std"))]
+mod arena;
 
 use crate::classes::{
     class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN,
