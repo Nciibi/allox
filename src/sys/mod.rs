@@ -142,3 +142,21 @@ impl<T> Drop for MutexGuard<'_, T> {
         self.mutex.raw.unlock();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Mutex;
+
+    #[test]
+    fn try_lock_fails_while_held() {
+        static M: Mutex<u32> = Mutex::new(0);
+        let guard = M.lock();
+        assert!(M.try_lock().is_none());
+        *guard + 1;
+        drop(guard);
+        let mut guard = M.try_lock().expect("free mutex try-locks");
+        *guard = 41;
+        drop(guard);
+        assert_eq!(*M.lock(), 41);
+    }
+}
