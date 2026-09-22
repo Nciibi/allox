@@ -123,9 +123,31 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
 
 ## Order to execute
 
-1. P0 harness + C comparators → reproduces 0.04x + RSS baseline.
-2. P1 spans + sharded large cache + arena map → re-run `mixed-all`,
-   `large-only`.
-3. P1 exit-flush + drift cap → re-run retention test.
-4. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
-5. Harden + docs + publish 0.2.
+1. P0 harness + C comparators → reproduces 0.04x + RSS baseline. DONE.
+   `mimalloc` + `snmalloc-rs(build_cc)` in dev-deps; jemalloc left for CI
+   (needs make+autoconf). 10 workloads incl. `mixed-all 1T`, `large-only`,
+   `prodcons 8T`, `spawn-churn`; MAP_CALLS probe + VmHWM reporting.
+2. P1a sharded large cache + per-thread stash → DONE, measured below.
+   Contention fixed; miss-rate gap remains and needs spans (P1c).
+3. P1c medium spans (16-128K via multi-page spans) → NEXT, not yet started.
+4. P1 exit-flush + drift cap → after spans.
+5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
+6. Harden + docs + publish 0.2.
+
+## P1a results (BENCH_SECS=1 BENCH_REPS=1, Linux Ryzen 5 1600)
+
+* `tight-small 8T`: allox 232M beats mimalloc 195M / snmalloc 207M / sys 209M.
+* `mixed-small 8T`: allox 123M vs snmalloc 51M / mimalloc 34M / sys 28M.
+* `prodcons 8T`: allox 28.2M ties mimalloc 27.4M / snmalloc 27.6M.
+* `mixed-all 1T`: allox ~200k vs mimalloc 3.8M (0.05x), 64k MAP_CALLS/s —
+  miss-rate dominated, sharding can't fix single-threaded misses.
+* `mixed-all 8T`: allox 250k vs mimalloc 19.5M (0.013x).
+* `large-only 1T`: allox 140k vs mimalloc ~700k (0.2x), RSS ~3.2 GB.
+* `spawn-churn`: allox 1.04M vs mimalloc 9.3M (0.11x) — dead-thread
+  reclamation still open (needs exit-flush, P1 exit-flush step).
+
+Conclusion: small + remote-free paths already beat/tie C allocators.
+Large/medium needs multi-page spans, not just cheaper syscalls: the working
+set (96 MB live + churn bursts) exceeds any sane mmap-cache cap, so hit rate
+stays low regardless of sharding. Arena mapping (P1b) deferred — it would
+save 2 munmaps per miss but misses themselves (64k/s) are the problem.
