@@ -175,9 +175,11 @@ unsafe fn fill_from_list(
     }
 }
 
-/// Splice `chain` (n blocks of `page`) back onto the page. Returns true when
-/// the page is fully free AND over the empty-cache caps (caller unmaps
-/// outside the lock). Shared core for the blocking and try paths.
+/// Splice `chain` (n blocks of `page`) back onto the page. Returns a fate:
+/// true means the page is fully free AND over the empty-cache caps, in
+/// which case the caller parks it cold (discard) or unmaps — decided via
+/// out-params to keep this core lock-only. Shared by blocking and
+/// (deleted) try paths; syscalls happen in the caller, outside locks.
 unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> bool {
     // Freed blocks are dirty by definition.
     (*page).flags &= !FLAG_VIRGIN;
