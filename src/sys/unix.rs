@@ -1,4 +1,8 @@
-//! POSIX virtual memory via mmap/munmap.
+//! POSIX virtual memory via mmap/munmap, plus a pthread-backed mutex.
+//!
+//! Everything here avoids heap allocation so the allocator can never
+//! recursively re-enter itself through `GlobalAlloc` (POSIX mutex ops are
+//! allocation-free by standard).
 
 #[cfg(any(
     target_os = "macos",
