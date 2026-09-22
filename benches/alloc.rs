@@ -265,11 +265,12 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     let n = wl.threads;
     let (min, max) = wl.size_range;
 
-    // Ring channels: thread i sends to (i+1)%n.
-    let mut senders: Vec<Sender<(*mut u8, usize)>> = Vec::new();
-    let mut receivers: Vec<Option<Receiver<(*mut u8, usize)>>> = Vec::new();
+    // Ring channels: thread i sends to (i+1)%n. Pointers cross threads as
+    // usize (raw *mut u8 is !Send); cast back on receipt.
+    let mut senders: Vec<Sender<(usize, usize)>> = Vec::new();
+    let mut receivers: Vec<Option<Receiver<(usize, usize)>>> = Vec::new();
     for _ in 0..n {
-        let (tx, rx) = channel::<(*mut u8, usize)>();
+        let (tx, rx) = channel::<(usize, usize)>();
         senders.push(tx);
         receivers.push(Some(rx));
     }
@@ -303,13 +304,13 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                             i += 1;
                             if i % 2 == 0 {
                                 // hand off to neighbour for remote free
-                                let _ = tx_next.send((p, size));
+                                let _ = tx_next.send((p as usize, size));
                             } else {
                                 local.push((p, size));
                             }
                             // drain incoming remote frees + some local frees
                             while let Ok((rp, rs)) = rx.try_recv() {
-                                unsafe { alloc.dealloc(rp, layout_for(rs)) };
+                                unsafe { alloc.dealloc(rp as *mut u8, layout_for(rs)) };
                             }
                             if local.len() > 512 {
                                 let (lp, ls) = local.swap_remove(0);
