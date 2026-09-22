@@ -586,9 +586,7 @@ impl ThreadCache {
             }
 
             for g in groups.iter_mut().take(ng) {
-                // Best-effort: a busy page lock abandons this group rather
-                // than blocking (only the try path can fail).
-                let _ = release(g.page, g.head, g.n);
+                crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
             }
             if popped == 0 {
                 break;
@@ -600,12 +598,7 @@ impl ThreadCache {
     /// blocks to their owning spans grouped by master (one heap lock per span
     /// per chunk). Chunks are smaller than for small bins because medium
     /// blocks are huge and bins hold few of them.
-    unsafe fn flush_mbin(
-        &mut self,
-        mclass: usize,
-        floor_blocks: u32,
-        release: unsafe fn(*mut SpanMaster, *mut u8, u32) -> bool,
-    ) {
+    unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
         let block_size = MEDIUM_CLASSES[mclass];
@@ -650,9 +643,8 @@ impl ThreadCache {
                         // blocks popped per chunk, one group each worst case.
                         debug_assert!(ng < MAX_MFLUSH_GROUPS);
                         if ng >= MAX_MFLUSH_GROUPS {
-                            // No room to group: release solo (blocking path
-                            // always succeeds; try path may abandon).
-                            let _ = release(master, b, 1);
+                            // No room to group: release solo.
+                            crate::heap::MEDIUM_HEAP.release_blocks(master, b, 1);
                             continue;
                         }
                         groups[ng] = MGroup {
@@ -667,7 +659,7 @@ impl ThreadCache {
             }
 
             for g in groups.iter_mut().take(ng) {
-                let _ = release(g.master, g.head, g.n);
+                crate::heap::MEDIUM_HEAP.release_blocks(g.master, g.head, g.n);
             }
             if popped == 0 {
                 break;
