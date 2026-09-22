@@ -168,9 +168,14 @@ so reentrant allocation cannot occur.
   ~64 blocks per lock acquisition, spread over 64 independent locks).
 - `sys::Mutex`: on Windows, an SRWLock — contended threads park in the kernel
   instead of burning CPU (SRWLOCK is a zero-initialized pointer, so it stays
-  const-constructible). On other platforms, adaptive spin with bounded
-  spinning and OS yield where available. It can never allocate, eliminating
-  the recursion hazard inside `GlobalAlloc`.
+  const-constructible). On hosted unix, a pthread mutex (lazy one-time init,
+  default attributes) — same parking behavior via the kernel, no userspace
+  spinning, so preempted lock holders can't convoy the waiters. Everywhere
+  else (no_std, wasm), adaptive spin with bounded spinning. Uncontended cost
+  is one userspace CAS on all backends. None of it can allocate, eliminating
+  the recursion hazard inside `GlobalAlloc`. Measured: no throughput delta
+  vs spinning on sharded low-contention workloads (mixed-all 8T flat) —
+  kept for preemption-robustness, not speed.
 - Note: because freed blocks go to the *freeing* thread's cache (no block
   ownership), mimalloc-style atomic cross-thread free lists are unnecessary;
   lock sharding addresses the remaining contention directly.
