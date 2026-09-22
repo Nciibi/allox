@@ -346,13 +346,12 @@ impl ThreadCache {
     }
 
     /// Medium fast-path allocation. Returns null only on OS exhaustion.
-    /// Retention is count-based (MEDIUM_BIN_CAP), not byte-budgeted — see
-    /// the const docs for why byte budgets collapse medium hit rates.
     pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
         let bin = &mut self.mbins[mclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
+            self.cached_bytes -= MEDIUM_CLASSES[mclass];
             if below < self.mvirgin[mclass] {
                 self.mvirgin[mclass] -= 1;
             }
@@ -374,6 +373,7 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
+            self.cached_bytes -= MEDIUM_CLASSES[mclass];
             let zeroed = below < self.mvirgin[mclass];
             if zeroed {
                 self.mvirgin[mclass] -= 1;
@@ -391,10 +391,11 @@ impl ThreadCache {
     }
 
     /// Medium slow path: pull one span's worth of blocks from the heap.
-    /// Refill only runs on an empty bin, so the result (<=15 blocks) always
-    /// fits under MEDIUM_BIN_CAP — no trim needed here.
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
+        if self.cached_bytes > thread_cache_budget() / 2 {
+            self.trim();
+        }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
         if chain.is_null() {
             return (ptr::null_mut(), false);
@@ -404,6 +405,7 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
         bin.head = rest;
         bin.len += count - 1;
+        self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
         self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
         (first, virgin)
     }
@@ -416,11 +418,11 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
-        let len = bin.len;
+        self.cached_bytes += MEDIUM_CLASSES[mclass];
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
-        if len > MEDIUM_BIN_CAP {
-            self.flush_mbin(mclass, MEDIUM_BIN_CAP / 2);
+        if self.cached_bytes > thread_cache_budget() {
+            self.trim();
         }
     }
 
@@ -462,9 +464,8 @@ impl ThreadCache {
         true
     }
 
-    /// Bring total SMALL cached bytes under half the budget by repeatedly
-    /// halving the largest small bin. Medium bins self-regulate by count
-    /// (MEDIUM_BIN_CAP) and are outside the byte budget. No allocation.
+    /// Bring total cached bytes under half the budget by repeatedly halving
+    /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
         let target = thread_cache_budget() / 2;
         while self.cached_bytes > target {
@@ -477,12 +478,29 @@ impl ThreadCache {
                     best = class;
                 }
             }
-            if best == usize::MAX {
+            if best != usize::MAX {
+                let len = self.bins[best].len;
+                self.flush_bin(best, len / 2);
+                continue;
+            }
+            // Small bins have nothing worth trimming; shed the largest
+            // medium bin instead (medium blocks are huge, so any non-empty
+            // medium bin outranks the small-bin threshold logic).
+            let mut mbest = usize::MAX;
+            let mut mbest_bytes = 0usize;
+            for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
+                let bin_bytes = self.mbins[mclass].len as usize * size;
+                if self.mbins[mclass].len > 0 && bin_bytes > mbest_bytes {
+                    mbest_bytes = bin_bytes;
+                    mbest = mclass;
+                }
+            }
+            if mbest == usize::MAX {
                 self.cached_bytes = target; // nothing trimmable left; stop
                 break;
             }
-            let len = self.bins[best].len;
-            self.flush_bin(best, len / 2);
+            let len = self.mbins[mbest].len;
+            self.flush_mbin(mbest, len / 2);
         }
     }
 
@@ -554,6 +572,7 @@ impl ThreadCache {
     unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
+        let block_size = MEDIUM_CLASSES[mclass];
         let bin = &mut self.mbins[mclass];
 
         while bin.len > floor_blocks {
@@ -572,6 +591,7 @@ impl ThreadCache {
                     self.mvirgin[mclass] -= 1;
                 }
                 popped += 1;
+                self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
 
                 let master = SpanMaster::of(b);
                 debug_assert!(!master.is_null());
