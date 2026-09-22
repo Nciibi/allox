@@ -236,7 +236,7 @@ impl Arena {
                 holes.entries[last] = (0, 0);
                 holes.len = last;
                 holes.bytes -= p * ARENA_ALIGN;
-                self.start.load(Ordering::Relaxed) as *mut u8
+                (self.start.load(Ordering::Relaxed) + off) as *mut u8
             }
             None => ptr::null_mut(),
         }
