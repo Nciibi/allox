@@ -282,3 +282,28 @@ verified). Bonus: layout routing skips ~4 loads + branches per free.
   of scope): `GlobalAlloc::realloc` same-class identity with
   `layout.size() == 0` can return the dangling pointer for nonzero
   `new_size`; needs its own fix + test.
+
+## Phase 1 results — arena core + LARGE wiring (1 s probes unless noted)
+
+What shipped: `src/arena.rs` (new, unix+`std` only) — 16 GiB (64-bit) /
+512 MiB (32-bit) `PROT_NONE` reservation, lazy once-per-process init with
+aligned-trim, lock-free bump CAS, value-array hole stacks (1024 slots,
+best-fit + split, 4 GiB/256 MiB byte caps), `MAP_FIXED` commits with
+`ret == base` verification, discard-before-park release ordering, universal
+legacy fallback (null = unavailable, never OOM), `ARENA_COMMITS/REUSES/
+ABANDONED` hidden counters. `src/lib.rs`: `map_large_region` (arena then
+legacy) and `unmap_or_return` (arena holes vs true munmap) with
+exactly-once fresh-map accounting; `__debug_map_split` now 6-way with
+arena reuses in the probe line. Five arena unit tests (alignment+zeroing,
+exhaustion fallback, hole reuse counting, split-remainder reuse,
+no-clobber canary) on isolated instances — including one failure that
+corrected the test, not the code (holes don't coalesce by design).
+
+* `large-only 1T`: 150k → 230k (+60% over pre-arena; map_any alone gave
+  +40%), ties system (0.96x), 21k arena reuses/probe.
+* `large-only 8T`: 455k → 1.17M (beats system 1.26x, 2.75x talc).
+  Still 0.07–0.09x mimalloc — remaining gap is shard hit rate under
+  32K–256K uniform variance (exact pools need more depth), not mmap cost.
+* `mixed-all 1T`: 1.83M, probe essentially syscall-free (16 maps).
+* Full suite green (11 binaries incl. 5 arena tests) + telemetry + no_std
+  + release, all warning-free. Next, one at a time: spans, then pages.
