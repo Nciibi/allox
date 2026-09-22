@@ -436,7 +436,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     // Large regions are located by offset header, never by address masking,
     // so kernel page alignment suffices — no over-map/trim tax (unix), and
     // elsewhere map_any is already the optimal primitive.
-    let base = sys::map_any(mapped);
+    let base = map_large_region(mapped);
     if base.is_null() {
         return (ptr::null_mut(), false);
     }
