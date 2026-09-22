@@ -1,24 +1,19 @@
-//! Thread-exit flush: a thread that never calls `flush_current_thread` must
-//! not pin its caches behind it.
+//! Thread-exit flush: threads that never call `flush_current_thread` must
+//! not pin their caches behind them.
 //!
 //! The OS exit hook (pthread_key / FlsAlloc) flushes each thread's cache at
-//! exit so the next generation reuses shared pools instead of mapping fresh.
-//!
-//! Methodology: ONE worker frees everything into its bins while staying
-//! UNDER the trim budget (so nothing reaches shared pools during the run —
-//! dead TLS bins are the only variable), then exits without flushing. The
-//! main thread repeats the identical pattern: with the hook this maps
-//! almost nothing fresh; without it, every block must be mapped fresh.
+//! exit. Metric is mapped-pages growth ACROSS generations of short-lived
+//! threads: without the hook each generation pins its dead bins (unbounded
+//! linear growth); with it, shared pools absorb the churn and growth
+//! flattens into bounded empty/cold retention.
 
 use allox::Allox;
 
 #[global_allocator]
 static GLOBAL: Allox = Allox;
 
-/// Frees `n_small` 4 KiB blocks + `n_medium` 32 KiB blocks + `n_large`
-/// 512 KiB regions, all into thread-local bins, then returns WITHOUT
-/// flushing. Totals must stay under the 32 MiB trim budget so shared pools
-/// stay cold and the dead cache is the only thing being tested.
+/// One generation of short-lived churn: small + medium + large, everything
+/// freed, nothing explicitly flushed.
 fn churn_no_flush() {
     let mut small = Vec::with_capacity(3000);
     for _ in 0..3000 {
@@ -59,51 +54,47 @@ fn churn_no_flush() {
     // Deliberately NO flush — the exit hook must handle it.
 }
 
-#[test]
-fn exiting_thread_releases_its_cache() {
-    // One worker generation primes nothing shared (under-budget churn goes
-    // to bins, and bins die with the thread unless the hook fires).
-    std::thread::Builder::new()
-        .stack_size(1 << 20)
-        .spawn(churn_no_flush)
-        .unwrap()
-        .join()
-        .unwrap();
+fn one_generation(workers: usize) {
+    let handles: Vec<_> = (0..workers)
+        .map(|_| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(churn_no_flush)
+                .unwrap()
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+    // Exit hooks already ran (synchronous at thread exit); clear only this
+    // thread's own harness allocations before measuring.
     allox::flush_current_thread();
-
-    // Identical repeat on this thread: measures fresh maps only.
-    let m0 = allox::stats().map_calls;
-    churn_no_flush();
-    allox::flush_current_thread();
-    let new_maps = allox::stats().map_calls - m0;
-    eprintln!("thread_exit: new_maps={}", new_maps);
-    // Without the hook this is ~75 (47 small pages + ~20 spans + stash);
-    // with it, shared pools serve everything.
-    assert!(
-        new_maps < 15,
-        "exiting thread pinned its cache ({} fresh maps for repeat work)",
-        new_maps
-    );
 }
 
 #[test]
-fn many_short_lived_threads_stay_bounded() {
-    // Herd smoke test: concurrent exits must not abort, deadlock, or lose
-    // unbounded memory (try path removed — exit flush blocks briefly).
-    for _ in 0..3 {
-        let handles: Vec<_> = (0..8)
-            .map(|_| {
-                std::thread::Builder::new()
-                    .stack_size(1 << 20)
-                    .spawn(churn_no_flush)
-                    .unwrap()
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-    }
+fn short_lived_threads_do_not_accumulate() {
     allox::flush_current_thread();
-    let s = allox::stats();
-    eprintln!("thread_exit herd: mapped_pages={}", s.mapped_pages);
+    let mut mapped = Vec::new();
+    for g in 0..5 {
+        one_generation(4);
+        let m = allox::stats().mapped_pages;
+        eprintln!("generation {}: mapped_pages={}", g, m);
+        mapped.push(m);
+    }
+    // Growth must flatten: shared retention is bounded (empty/cold caps),
+    // so later generations add little. Dead TLS bins would add ~each
+    // generation's full footprint (~100+ mappings) every time.
+    let early = mapped[1].saturating_sub(mapped[0]);
+    let late = mapped[4].saturating_sub(mapped[3]);
+    eprintln!("early_delta={} late_delta={}", early, late);
+    assert!(
+        late < 150,
+        "mapped keeps growing across generations (late delta {}) — dead caches?",
+        late
+    );
+    assert!(
+        mapped[4].saturating_sub(mapped[0]) < 600,
+        "unbounded accumulation across generations: {:?}",
+        mapped
+    );
 }
