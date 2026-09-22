@@ -914,17 +914,23 @@ pub fn stats() -> Stats {
 }
 
 /// Span-vs-large map split for tuning (see ROADMAP P2). Returns
-/// `(span_maps, span_unmaps, small_maps, small_unmaps)`; large maps are
-/// `map_calls - span_maps - small_maps`.
+/// `(span_maps, span_unmaps, small_maps, small_unmaps, arena_commits,
+/// arena_reuses)`; large maps are `map_calls - span_maps - small_maps`.
 /// Hidden: not semver-covered, may change or vanish.
 #[doc(hidden)]
-pub fn __debug_map_split() -> (u64, u64, u64, u64) {
+pub fn __debug_map_split() -> (u64, u64, u64, u64, u64, u64) {
     use core::sync::atomic::Ordering::Relaxed;
+    #[cfg(all(unix, feature = "std"))]
+    let (acommits, areuses, _) = crate::arena::stats();
+    #[cfg(not(all(unix, feature = "std")))]
+    let (acommits, areuses) = (0, 0);
     (
         heap::SPAN_MAP_CALLS.load(Relaxed),
         heap::SPAN_UNMAP_CALLS.load(Relaxed),
         heap::SMALL_MAP_CALLS.load(Relaxed),
         heap::SMALL_UNMAP_CALLS.load(Relaxed),
+        acommits,
+        areuses,
     )
 }
 
