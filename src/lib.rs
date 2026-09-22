@@ -196,7 +196,11 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 ///
 /// Worst-case retention is the global cap plus each live thread's stash cap.
 const NUM_LARGE_SHARDS: usize = 8;
-const LARGE_SHARD_SLOTS: usize = 16;
+/// Slots per shard: generous, because the byte cap (not the slot count)
+/// bounds retention — 64 slots × 16 B = 1 KiB of static storage per shard.
+/// Single-threaded same-size traffic lands on one shard and must not
+/// slot-starve there (the old single 64-slot cache never did).
+const LARGE_SHARD_SLOTS: usize = 64;
 const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
 
 struct LargeRegionCache {
