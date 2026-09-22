@@ -703,6 +703,56 @@ unsafe fn debug_validate_free(p: *mut u8) {
     }
 }
 
+/// Debug-build validation for medium frees: `p` must sit block-aligned
+/// inside a carved chunk of `span` (never on a header) and must not already
+/// be on the span free list. Runs under the medium-heap lock.
+#[cfg(debug_assertions)]
+unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
+    use crate::page::{PAGE_MASK, PAGE_SIZE, SPAN_MASTER_SIZE, SPAN_SUB_SIZE};
+    if p.is_null() || span.is_null() {
+        invalid("allox: medium dealloc of null");
+    }
+    let mclass = (*span).mclass as usize;
+    let block_size = MEDIUM_CLASSES[mclass];
+    let base = span as usize;
+    let npages = (*span).npages as usize;
+    if p as usize <= base || p as usize >= base + npages * PAGE_SIZE {
+        invalid("allox: medium dealloc outside owning span");
+    }
+    // Block must lie inside its page-chunk, clear of headers.
+    let rel = (p as usize - base) / PAGE_SIZE;
+    let chunk = base + rel * PAGE_SIZE;
+    let (start, end) = if rel == 0 {
+        (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
+    } else {
+        // Must really be a sub-page of this span.
+        if *(chunk as *const u64) != crate::page::SPAN_SUBMAGIC {
+            invalid("allox: medium dealloc through corrupt sub-page");
+        }
+        (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
+    };
+    if (p as usize) < start || (p as usize) + block_size > end {
+        invalid("allox: medium dealloc of misaligned interior pointer");
+    }
+    if (p as usize - start) % block_size != 0 {
+        invalid("allox: medium dealloc of misaligned interior pointer");
+    }
+    let _ = PAGE_MASK; // masking already done by SpanMaster::of
+    let _guard = crate::heap::MEDIUM_HEAP.debug_lock_medium(mclass);
+    let mut cur = (*span).free_head;
+    let mut steps = (*span).free_count;
+    while steps > 0 {
+        if cur == p {
+            invalid("allox: double free detected");
+        }
+        if cur.is_null() {
+            break;
+        }
+        cur = *cur.cast::<*mut u8>();
+        steps -= 1;
+    }
+}
+
 #[cfg(all(debug_assertions, feature = "std"))]
 fn invalid(msg: &'static str) -> ! {
     eprintln!("{}", msg);
