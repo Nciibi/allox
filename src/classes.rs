@@ -216,4 +216,43 @@ mod tests {
             assert!(cls < size * 9 / 8 + 16, "size {} class {}", size, cls);
         }
     }
+
+    #[test]
+    fn medium_tables_cover_range_with_bound() {
+        use crate::page::SPAN_MASTER_SIZE;
+        assert_eq!(MEDIUM_CHUNK_RESERVE, SPAN_MASTER_SIZE);
+        assert!(NUM_MEDIUM >= 8, "expected ~13 medium classes, got {}", NUM_MEDIUM);
+        assert!(MEDIUM_CLASSES[0] > MAX_SMALL_SIZE);
+        assert!(MAX_MEDIUM_BLOCK <= MEDIUM_BLOCK_CAP);
+        // Next geometric step would exceed the cap (table is maximal).
+        assert!(medium_step(MAX_MEDIUM_BLOCK) > MEDIUM_BLOCK_CAP);
+        let mut prev = MAX_SMALL_SIZE;
+        for &c in MEDIUM_CLASSES.iter() {
+            assert!(c > prev, "not strictly growing: {}", c);
+            assert!(c % 16 == 0);
+            prev = c;
+        }
+        // Fragmentation bound + LUT agree with scan on every slot.
+        let mut size = MAX_SMALL_SIZE + 1;
+        while size <= MAX_MEDIUM_BLOCK {
+            let cls = MEDIUM_CLASSES[medium_class_for_size(size)];
+            assert!(cls >= size, "size {}", size);
+            assert!(cls < size * 9 / 8 + 16, "size {} class {}", size, cls);
+            assert_eq!(medium_class_for_size(size), medium_scan(size));
+            size += 1;
+        }
+        // Every span holds comfortably more than one lock's worth of blocks.
+        for &b in MEDIUM_CLASSES.iter() {
+            let pages = span_pages_for(b);
+            assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
+            let usable = pages * 65536 - MEDIUM_CHUNK_RESERVE - (pages - 1) * 16;
+            assert!(
+                usable / b >= TARGET_BLOCKS_PER_SPAN,
+                "block {} pages {} capacity {}",
+                b,
+                pages,
+                usable / b
+            );
+        }
+    }
 }
