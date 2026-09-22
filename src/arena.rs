@@ -159,7 +159,7 @@ impl Arena {
             core::hint::spin_loop();
         }
         if self.state.load(Ordering::Relaxed) == 0 {
-            let total = match ARENA_SIZE.checked_add(ARENA_ALIGN) {
+            let total = match self.size.checked_add(ARENA_ALIGN) {
                 Some(t) => t,
                 None => {
                     self.state.store(2, Ordering::Release);
