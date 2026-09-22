@@ -337,6 +337,40 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     alloc_large_ex(size, align).0
 }
 
+/// Map a large region: arena commit first (1 VMA op, 64 KiB-aligned by
+/// construction), legacy `map_any` fallback when the arena is unavailable
+/// (non-unix, reservation failure, bump exhaustion). Fresh zeros either way.
+#[inline]
+unsafe fn map_large_region(mapped: usize) -> *mut u8 {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        let base = crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
+        if !base.is_null() {
+            return base;
+        }
+    }
+    sys::map_any(mapped)
+}
+
+/// Release a large region: back to arena holes when arena-owned (no
+/// syscall), true `munmap` otherwise. Arena slices are never unmapped (that
+/// would punch holes third parties could claim); legacy mappings need the
+/// real unmap plus counter updates.
+#[inline]
+unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        if crate::arena::contains(base, mapped) {
+            crate::arena::release(base, (mapped / page::PAGE_SIZE) as usize);
+            return;
+        }
+    }
+    let _ = mapped;
+    sys::unmap(base, mapped);
+    heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+    heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
 /// OS-zero (a brand-new mapping rather than a recycled one).
 unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
