@@ -407,6 +407,30 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
     ops as f64 / seconds as f64
 }
 
+/// Spawn-exit with no allocator interaction: isolates pthread spawn/join
+/// latency so spawn-churn numbers can be decomposed. Reported in threads/s
+/// (not alloc ops/s) — expect identical scores for every comparator.
+fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let mut threads = 0u64;
+    while Instant::now() < stop {
+        let mut batch = Vec::new();
+        for _ in 0..wl.threads {
+            batch.push(
+                std::thread::Builder::new()
+                    .stack_size(1 << 20)
+                    .spawn(|| {})
+                    .unwrap(),
+            );
+        }
+        for h in batch {
+            h.join().unwrap();
+        }
+        threads += wl.threads as u64;
+    }
+    threads as f64 / seconds as f64
+}
+
 fn median(v: &mut [f64]) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
