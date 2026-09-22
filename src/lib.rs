@@ -145,6 +145,7 @@ mod tls {
 /// Used by the OS thread-exit hook, where blocking is safe (no allocator
 /// locks are ever held at thread exit, and heap locks never cycle with OS
 /// teardown locks). Panic-free by construction.
+#[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) unsafe fn tls_flush_full() {
     tls::flush();
 }
