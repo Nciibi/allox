@@ -337,6 +337,7 @@ impl ThreadCache {
     /// Slow path: pull a batch of blocks from the global heap.
     #[inline]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
+        self.arm_exit_hook();
         // Under aggregate pressure, shed some cache before asking for more.
         if self.cached_bytes > thread_cache_budget() / 2 {
             self.trim();
@@ -423,6 +424,7 @@ impl ThreadCache {
     /// Medium slow path: pull one span's worth of blocks from the heap.
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
+        self.arm_exit_hook();
         if self.cached_bytes > thread_cache_budget() / 2 {
             self.trim();
         }
