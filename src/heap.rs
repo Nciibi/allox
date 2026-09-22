@@ -248,3 +248,210 @@ impl GlobalHeap {
 }
 
 pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
+
+// ---------------------------------------------------------------------------
+// Medium-span heap: one partial-span list per medium class, same sharding
+// discipline as the small heap (no path ever holds two class locks). Spans
+// are multi-page runs carved into medium blocks; batches are span-sized
+// (MEDIUM_REFILL_BATCH) rather than 64, since one span already holds 8+.
+ // ---------------------------------------------------------------------------
+
+/// Blocks moved from spans into a thread cache per slow-path take.
+pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
+
+/// Fully-freed spans kept mapped per medium class before unmapping. Spans
+/// are large (up to ~16 pages), so the cap is lower than for small pages.
+const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 2;
+
+pub(crate) struct MSpanList {
+    /// Partial spans (spare free blocks), doubly linked via prev/next.
+    head: *mut SpanMaster,
+    /// Fully free spans held for reuse; singly linked via `next`.
+    empty: *mut SpanMaster,
+    empty_count: u32,
+}
+
+// Raw pointers are only manipulated while holding the enclosing Mutex.
+unsafe impl Send for MSpanList {}
+
+impl MSpanList {
+    pub(crate) const fn new() -> Self {
+        MSpanList {
+            head: ptr::null_mut(),
+            empty: ptr::null_mut(),
+            empty_count: 0,
+        }
+    }
+}
+
+pub(crate) struct MediumHeap {
+    classes: [Mutex<MSpanList>; NUM_MEDIUM],
+}
+
+unsafe fn mlink_partial(list: &mut *mut SpanMaster, s: *mut SpanMaster) {
+    (*s).prev = ptr::null_mut();
+    (*s).next = *list;
+    if !(*list).is_null() {
+        (**list).prev = s;
+    }
+    *list = s;
+    (*s).flags |= FLAG_IN_PARTIAL;
+}
+
+/// Returns true if the span was linked and has been removed.
+unsafe fn munlink_partial(list: &mut *mut SpanMaster, s: *mut SpanMaster) -> bool {
+    if (*s).flags & FLAG_IN_PARTIAL == 0 {
+        return false;
+    }
+    let prev = (*s).prev;
+    let next = (*s).next;
+    if !prev.is_null() {
+        (*prev).next = next;
+    } else {
+        *list = next;
+    }
+    if !next.is_null() {
+        (*next).prev = prev;
+    }
+    (*s).prev = ptr::null_mut();
+    (*s).next = ptr::null_mut();
+    (*s).flags &= !FLAG_IN_PARTIAL;
+    true
+}
+
+/// Pop up to `cap` blocks from the spans of one partial list. Caller must
+/// hold the class' lock. `*virgin` stays true only if every contributing
+/// span is still OS-zero.
+unsafe fn mfill_from_list(
+    list: &mut *mut SpanMaster,
+    chain: &mut *mut u8,
+    count: &mut u32,
+    virgin: &mut bool,
+    cap: u32,
+) {
+    while *count < cap {
+        let span = *list;
+        if span.is_null() {
+            break;
+        }
+        if (*span).flags & FLAG_VIRGIN == 0 {
+            *virgin = false;
+        }
+        match pop_block(&mut (*span).free_head) {
+            Some(b) => {
+                *b.cast::<*mut u8>() = *chain;
+                *chain = b;
+                *count += 1;
+                (*span).free_count -= 1;
+                (*span).used += 1;
+                if (*span).free_count == 0 {
+                    munlink_partial(list, span);
+                }
+            }
+            None => {
+                // Empty span must never be on the partial list; recover anyway.
+                munlink_partial(list, span);
+            }
+        }
+    }
+}
+
+impl MediumHeap {
+    pub(crate) const fn new() -> Self {
+        MediumHeap {
+            classes: [const { Mutex::new(MSpanList::new()) }; NUM_MEDIUM],
+        }
+    }
+
+    /// Acquire up to MEDIUM_REFILL_BATCH free blocks of `mclass` as an
+    /// intrusive chain. Returns `(null, 0, _)` only on OS exhaustion.
+    pub(crate) unsafe fn take_blocks(&self, mclass: usize) -> (*mut u8, u32, bool) {
+        let mut chain: *mut u8 = ptr::null_mut();
+        let mut count: u32 = 0;
+        let mut virgin = true;
+
+        {
+            let mut list = self.classes[mclass].lock();
+            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+
+            if count == 0 && !list.empty.is_null() {
+                let span = list.empty;
+                list.empty = (*span).next;
+                (*span).next = ptr::null_mut();
+                list.empty_count -= 1;
+                if (*span).flags & FLAG_VIRGIN == 0 {
+                    virgin = false;
+                }
+                mlink_partial(&mut list.head, span);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+            }
+        }
+
+        if count == 0 {
+            let pages = span_pages_for(crate::classes::MEDIUM_CLASSES[mclass]);
+            let raw = sys::map(pages * PAGE_SIZE);
+            if !raw.is_null() {
+                let span = raw.cast::<SpanMaster>();
+                (*span).init(mclass, pages as u32);
+                MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                MAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                let mut list = self.classes[mclass].lock();
+                mlink_partial(&mut list.head, span);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+            } else {
+                virgin = false;
+            }
+        }
+
+        (chain, count, virgin)
+    }
+
+    /// Return a chain of `n` blocks, all belonging to `span`, to that span.
+    pub(crate) unsafe fn release_blocks(&self, span: *mut SpanMaster, chain: *mut u8, n: u32) {
+        let mclass = (*span).mclass as usize;
+        let unmap = {
+            let mut list = self.classes[mclass].lock();
+            // Freed blocks are dirty by definition.
+            (*span).flags &= !FLAG_VIRGIN;
+            let mut tail = chain;
+            while !(*tail.cast::<*mut u8>()).is_null() {
+                tail = *tail.cast::<*mut u8>();
+            }
+            *tail.cast::<*mut u8>() = (*span).free_head;
+            (*span).free_head = chain;
+            (*span).free_count += n;
+            (*span).used -= n;
+            if (*span).used == 0 {
+                munlink_partial(&mut list.head, span);
+                if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS {
+                    // Delayed reclamation: keep the span mapped for reuse.
+                    (*span).next = list.empty;
+                    list.empty = span;
+                    list.empty_count += 1;
+                    None
+                } else {
+                    Some((*span).mapped_bytes())
+                }
+            } else {
+                if (*span).flags & FLAG_IN_PARTIAL == 0 {
+                    mlink_partial(&mut list.head, span);
+                }
+                None
+            }
+        };
+        if let Some(bytes) = unmap {
+            sys::unmap(span.cast::<u8>(), bytes);
+            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Lock access to a class' partial list for external validation
+    /// (debug double-free detection).
+    #[cfg(debug_assertions)]
+    pub(crate) fn debug_lock_medium(&self, mclass: usize) -> MutexGuard<'_, MSpanList> {
+        self.classes[mclass].lock()
+    }
+}
+
+pub(crate) static MEDIUM_HEAP: MediumHeap = MediumHeap::new();
