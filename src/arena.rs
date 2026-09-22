@@ -352,7 +352,7 @@ impl Arena {
     }
 }
 
-use super::discard as sys_discard;
+use super::discard as _sys_discard_placeholder;
 
 static ARENA: Arena = Arena::new();
 
