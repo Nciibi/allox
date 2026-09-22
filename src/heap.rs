@@ -503,11 +503,16 @@ unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mu
                 {
                     // Cold: drop physical, keep virtual. Array-stored (base,
                     // npages) so the discard can't destroy the linkage.
+                    // Discard runs UNDER the lock: the span is exclusively
+                    // ours until unlock (used==0 observed above), so no
+                    // concurrent pop can hand out blocks mid-discard and lose
+                    // user writes. Discarding after unlock raced exactly so.
                     let idx = list.cold_len as usize;
                     list.cold[idx] = (span.cast::<u8>(), (*span).npages);
                     list.cold_len += 1;
                     list.cold_bytes += span_bytes;
-                    SpanFate::Cold
+                    sys::discard(span.cast::<u8>(), span_bytes);
+                    SpanFate::Keep
                 } else {
             SpanFate::Unmap(span_bytes)
         }
