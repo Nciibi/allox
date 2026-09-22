@@ -200,7 +200,7 @@ Scoreboard (Linux Ryzen 5 1600, median of 3 × 2 s):
   large caches, virtual retention like spans got).
 * `spawn-churn`: 276k, 0.15x — dead-thread reclamation (exit-flush NEXT).
 
-## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
+## P1d results — large cold tier + exact-fit-first (1 s/1 rep probes)
 
 What shipped (`src/lib.rs`, `src/cache.rs`): large shards gained a cold
 tier (discard physical via `sys::discard`, retain virtual; 64 MB/shard on
