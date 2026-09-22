@@ -341,7 +341,7 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
 /// construction), legacy `map_any` fallback when the arena is unavailable
 /// (non-unix, reservation failure, bump exhaustion). Fresh zeros either way.
 #[inline]
-unsafe fn map_large_region(mapped: usize) -> *mut u8 {
+pub(crate) unsafe fn map_large_region(mapped: usize) -> *mut u8 {
     #[cfg(all(unix, feature = "std"))]
     {
         let base = crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
