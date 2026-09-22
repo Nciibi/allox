@@ -365,7 +365,6 @@ unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
             return;
         }
     }
-    let _ = mapped;
     sys::unmap(base, mapped);
     heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
     heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
