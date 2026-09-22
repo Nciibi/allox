@@ -240,6 +240,23 @@ impl GlobalHeap {
                 link_partial(&mut list.head, page);
                 fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
             }
+
+            if count == 0 && list.cold_len > 0 {
+                // Cold page: virtual survived, contents didn't (discard
+                // zeroes the header and free list too). Re-carve and treat
+                // as non-virgin so calloc always memsets — sound even where
+                // discard is a no-op (wasm).
+                list.cold_len -= 1;
+                let cidx = list.cold_len as usize;
+                let page = list.cold[cidx];
+                list.cold[cidx] = ptr::null_mut();
+                list.cold_bytes -= PAGE_SIZE;
+                (*page).init(class);
+                (*page).flags &= !FLAG_VIRGIN;
+                virgin = false;
+                link_partial(&mut list.head, page);
+                fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
+            }
         }
 
         if count == 0 {
