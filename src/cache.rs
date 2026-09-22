@@ -51,6 +51,10 @@ pub(crate) fn set_budget(bytes: usize) {
 /// same-thread reuse path (the common benchmark shape).
 pub(crate) const LARGE_STASH_SLOTS: usize = 4;
 pub(crate) const LARGE_STASH_CAP_BYTES: usize = 4 * 1024 * 1024;
+
+/// Blocks released to the global heap per grouping pass. Bounds the stack
+/// buffer used to group blocks by owning page.
+const FLUSH_CHUNK: u32 = 2048;
 const MAX_FLUSH_GROUPS: usize = FLUSH_CHUNK as usize + 8;
 
 #[derive(Clone, Copy)]
@@ -83,6 +87,12 @@ pub(crate) struct ThreadCache {
     /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
     /// iff the remaining length drops below this count.
     virgin: [u32; NUM_CLASSES],
+    /// Per-thread stash of freed large regions: (base, mapped_pages).
+    /// Touched only by the owning thread (or the global-cache lock holder in
+    /// no_std, which is still mutually exclusive), so no synchronization.
+    large: [(*mut u8, u32); LARGE_STASH_SLOTS],
+    large_len: u32,
+    large_bytes: usize,
     /// Telemetry accumulators, published to the global atomics in batches.
     #[cfg(feature = "telemetry")]
     pending: Pending,
@@ -127,6 +137,9 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             virgin: [0; NUM_CLASSES],
+            large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
+            large_len: 0,
+            large_bytes: 0,
             #[cfg(feature = "telemetry")]
             pending: Pending::new(),
         }
