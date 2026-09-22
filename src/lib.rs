@@ -408,27 +408,44 @@ unsafe fn free_large(p: *mut u8) {
         return;
     }
 
-    // Tier 2: park the region on its shard for cross-thread reuse.
-    let mut unmap_now = false;
-    {
-        // Salt with our own cache address so frees spread like allocs do;
-        // exact pairing doesn't matter, only contention spreading.
+    // Tier 2+3: park the region on its shard (hot), else cold with physical
+    // dropped, else unmap. Discard runs outside the lock: it never touches
+    // allocator state.
+    enum Fate {
+        Kept,
+        Cold,
+        Unmap,
+    }
+    let fate = {
         let mut c = LARGE_SHARDS[large_shard(pages as usize, salt)].lock();
-        let slot_ok =
-            c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES;
-        if slot_ok {
+        if c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES {
             let idx = c.len;
             c.entries[idx] = (base, pages);
             c.len = idx + 1;
             c.bytes += mapped;
+            Fate::Kept
+        } else if c.cold_len < LARGE_COLD_SLOTS
+            && c.cold_bytes + mapped <= LARGE_COLD_CAP_BYTES
+        {
+            let idx = c.cold_len;
+            c.cold[idx] = (base, pages);
+            c.cold_len = idx + 1;
+            c.cold_bytes += mapped;
+            Fate::Cold
         } else {
-            unmap_now = true;
+            Fate::Unmap
         }
-    }
-    if unmap_now {
-        sys::unmap(base, mapped);
-        heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-        heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    };
+    match fate {
+        Fate::Kept => {}
+        Fate::Cold => {
+            sys::discard(base, mapped);
+        }
+        Fate::Unmap => {
+            sys::unmap(base, mapped);
+            heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+            heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
     }
     #[cfg(feature = "telemetry")]
     {
