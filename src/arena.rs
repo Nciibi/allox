@@ -245,8 +245,8 @@ impl Arena {
     /// Park a slice for reuse. Discard-then-park is the caller's job (needs
     /// exclusive ownership, which only the caller has pre-lock); see docs.
     /// Overflow discards nothing (caller already did) and abandons the entry:
-    /// virtual stays reserved, physical already dropped, nothing ever reuses
-    /// or unmaps it. Bounded by overflow rate; counted for observability.
+    /// virtual stays reserved, physical dropped, nothing ever reuses or
+    /// unmaps it. Bounded by overflow rate; counted for observability.
     fn holes_give(&self, base: *mut u8, pages: usize) {
         let start = self.start.load(Ordering::Relaxed);
         let off = (base as usize).wrapping_sub(start);
@@ -260,5 +260,123 @@ impl Arena {
         } else {
             self.abandoned.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    /// Commit `pages` (64 KiB units, nonzero) and return the fresh-zeroed
+    /// base, or null when unavailable — reservation failed, bump exhausted,
+    /// or the commit itself failed. Null is never OOM-by-itself: callers
+    /// fall back to legacy mapping paths.
+    pub(crate) unsafe fn commit(&self, pages: usize) -> *mut u8 {
+        let len = match pages.checked_mul(ARENA_ALIGN) {
+            Some(l) if l > 0 => l,
+            _ => return ptr::null_mut(),
+        };
+        if !self.ensure_init() {
+            return ptr::null_mut();
+        }
+        // Best-fit hole first: zero syscalls beyond the commit itself.
+        let reuse = self.holes_take(pages);
+        if !reuse.is_null() {
+            if self.commit_range(reuse as usize, len) {
+                self.reuses.fetch_add(1, Ordering::Relaxed);
+                self.commits.fetch_add(1, Ordering::Relaxed);
+                return reuse;
+            }
+            self.holes_give(reuse, pages);
+            return ptr::null_mut();
+        }
+        // Bump: lock-free CAS claim, commit after (exclusive by construction).
+        let start = self.start.load(Ordering::Relaxed);
+        loop {
+            let off = self.bump.load(Ordering::Relaxed);
+            let end = match off.checked_add(len) {
+                Some(e) if e <= ARENA_SIZE => e,
+                _ => return ptr::null_mut(), // exhausted: legacy fallback
+            };
+            match self
+                .bump
+                .compare_exchange(off, end, Ordering::AcqRel, Ordering::Relaxed)
+            {
+                Ok(_) => {
+                    let base = start + off;
+                    if self.commit_range(base, len) {
+                        self.commits.fetch_add(1, Ordering::Relaxed);
+                        return base as *mut u8;
+                    }
+                    self.holes_give(base as *mut u8, pages);
+                    return ptr::null_mut();
+                }
+                Err(_) => core::hint::spin_loop(),
+            }
+        }
+    }
+
+    /// Return a slice previously obtained from [`Arena::commit`]. Discards
+    /// physical FIRST (exclusive ownership pre-lock — parking first and
+    /// discarding after unlock would race a concurrent pop+reuse and wipe
+    /// live data), then parks for reuse or abandons on overflow.
+    pub(crate) unsafe fn release(&self, base: *mut u8, pages: usize) {
+        let len = match pages.checked_mul(ARENA_ALIGN) {
+            Some(l) if l > 0 => l,
+            _ => {
+                debug_assert!(false, "arena release of empty range");
+                return;
+            }
+        };
+        discard(base, len);
+        self.holes_give(base, pages);
+    }
+
+    /// True iff `[base, base+len)` lies fully inside the live reservation.
+    /// Legacy (non-arena) mappings can never satisfy this: the kernel never
+    /// overlaps them with our existing VMA.
+    pub(crate) fn contains(&self, base: *mut u8, len: usize) -> bool {
+        if self.state.load(Ordering::Acquire) != 1 {
+            return false;
+        }
+        let start = self.start.load(Ordering::Relaxed);
+        let end = self.end.load(Ordering::Relaxed);
+        let b = base as usize;
+        match b.checked_add(len) {
+            Some(top) => start <= b && top <= end && b >= start,
+            None => false,
+        }
+    }
+
+    pub(crate) fn stats(&self) -> (u64, u64, u64) {
+        (
+            self.commits.load(Ordering::Relaxed) as u64,
+            self.reuses.load(Ordering::Relaxed) as u64,
+            self.abandoned.load(Ordering::Relaxed) as u64,
+        )
+    }
+}
+
+use super::discard as sys_discard;
+
+static ARENA: Arena = Arena::new();
+
+/// Commit `pages` from the process arena; null on unavailable (see
+/// [`Arena::commit`]). Fresh zeros guaranteed on success.
+pub(crate) unsafe fn commit(pages: usize) -> *mut u8 {
+    ARENA.commit(pages)
+}
+
+/// Return an arena slice; no-op-safe for any input (misuse still discards,
+/// which is always safe, then parks garbage the pop path can never match…
+/// callers must only pass arena-owned slices — enforced by [`contains`]).
+pub(crate) unsafe fn release(base: *mut u8, pages: usize) {
+    ARENA.release(base, pages)
+}
+
+/// Membership test for the unmap-vs-return decision.
+pub(crate) fn contains(base: *mut u8, len: usize) -> bool {
+    ARENA.contains(base, len)
+}
+
+/// (commits, hole reuses, abandoned). Hidden observability for tuning.
+pub(crate) fn stats() -> (u64, u64, u64) {
+    ARENA.stats()
+}
     }
 }
