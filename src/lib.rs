@@ -454,11 +454,12 @@ unsafe fn free_large(p: *mut u8) {
     }
 
     // Tier 2+3: park the region on its shard (hot), else cold with physical
-    // dropped, else unmap. Discard runs outside the lock: it never touches
-    // allocator state.
+    // dropped, else unmap. The cold discard runs UNDER the shard lock: the
+    // region is exclusively ours until unlock, so no concurrent take can
+    // hand it out mid-discard and lose user writes (the race that
+    // discard-after-unlock had).
     enum Fate {
         Kept,
-        Cold,
         Unmap,
     }
     let fate = {
@@ -476,16 +477,14 @@ unsafe fn free_large(p: *mut u8) {
             c.cold[idx] = (base, pages);
             c.cold_len = idx + 1;
             c.cold_bytes += mapped;
-            Fate::Cold
+            sys::discard(base, mapped);
+            Fate::Kept
         } else {
             Fate::Unmap
         }
     };
     match fate {
         Fate::Kept => {}
-        Fate::Cold => {
-            sys::discard(base, mapped);
-        }
         Fate::Unmap => {
             sys::unmap(base, mapped);
             heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
