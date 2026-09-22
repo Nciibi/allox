@@ -325,6 +325,87 @@ impl ThreadCache {
         }
     }
 
+    /// Medium fast-path allocation. Returns null only on OS exhaustion.
+    pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
+        let bin = &mut self.mbins[mclass];
+        if let Some(p) = pop_block(&mut bin.head) {
+            let below = bin.len - 1;
+            bin.len = below;
+            self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            if below < self.mvirgin[mclass] {
+                self.mvirgin[mclass] -= 1;
+            }
+            #[cfg(feature = "telemetry")]
+            self.note_alloc_medium(mclass);
+            return p;
+        }
+        let (p, _) = self.mrefill(mclass);
+        #[cfg(feature = "telemetry")]
+        if !p.is_null() {
+            self.note_alloc_medium(mclass);
+        }
+        p
+    }
+
+    /// Medium allocation reporting OS-zero status for `alloc_zeroed`.
+    pub(crate) unsafe fn alloc_medium_zeroed(&mut self, mclass: usize) -> (*mut u8, bool) {
+        let bin = &mut self.mbins[mclass];
+        if let Some(p) = pop_block(&mut bin.head) {
+            let below = bin.len - 1;
+            bin.len = below;
+            self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            let zeroed = below < self.mvirgin[mclass];
+            if zeroed {
+                self.mvirgin[mclass] -= 1;
+            }
+            #[cfg(feature = "telemetry")]
+            self.note_alloc_medium(mclass);
+            return (p, zeroed);
+        }
+        let r = self.mrefill(mclass);
+        #[cfg(feature = "telemetry")]
+        if !r.0.is_null() {
+            self.note_alloc_medium(mclass);
+        }
+        r
+    }
+
+    /// Medium slow path: pull one span's worth of blocks from the heap.
+    #[inline]
+    unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
+        if self.cached_bytes > thread_cache_budget() / 2 {
+            self.trim();
+        }
+        let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
+        if chain.is_null() {
+            return (ptr::null_mut(), false);
+        }
+        let first = chain;
+        let rest = *first.cast::<*mut u8>();
+        let bin = &mut self.mbins[mclass];
+        bin.head = rest;
+        bin.len += count - 1;
+        self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+        self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
+        (first, virgin)
+    }
+
+    pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, span: *mut SpanMaster) {
+        #[cfg(debug_assertions)]
+        debug_validate_free_medium(p, span);
+
+        let mclass = (*span).mclass as usize;
+        let bin = &mut self.mbins[mclass];
+        push_block(&mut bin.head, p);
+        bin.len += 1;
+        self.cached_bytes += MEDIUM_CLASSES[mclass];
+        #[cfg(feature = "telemetry")]
+        self.note_free_medium(mclass);
+        if self.cached_bytes > thread_cache_budget() {
+            self.trim();
+        }
+    }
+
     /// Take a stashed large region with at least `pages_needed` pages.
     /// Best-fit over at most LARGE_STASH_SLOTS entries; returns the region's
     /// (base, mapped_pages). Lock-free: owning thread only.
