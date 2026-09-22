@@ -107,7 +107,13 @@ mod tls {
         }
 
         pub(crate) fn flush_best_effort() {
-            with(|c| unsafe { c.try_flush_all() }, || {});
+            let r = CACHE.try_with(|c| {
+                eprintln!("[allox-debug] flush_best_effort: TLS ok");
+                unsafe { c.get().as_mut().map(|cc| cc.try_flush_all()) };
+            });
+            if r.is_err() {
+                eprintln!("[allox-debug] flush_best_effort: TLS GONE");
+            }
         }
     }
 
