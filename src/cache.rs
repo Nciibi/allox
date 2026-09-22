@@ -592,7 +592,9 @@ impl ThreadCache {
             }
 
             for g in groups.iter_mut().take(ng) {
-                crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
+                // Best-effort: a busy page lock abandons this group rather
+                // than blocking (only the try path can fail).
+                let _ = release(g.page, g.head, g.n);
             }
             if popped == 0 {
                 break;
@@ -604,7 +606,12 @@ impl ThreadCache {
     /// blocks to their owning spans grouped by master (one heap lock per span
     /// per chunk). Chunks are smaller than for small bins because medium
     /// blocks are huge and bins hold few of them.
-    unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
+    unsafe fn flush_mbin(
+        &mut self,
+        mclass: usize,
+        floor_blocks: u32,
+        release: unsafe fn(*mut SpanMaster, *mut u8, u32) -> bool,
+    ) {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
         let block_size = MEDIUM_CLASSES[mclass];
