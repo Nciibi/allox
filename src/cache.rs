@@ -560,7 +560,6 @@ impl ThreadCache {
     unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
-        let block_size = MEDIUM_CLASSES[mclass];
         let bin = &mut self.mbins[mclass];
 
         while bin.len > floor_blocks {
@@ -579,7 +578,6 @@ impl ThreadCache {
                     self.mvirgin[mclass] -= 1;
                 }
                 popped += 1;
-                self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
 
                 let master = SpanMaster::of(b);
                 debug_assert!(!master.is_null());
