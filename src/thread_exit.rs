@@ -47,7 +47,7 @@ mod imp {
         // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
         eprintln!("[allox-debug] thread-exit flush firing");
-        crate::tls_flush_full();
+        { /* DISABLED FOR SENSITIVITY CHECK */ }
     }
 
     pub(crate) fn ensure_hook() {
