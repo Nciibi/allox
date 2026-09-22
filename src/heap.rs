@@ -433,8 +433,6 @@ enum SpanFate {
 /// Splice `chain` (n blocks of `span`) back onto the span. Shared core for
 /// the blocking and try paths; syscalls happen in the caller, outside locks.
 unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mut u8, n: u32) -> SpanFate {
-    let mclass = (*span).mclass as usize;
-    let _ = mclass;
     // Freed blocks are dirty by definition.
     (*span).flags &= !FLAG_VIRGIN;
     let mut tail = chain;
@@ -491,6 +489,13 @@ unsafe fn mact_fate(span: *mut SpanMaster, fate: SpanFate) {
         }
     }
 }
+
+impl MediumHeap {
+    pub(crate) const fn new() -> Self {
+        MediumHeap {
+            classes: [const { Mutex::new(MSpanList::new()) }; NUM_MEDIUM],
+        }
+    }
 
     /// Acquire up to MEDIUM_REFILL_BATCH free blocks of `mclass` as an
     /// intrusive chain. Returns `(null, 0, _)` only on OS exhaustion.
