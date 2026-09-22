@@ -32,7 +32,6 @@
 //! else the callers use their legacy paths directly.
 
 use crate::sys::{discard, Mutex};
-use crate::heap::{MAPPED_PAGES, MAP_CALLS};
 use core::ptr;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
