@@ -428,6 +428,17 @@ fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5);
+    // P2 tuning hook: override the per-thread cache budget (MiB, 0 = default
+    // 32 MiB). Medium blocks blow through small-tuned budgets instantly, so
+    // this isolates budget-induced trim churn from structural costs.
+    if let Ok(mb) = std::env::var("BENCH_BUDGET_MB") {
+        if let Ok(mb) = mb.parse::<usize>() {
+            if mb > 0 {
+                allox::set_thread_cache_budget(mb * 1024 * 1024);
+                eprintln!("  budget overridden to {} MiB/thread", mb);
+            }
+        }
+    }
 
     struct Named(&'static str, &'static dyn SyncGlobalAlloc);
     trait SyncGlobalAlloc: GlobalAlloc + Sync {}

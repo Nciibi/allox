@@ -263,8 +263,12 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
 
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
-/// are large (up to ~16 pages), so the cap is lower than for small pages.
-const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 2;
+/// are large (up to ~16 pages); the cap is byte-scaled in release_blocks
+/// (see MAX_EMPTY_SPAN_BYTES) so small-medium classes keep several spans
+/// while 60 KiB-class spans don't blow RSS.
+const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 8;
+/// Cap on retained empty-span bytes per medium class.
+const MAX_EMPTY_SPAN_BYTES_PER_CLASS: usize = 2 * 1024 * 1024;
 
 pub(crate) struct MSpanList {
     /// Partial spans (spare free blocks), doubly linked via prev/next.
@@ -426,14 +430,25 @@ impl MediumHeap {
             (*span).used -= n;
             if (*span).used == 0 {
                 munlink_partial(&mut list.head, span);
-                if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS {
+                let span_bytes = (*span).mapped_bytes();
+                // Byte-scaled retention: count cap AND byte cap. Keeps several
+                // spans for small-medium classes, at most ~2 MiB per class.
+                let mut empty_bytes = 0usize;
+                let mut cur = list.empty;
+                while !cur.is_null() {
+                    empty_bytes += (*cur).mapped_bytes();
+                    cur = (*cur).next;
+                }
+                if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS
+                    && empty_bytes + span_bytes <= MAX_EMPTY_SPAN_BYTES_PER_CLASS
+                {
                     // Delayed reclamation: keep the span mapped for reuse.
                     (*span).next = list.empty;
                     list.empty = span;
                     list.empty_count += 1;
                     None
                 } else {
-                    Some((*span).mapped_bytes())
+                    Some(span_bytes)
                 }
             } else {
                 if (*span).flags & FLAG_IN_PARTIAL == 0 {
