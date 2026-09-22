@@ -139,6 +139,10 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
+
+        pub(crate) fn flush_best_effort() {
+            with(|c| unsafe { c.try_flush_all() }, || {});
+        }
     }
 
     pub(crate) use imp::flush;
