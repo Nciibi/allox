@@ -282,26 +282,22 @@ impl GlobalHeap {
     /// Return a chain of `n` blocks, all belonging to `page`, to that page.
     pub(crate) unsafe fn release_blocks(&self, page: *mut PageHeader, chain: *mut u8, n: u16) {
         let class = (*page).class as usize;
-        enum Fate {
-            Keep,
-            Cold,
-            Unmap,
-        }
         let fate = {
             let mut list = self.classes[class].lock();
-            release_inner(&mut list, page, chain, n, &mut |list: &mut ListHead| {
-                if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
-                    None
-                } else if (list.cold_len as usize) < MAX_COLD_PAGE_SLOTS
-                    && list.cold_bytes + PAGE_SIZE <= MAX_COLD_PAGE_BYTES_PER_CLASS
-                {
-                    None
-                } else {
-                    None
-                }
-            })
+            release_inner(&mut list, page, chain, n)
         };
-        let _ = fate;
+        match fate {
+            PageFate::Keep => {}
+            PageFate::Cold => {
+                sys::discard(page.cast::<u8>(), PAGE_SIZE);
+            }
+            PageFate::Unmap => {
+                sys::unmap(page.cast::<u8>(), PAGE_SIZE);
+                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     /// Lock access to a class' partial list for external validation
