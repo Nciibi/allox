@@ -658,7 +658,12 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
         (*hdr).mapped_size - (p as usize - (*hdr).base as usize)
     } else {
-        0
+        let span = SpanMaster::of(p);
+        if !span.is_null() && (*span).contains(p) {
+            classes::MEDIUM_CLASSES[(*span).mclass as usize]
+        } else {
+            0
+        }
     }
 }
 
