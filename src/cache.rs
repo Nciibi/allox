@@ -656,7 +656,11 @@ impl ThreadCache {
                         // blocks popped per chunk, one group each worst case.
                         debug_assert!(ng < MAX_MFLUSH_GROUPS);
                         if ng >= MAX_MFLUSH_GROUPS {
-                            crate::heap::MEDIUM_HEAP.release_blocks(master, b, 1);
+                            // No room to group: release solo (blocking path
+                            // always succeeds; try path may abandon).
+                            if !release(master, b, 1) {
+                                continue;
+                            }
                             continue;
                         }
                         groups[ng] = MGroup {
@@ -671,7 +675,7 @@ impl ThreadCache {
             }
 
             for g in groups.iter_mut().take(ng) {
-                crate::heap::MEDIUM_HEAP.release_blocks(g.master, g.head, g.n);
+                let _ = release(g.master, g.head, g.n);
             }
             if popped == 0 {
                 break;
@@ -683,12 +687,12 @@ impl ThreadCache {
     pub(crate) unsafe fn flush_all(&mut self) {
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
-                self.flush_bin(class, 0);
+                self.flush_bin(class, 0, heap_release);
             }
         }
         for mclass in 0..NUM_MEDIUM {
             if !self.mbins[mclass].head.is_null() {
-                self.flush_mbin(mclass, 0);
+                self.flush_mbin(mclass, 0, mheap_release);
             }
         }
         self.cached_bytes = 0;
