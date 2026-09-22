@@ -129,7 +129,8 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    `prodcons 8T`, `spawn-churn`; MAP_CALLS probe + VmHWM reporting.
 2. P1a sharded large cache + per-thread stash → DONE, measured below.
    Contention fixed; miss-rate gap remains and needs spans (P1c).
-3. P1c medium spans (16-128K via multi-page spans) → NEXT, not yet started.
+3. P1c medium spans (16-64K via multi-page spans) → DONE (see results).
+   NEXT: large-path MT (per-thread large caches) + exit-flush.
 4. P1 exit-flush + drift cap → after spans.
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.
@@ -151,3 +152,32 @@ Large/medium needs multi-page spans, not just cheaper syscalls: the working
 set (96 MB live + churn bursts) exceeds any sane mmap-cache cap, so hit rate
 stays low regardless of sharding. Arena mapping (P1b) deferred — it would
 save 2 munmaps per miss but misses themselves (64k/s) are the problem.
+
+## P1c results — medium spans landed (BENCH_SECS=2 BENCH_REPS=3)
+
+What shipped: `classes.rs` medium tables (12.5% geo, 18K→60K + explicit
+65472 top class), `page.rs` SpanMaster + sub-headers + carving, `heap.rs`
+MediumHeap (sharded) + madvise cold-span retention + hidden map-split
+counters (`allox::__debug_map_split`), `cache.rs` medium bins + trim/flush,
+`lib.rs` three-tier dispatch + telemetry growth. Reverted experiment:
+count-capped medium bins (32) regressed 1.75M→1.05M — byte budget restored.
+
+Scoreboard (Linux Ryzen 5 1600, median of 3 × 2 s):
+
+* `tight-small 1T`: 36.2M vs mimalloc 40.6M (0.89x) — close.
+* `mixed-small 1T`: 25.9M vs mimalloc 10.9M (2.4x WIN).
+* `tight-small 8T`: 224.6M vs sys 212.3M / mimalloc 201.3M (WIN).
+* `mixed-small 8T`: 126.0M vs snmalloc 44.5M (2.8x WIN).
+* `mixed-all 1T`: 4.41M vs mimalloc 3.68M (1.2x WIN), vs sys 2.97M.
+  Was 0.05x. Top-65472 class killed the 35k/s large-tail maps (now ~14/s).
+* `mixed-all 8T`: 10.59M vs mimalloc 16.92M (0.63x), vs sys 12.08M (0.88x).
+  Was 0.013x. Remaining gap is per-op latency (~2x), needs PMU profiling.
+* `prodcons 8T`: 30.4M ties snmalloc 30.8M, beats mimalloc 28.5M (WIN).
+* `large-only 1T/8T`: 135k/455k — still mmap territory (32K–1M working
+  set); 8T is 0.03x mimalloc. Needs large-path MT overhaul (per-thread
+  large caches, virtual retention like spans got).
+* `spawn-churn`: 276k, 0.15x — dead-thread reclamation (exit-flush NEXT).
+
+Net: 6.5/10 workloads win-or-tie vs the BEST comparator (was: best
+pure-Rust on small only). 1 s single samples understate steady state by
+~2.7x on mixed-all (warmup); use ≥2 s × 3 reps for tuning decisions.
