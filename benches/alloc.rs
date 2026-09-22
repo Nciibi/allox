@@ -538,6 +538,8 @@ fn main() {
         let span_unmaps = d1su.saturating_sub(d0su);
         let small_maps = d1sm.saturating_sub(d0sm);
         let _small_unmaps = d1smu.saturating_sub(d0smu);
+        let arena_reuses = d1aru.saturating_sub(d0aru);
+        let _arena_commits = d1ac.saturating_sub(d0ac);
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
