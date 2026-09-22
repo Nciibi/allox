@@ -214,6 +214,30 @@ impl ThreadCache {
         }
     }
 
+    #[inline]
+    #[cfg(feature = "telemetry")]
+    fn note_alloc_medium(&mut self, mclass: usize) {
+        self.pending.ops += 1;
+        self.pending.allocs += 1;
+        self.pending.bytes_in += MEDIUM_CLASSES[mclass] as u64;
+        self.pending.per_class[NUM_CLASSES + mclass] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
+    }
+
+    #[inline]
+    #[cfg(feature = "telemetry")]
+    fn note_free_medium(&mut self, mclass: usize) {
+        self.pending.ops += 1;
+        self.pending.frees += 1;
+        self.pending.bytes_out += MEDIUM_CLASSES[mclass] as u64;
+        self.pending.per_class[NUM_CLASSES + mclass] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
+    }
+
     /// Fast-path allocation. Returns null only when the heap is out of memory.
     pub(crate) unsafe fn alloc(&mut self, class: usize) -> *mut u8 {
         let bin = &mut self.bins[class];
