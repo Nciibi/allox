@@ -67,15 +67,6 @@ mod spin_raw {
         pub(crate) fn unlock(&self) {
             self.locked.store(false, Ordering::Release);
         }
-
-        /// Non-blocking acquisition for best-effort contexts (thread-exit
-        /// flush): never spins, never yields, never allocates.
-        #[inline]
-        pub(crate) fn try_lock(&self) -> bool {
-            self.locked
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-        }
     }
 }
 
@@ -110,17 +101,6 @@ impl<T> Mutex<T> {
         self.raw.lock();
         MutexGuard { mutex: self }
     }
-
-    /// Non-blocking acquisition; `None` when held (used by the thread-exit
-    /// flush, which must never block — not even in kernel park on Windows).
-    #[inline]
-    pub(crate) fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
-        if self.raw.try_lock() {
-            Some(MutexGuard { mutex: self })
-        } else {
-            None
-        }
-    }
 }
 
 impl<T> core::ops::Deref for MutexGuard<'_, T> {
@@ -140,23 +120,5 @@ impl<T> Drop for MutexGuard<'_, T> {
     #[inline]
     fn drop(&mut self) {
         self.mutex.raw.unlock();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Mutex;
-
-    #[test]
-    fn try_lock_fails_while_held() {
-        static M: Mutex<u32> = Mutex::new(0);
-        let guard = M.lock();
-        assert!(M.try_lock().is_none());
-        *guard + 1;
-        drop(guard);
-        let mut guard = M.try_lock().expect("free mutex try-locks");
-        *guard = 41;
-        drop(guard);
-        assert_eq!(*M.lock(), 41);
     }
 }
