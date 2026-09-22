@@ -701,41 +701,6 @@ impl ThreadCache {
         #[cfg(feature = "telemetry")]
         self.publish();
     }
-
-    /// Best-effort `flush_all` for thread exit: same grouping, but heap
-    /// locks are try-only and large stashes unmap directly (no locks at
-    /// all). Anything unreleasable is abandoned — identical to today's
-    /// dead-thread leak, just far rarer. Never blocks, never allocates.
-    pub(crate) unsafe fn try_flush_all(&mut self) {
-        for class in 0..NUM_CLASSES {
-            if !self.bins[class].head.is_null() {
-                self.flush_bin(class, 0, heap_try_release);
-            }
-        }
-        for mclass in 0..NUM_MEDIUM {
-            if !self.mbins[mclass].head.is_null() {
-                self.flush_mbin(mclass, 0, mheap_try_release);
-            }
-        }
-        self.cached_bytes = 0;
-        self.virgin = [0; NUM_CLASSES];
-        self.mvirgin = [0; NUM_MEDIUM];
-        // Large stash: lock-free unmap, always succeeds.
-        for i in 0..self.large_len as usize {
-            let (base, pages) = self.large[i];
-            if !base.is_null() {
-                let size = pages as usize * crate::page::PAGE_SIZE;
-                sys::unmap(base, size);
-                MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-                UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                self.large[i] = (ptr::null_mut(), 0);
-            }
-        }
-        self.large_len = 0;
-        self.large_bytes = 0;
-        #[cfg(feature = "telemetry")]
-        self.publish();
-    }
 }
 
 /// Debug-build validation that `p` is a live-looking block of its page:
