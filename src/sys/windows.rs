@@ -58,6 +58,7 @@ pub(crate) struct SrwLock(usize);
 unsafe extern "system" {
     fn AcquireSRWLockExclusive(lock: *mut SrwLock);
     fn ReleaseSRWLockExclusive(lock: *mut SrwLock);
+    fn TryAcquireSRWLockExclusive(lock: *mut SrwLock) -> u8;
 }
 
 pub(crate) struct RawMutex(SrwLock);
@@ -75,5 +76,12 @@ impl RawMutex {
     #[inline]
     pub(crate) fn unlock(&self) {
         unsafe { ReleaseSRWLockExclusive(&self.0 as *const SrwLock as *mut SrwLock) }
+    }
+
+    /// Non-blocking acquisition (Vista+). Never parks — safe in Fls callbacks
+    /// and other contexts where blocking is forbidden.
+    #[inline]
+    pub(crate) fn try_lock(&self) -> bool {
+        unsafe { TryAcquireSRWLockExclusive(&self.0 as *const SrwLock as *mut SrwLock) != 0 }
     }
 }

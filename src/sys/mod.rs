@@ -110,6 +110,17 @@ impl<T> Mutex<T> {
         self.raw.lock();
         MutexGuard { mutex: self }
     }
+
+    /// Non-blocking acquisition; `None` when held (used by the thread-exit
+    /// flush, which must never block — not even in kernel park on Windows).
+    #[inline]
+    pub(crate) fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+        if self.raw.try_lock() {
+            Some(MutexGuard { mutex: self })
+        } else {
+            None
+        }
+    }
 }
 
 impl<T> core::ops::Deref for MutexGuard<'_, T> {
