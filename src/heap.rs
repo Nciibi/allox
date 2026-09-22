@@ -27,6 +27,18 @@ pub(crate) const REFILL_BATCH: u32 = 64;
 /// `64 classes x CAP x 64 KiB` (~16 MiB).
 const EMPTY_PAGE_CACHE_PER_CLASS: u32 = 4;
 
+/// Cold-page array slots per small class. Values (page bases), never
+/// intrusive links: discard zeroes page contents including any link fields
+/// (same lesson as medium spans). 256 × 64 KiB = 16 MiB, matching the byte
+/// cap so either bound can bite first.
+const MAX_COLD_PAGE_SLOTS: usize = 256;
+/// Cold (discarded, virtually retained) bytes per small class. Deep on
+/// 64-bit where virtual is free; shallow on 32-bit address spaces.
+#[cfg(target_pointer_width = "64")]
+const MAX_COLD_PAGE_BYTES_PER_CLASS: usize = 16 * 1024 * 1024;
+#[cfg(not(target_pointer_width = "64"))]
+const MAX_COLD_PAGE_BYTES_PER_CLASS: usize = 2 * 1024 * 1024;
+
 pub(crate) static MAPPED_PAGES: AtomicU64 = AtomicU64::new(0);
 pub(crate) static MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -69,6 +81,11 @@ pub(crate) struct ListHead {
     /// via `next`. All carry a full free list and `used == 0`.
     empty: *mut PageHeader,
     empty_count: u32,
+    /// Cold pages: discarded (madvise) but virtually retained, stored as
+    /// base values. Re-carved on reuse; no syscalls in steady churn.
+    cold: [*mut PageHeader; MAX_COLD_PAGE_SLOTS],
+    cold_len: u32,
+    cold_bytes: usize,
 }
 
 // Raw pointers are only manipulated while holding the enclosing Mutex.
@@ -80,6 +97,9 @@ impl ListHead {
             head: ptr::null_mut(),
             empty: ptr::null_mut(),
             empty_count: 0,
+            cold: [ptr::null_mut(); MAX_COLD_PAGE_SLOTS],
+            cold_len: 0,
+            cold_bytes: 0,
         }
     }
 }
