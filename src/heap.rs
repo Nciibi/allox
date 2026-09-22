@@ -562,66 +562,29 @@ impl MediumHeap {
     /// Return a chain of `n` blocks, all belonging to `span`, to that span.
     pub(crate) unsafe fn release_blocks(&self, span: *mut SpanMaster, chain: *mut u8, n: u32) {
         let mclass = (*span).mclass as usize;
-        enum Fate {
-            Keep,
-            Cold,
-            Unmap(usize),
-        }
         let fate = {
             let mut list = self.classes[mclass].lock();
-            // Freed blocks are dirty by definition.
-            (*span).flags &= !FLAG_VIRGIN;
-            let mut tail = chain;
-            while !(*tail.cast::<*mut u8>()).is_null() {
-                tail = *tail.cast::<*mut u8>();
-            }
-            *tail.cast::<*mut u8>() = (*span).free_head;
-            (*span).free_head = chain;
-            (*span).free_count += n;
-            (*span).used -= n;
-            if (*span).used == 0 {
-                munlink_partial(&mut list.head, span);
-                let span_bytes = (*span).mapped_bytes();
-                // Byte-scaled retention: count cap AND byte cap. Keeps several
-                // spans for small-medium classes, at most ~2 MiB per class hot.
-                if list.empty_count < EMPTY_SPAN_CACHE_PER_CLASS
-                    && list.empty_bytes + span_bytes <= MAX_EMPTY_SPAN_BYTES_PER_CLASS
-                {
-                    // Delayed reclamation: keep the span mapped for reuse.
-                    (*span).next = list.empty;
-                    list.empty = span;
-                    list.empty_count += 1;
-                    list.empty_bytes += span_bytes;
-                    Fate::Keep
-                } else if list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS {
-                    // Cold: drop physical, keep virtual. Re-carved on reuse.
-                    (*span).next = list.cold;
-                    list.cold = span;
-                    list.cold_count += 1;
-                    list.cold_bytes += span_bytes;
-                    Fate::Cold
-                } else {
-                    Fate::Unmap(span_bytes)
-                }
-            } else {
-                if (*span).flags & FLAG_IN_PARTIAL == 0 {
-                    mlink_partial(&mut list.head, span);
-                }
-                Fate::Keep
-            }
+            mrelease_inner(&mut list, span, chain, n)
         };
-        match fate {
-            Fate::Keep => {}
-            Fate::Cold => {
-                sys::discard(span.cast::<u8>(), (*span).mapped_bytes());
-            }
-            Fate::Unmap(bytes) => {
-                sys::unmap(span.cast::<u8>(), bytes);
-                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-                SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-            }
-        }
+        mact_fate(span, fate);
+    }
+
+    /// Best-effort `release_blocks` for thread-exit flush: never blocks.
+    /// Returns false (chain abandoned) when the class lock is held.
+    pub(crate) unsafe fn try_release_blocks(
+        &self,
+        span: *mut SpanMaster,
+        chain: *mut u8,
+        n: u32,
+    ) -> bool {
+        let mclass = (*span).mclass as usize;
+        let Some(mut list) = self.classes[mclass].try_lock() else {
+            return false;
+        };
+        let fate = mrelease_inner(&mut list, span, chain, n);
+        drop(list);
+        mact_fate(span, fate);
+        true
     }
 
     /// Lock access to a class' partial list for external validation
