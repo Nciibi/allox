@@ -317,19 +317,24 @@ const MAX_COLD_SPAN_BYTES_PER_CLASS: usize = 256 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
 const MAX_COLD_SPAN_BYTES_PER_CLASS: usize = 16 * 1024 * 1024;
 
+/// Cold-span array slots per medium class. The byte cap binds first for big
+/// spans; slots bound small-span counts (256 × 192 KiB ≈ 49 MiB).
+const MAX_COLD_SPAN_SLOTS: usize = 256;
+
 pub(crate) struct MSpanList {
     /// Partial spans (spare free blocks), doubly linked via prev/next.
     head: *mut SpanMaster,
     /// Fully free spans held for reuse; singly linked via `next`.
+    /// Never discarded, so intrusive links stay valid.
     empty: *mut SpanMaster,
     empty_count: u32,
     empty_bytes: usize,
     /// Cold spans: virtual reservation retained, physical dropped via
-    /// discard (madvise). Re-carved on reuse — no syscalls in steady state,
-    /// which is what absorbs harness drain bursts (free ~3000 blocks, then
-    /// realloc) without the unmap/remap storm.
-    cold: *mut SpanMaster,
-    cold_count: u32,
+    /// discard (madvise). Stored as (base, npages) VALUES — never intrusive
+    /// links, because discard zeroes everything inside the span including
+    /// any link fields. Re-carved on reuse.
+    cold: [(*mut u8, u32); MAX_COLD_SPAN_SLOTS],
+    cold_len: u32,
     cold_bytes: usize,
 }
 
@@ -343,8 +348,8 @@ impl MSpanList {
             empty: ptr::null_mut(),
             empty_count: 0,
             empty_bytes: 0,
-            cold: ptr::null_mut(),
-            cold_count: 0,
+            cold: [(ptr::null_mut(), 0); MAX_COLD_SPAN_SLOTS],
+            cold_len: 0,
             cold_bytes: 0,
         }
     }
