@@ -471,9 +471,16 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
+    // Hot path first: small pages. Medium spans cost one extra masked load
+    // only for non-small pointers; large/foreign pointers fall through.
     let masked_magic = *((p as usize & !PAGE_MASK) as *const u64);
     if masked_magic == page::PAGE_MAGIC {
         dealloc_small(p);
+        return;
+    }
+    let span = SpanMaster::of(p);
+    if !span.is_null() {
+        dealloc_medium(p, span);
         return;
     }
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
