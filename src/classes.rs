@@ -16,7 +16,6 @@ pub(crate) const MAX_SMALL_SIZE: usize = 16 * 1024;
 pub(crate) const MAX_MEDIUM_BLOCK: usize = 59680;
 /// Number of entries in the class table (trailing entries saturate at MAX).
 pub(crate) const NUM_CLASSES: usize = 64;
-
 // `usize::div_ceil` is not const-stable at our MSRV; keep manual rounding.
 #[allow(clippy::manual_div_ceil)]
 const fn build_classes() -> [usize; NUM_CLASSES] {
