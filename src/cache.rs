@@ -10,9 +10,11 @@
 //! grow freely and trimming happens only against the aggregate byte budget,
 //! biggest classes first.
 
-use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM, TOTAL_CLASSES};
+use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
+#[cfg(feature = "telemetry")]
+use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
-use crate::heap::{MAPPED_PAGES, MEDIUM_HEAP, MEDIUM_REFILL_BATCH, REFILL_BATCH, UNMAP_CALLS};
+use crate::heap::{MAPPED_PAGES, MEDIUM_HEAP, REFILL_BATCH, UNMAP_CALLS};
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 use crate::sys;
 use core::ptr;

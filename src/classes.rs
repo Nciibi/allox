@@ -183,6 +183,8 @@ pub(crate) const fn medium_class_for_size(size: usize) -> usize {
 }
 
 /// Telemetry dimension: small classes followed by medium classes.
+/// Only used with the `telemetry` feature (gated to avoid dead-code noise).
+#[cfg(feature = "telemetry")]
 pub(crate) const TOTAL_CLASSES: usize = NUM_CLASSES + NUM_MEDIUM;
 
 #[cfg(test)]

@@ -38,7 +38,7 @@ mod page;
 mod sys;
 
 use crate::classes::{
-    class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN, TOTAL_CLASSES,
+    class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN,
 };
 use crate::page::{
     align_up, LargeHeader, SpanMaster, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK,
