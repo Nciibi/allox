@@ -586,8 +586,16 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
-    // Hot path first: small pages. Medium spans cost one extra masked load
-    // only for non-small pointers; large/foreign pointers fall through.
+    // Large-offset check FIRST: it is in-bounds for every live pointer
+    // (headers sit 32 B below any large user pointer by construction), while
+    // masked reads can round down *outside* an unaligned large region into
+    // unmapped memory and fault. Small pages stay hot path second (one extra
+    // predictable branch); spans last.
+    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+    if (*hdr).magic == LARGE_MAGIC {
+        free_large(p);
+        return;
+    }
     let masked_magic = *((p as usize & !PAGE_MASK) as *const u64);
     if masked_magic == page::PAGE_MAGIC {
         dealloc_small(p);
@@ -598,12 +606,45 @@ unsafe fn dealloc_impl(p: *mut u8) {
         dealloc_medium(p, span);
         return;
     }
-    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
-    if (*hdr).magic == LARGE_MAGIC {
+    corrupt_pointer()
+}
+
+/// Layout-routed free for `GlobalAlloc` callers, who contractually pass the
+/// layout the pointer was allocated with. Routes with zero probing reads —
+/// no masked loads at all — so unaligned large bases cannot fault dispatch,
+/// and the hot paths shed branches. Debug builds verify the layout against
+/// the pointer and abort on mismatch (contract violation).
+unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
+    debug_assert!(align.is_power_of_two());
+    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+        #[cfg(debug_assertions)]
+        {
+            let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+            if (*hdr).magic != LARGE_MAGIC {
+                corrupt_pointer();
+            }
+        }
         free_large(p);
         return;
     }
-    corrupt_pointer()
+    if size > MAX_SMALL_SIZE {
+        // Span pages stay 64 KiB-aligned, so this masking is fault-safe.
+        let span = SpanMaster::of(p);
+        #[cfg(debug_assertions)]
+        if span.is_null() || !(*span).contains(p) {
+            corrupt_pointer();
+        }
+        dealloc_medium(p, span);
+        return;
+    }
+    #[cfg(debug_assertions)]
+    {
+        let page = page::PageHeader::of(p);
+        if (*page).magic != page::PAGE_MAGIC {
+            corrupt_pointer();
+        }
+    }
+    dealloc_small(p);
 }
 
 unsafe impl GlobalAlloc for Allox {
