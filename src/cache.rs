@@ -292,6 +292,44 @@ impl ThreadCache {
         }
     }
 
+    /// Take a stashed large region with at least `pages_needed` pages.
+    /// Best-fit over at most LARGE_STASH_SLOTS entries; returns the region's
+    /// (base, mapped_pages). Lock-free: owning thread only.
+    pub(crate) fn take_large_stash(&mut self, pages_needed: u32) -> Option<(*mut u8, u32)> {
+        let mut best: Option<usize> = None;
+        for i in 0..self.large_len as usize {
+            let (_, pages) = self.large[i];
+            if pages >= pages_needed && best.map_or(true, |b| pages < self.large[b].1) {
+                best = Some(i);
+            }
+        }
+        best.map(|i| {
+            let last = self.large_len as usize - 1;
+            let entry = self.large[i];
+            self.large[i] = self.large[last];
+            self.large[last] = (ptr::null_mut(), 0);
+            self.large_len = last as u32;
+            self.large_bytes -= entry.1 as usize * crate::page::PAGE_SIZE;
+            entry
+        })
+    }
+
+    /// Stash a freed large region for lock-free reuse. Returns false when the
+    /// stash is full or over budget (caller falls back to the global shards).
+    pub(crate) fn push_large_stash(&mut self, base: *mut u8, pages: u32) -> bool {
+        let bytes = pages as usize * crate::page::PAGE_SIZE;
+        if self.large_len as usize >= LARGE_STASH_SLOTS
+            || self.large_bytes + bytes > LARGE_STASH_CAP_BYTES
+        {
+            return false;
+        }
+        let idx = self.large_len as usize;
+        self.large[idx] = (base, pages);
+        self.large_len += 1;
+        self.large_bytes += bytes;
+        true
+    }
+
     /// Bring total cached bytes under half the budget by repeatedly halving
     /// the largest bin. Fixed-size passes over a 64-entry array; no allocation.
     unsafe fn trim(&mut self) {
