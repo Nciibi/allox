@@ -281,6 +281,7 @@ impl Arena {
             if self.commit_range(reuse as usize, len) {
                 self.reuses.fetch_add(1, Ordering::Relaxed);
                 self.commits.fetch_add(1, Ordering::Relaxed);
+                MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 return reuse;
             }
             self.holes_give(reuse, pages);
@@ -302,6 +303,8 @@ impl Arena {
                     let base = start + off;
                     if self.commit_range(base, len) {
                         self.commits.fetch_add(1, Ordering::Relaxed);
+                        MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                        MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                         return base as *mut u8;
                     }
                     self.holes_give(base as *mut u8, pages);
