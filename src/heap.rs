@@ -39,7 +39,8 @@ pub(crate) struct TelemetryCounters {
     pub(crate) bytes_out: AtomicU64,
     pub(crate) peak_live_bytes: AtomicU64,
     pub(crate) large_allocs: AtomicU64,
-    pub(crate) per_class: [AtomicU64; NUM_CLASSES],
+    /// Small classes at 0..NUM_CLASSES, medium classes after.
+    pub(crate) per_class: [AtomicU64; TOTAL_CLASSES],
 }
 
 #[cfg(feature = "telemetry")]
@@ -50,7 +51,7 @@ pub(crate) static TELEMETRY: TelemetryCounters = TelemetryCounters {
     bytes_out: AtomicU64::new(0),
     peak_live_bytes: AtomicU64::new(0),
     large_allocs: AtomicU64::new(0),
-    per_class: [const { AtomicU64::new(0) }; NUM_CLASSES],
+    per_class: [const { AtomicU64::new(0) }; TOTAL_CLASSES],
 };
 
 pub(crate) struct ListHead {
