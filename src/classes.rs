@@ -9,6 +9,11 @@
 pub(crate) const MIN_ALIGN: usize = 16;
 /// Largest block size served from 64 KiB pages.
 pub(crate) const MAX_SMALL_SIZE: usize = 16 * 1024;
+/// Largest block size served from multi-page spans (see `page::SpanMaster`).
+/// Must fit a block plus headers inside one 64 KiB chunk: the largest 12.5%
+/// class at or below `PAGE_SIZE - SPAN_MASTER_SIZE` (65472). Requests above
+/// this (up to 64 KiB and beyond) stay on the directly-mapped large path.
+pub(crate) const MAX_MEDIUM_BLOCK: usize = 59680;
 /// Number of entries in the class table (trailing entries saturate at MAX).
 pub(crate) const NUM_CLASSES: usize = 64;
 
