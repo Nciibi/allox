@@ -269,6 +269,10 @@ pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
 const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 8;
 /// Cap on retained empty-span bytes per medium class.
 const MAX_EMPTY_SPAN_BYTES_PER_CLASS: usize = 2 * 1024 * 1024;
+/// Cap on cold (discarded-physical, retained-virtual) span bytes per class.
+/// Sized to swallow harness drain bursts (~96 MiB live freed at once across
+/// ~13 classes) so steady-state churn re-carves instead of mmap/munmap.
+const MAX_COLD_SPAN_BYTES_PER_CLASS: usize = 16 * 1024 * 1024;
 
 pub(crate) struct MSpanList {
     /// Partial spans (spare free blocks), doubly linked via prev/next.

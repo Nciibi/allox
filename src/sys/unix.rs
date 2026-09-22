@@ -21,6 +21,7 @@ const MAP_ANONYMOUS: i32 = 0x20;
 
 const MAP_PRIVATE: i32 = 0x02;
 const PROT_READ_WRITE: i32 = 0x03;
+const MADV_DONTNEED: i32 = 4;
 
 extern "C" {
     fn mmap(
@@ -32,6 +33,7 @@ extern "C" {
         offset: i64,
     ) -> *mut core::ffi::c_void;
     fn munmap(addr: *mut core::ffi::c_void, len: usize) -> i32;
+    fn madvise(addr: *mut core::ffi::c_void, len: usize, advice: i32) -> i32;
 }
 
 /// Map `size` bytes of anonymous zero-initialized memory, 64 KiB-aligned.
@@ -71,4 +73,11 @@ pub(crate) unsafe fn map(size: usize) -> *mut u8 {
 
 pub(crate) unsafe fn unmap(p: *mut u8, size: usize) {
     let _ = munmap(p as *mut core::ffi::c_void, size);
+}
+
+/// Drop physical pages but keep the virtual reservation: the range faults
+/// back (zero-filled) on next access. Best-effort — failure just means the
+/// caller must treat the range as still dirty.
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
+    let _ = madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED);
 }

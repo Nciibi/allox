@@ -5,6 +5,7 @@ use core::ptr;
 const MEM_RESERVE: u32 = 0x2000;
 const MEM_COMMIT: u32 = 0x1000;
 const MEM_RELEASE: u32 = 0x8000;
+const MEM_RESET: u32 = 0x80000;
 const PAGE_READWRITE: u32 = 0x04;
 
 extern "system" {
@@ -31,6 +32,17 @@ pub(crate) unsafe fn map(size: usize) -> *mut u8 {
 
 pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) {
     let _ = VirtualFree(p as *mut core::ffi::c_void, 0, MEM_RELEASE);
+}
+
+/// Tell the OS the range is no longer needed but keep it reserved: physical
+/// pages are dropped, the virtual reservation survives for reuse.
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
+    let _ = VirtualAlloc(
+        p as *mut core::ffi::c_void,
+        size,
+        MEM_RESET,
+        PAGE_READWRITE,
+    );
 }
 
 // ---------------------------------------------------------------------------
