@@ -74,6 +74,24 @@ impl Group {
     };
 }
 
+/// One span's share of a medium flush chunk (mirrors [`Group`]).
+#[derive(Clone, Copy)]
+struct MGroup {
+    master: *mut SpanMaster,
+    head: *mut u8,
+    tail: *mut u8,
+    n: u32,
+}
+
+impl MGroup {
+    const EMPTY: MGroup = MGroup {
+        master: ptr::null_mut(),
+        head: ptr::null_mut(),
+        tail: ptr::null_mut(),
+        n: 0,
+    };
+}
+
 #[derive(Clone, Copy)]
 struct Bin {
     head: *mut u8,
@@ -545,6 +563,78 @@ impl ThreadCache {
         }
     }
 
+    /// Shrink medium `mclass`'s bin down to `floor_blocks`, returning removed
+    /// blocks to their owning spans grouped by master (one heap lock per span
+    /// per chunk). Chunks are smaller than for small bins because medium
+    /// blocks are huge and bins hold few of them.
+    unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
+        const MFLUSH_CHUNK: u32 = 256;
+        const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
+        let block_size = MEDIUM_CLASSES[mclass];
+        let bin = &mut self.mbins[mclass];
+
+        while bin.len > floor_blocks {
+            let mut groups = [MGroup::EMPTY; MAX_MFLUSH_GROUPS];
+            let mut ng = 0usize;
+            let mut popped = 0u32;
+
+            while bin.len > floor_blocks && popped < MFLUSH_CHUNK {
+                let b = match pop_block(&mut bin.head) {
+                    Some(b) => b,
+                    None => break,
+                };
+                let below = bin.len - 1;
+                bin.len = below;
+                if below < self.mvirgin[mclass] {
+                    self.mvirgin[mclass] -= 1;
+                }
+                popped += 1;
+                self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
+
+                let master = SpanMaster::of(b);
+                debug_assert!(!master.is_null());
+                *b.cast::<*mut u8>() = ptr::null_mut();
+                let mut slot = None;
+                for g in groups.iter_mut().take(ng) {
+                    if g.master == master {
+                        slot = Some(g);
+                        break;
+                    }
+                }
+                match slot {
+                    Some(g) => {
+                        *g.tail.cast::<*mut u8>() = b;
+                        g.tail = b;
+                        g.n += 1;
+                    }
+                    None => {
+                        // Groups buffer always has room: at most MFLUSH_CHUNK
+                        // blocks popped per chunk, one group each worst case.
+                        debug_assert!(ng < MAX_MFLUSH_GROUPS);
+                        if ng >= MAX_MFLUSH_GROUPS {
+                            crate::heap::MEDIUM_HEAP.release_blocks(master, b, 1);
+                            continue;
+                        }
+                        groups[ng] = MGroup {
+                            master,
+                            head: b,
+                            tail: b,
+                            n: 1,
+                        };
+                        ng += 1;
+                    }
+                }
+            }
+
+            for g in groups.iter_mut().take(ng) {
+                crate::heap::MEDIUM_HEAP.release_blocks(g.master, g.head, g.n);
+            }
+            if popped == 0 {
+                break;
+            }
+        }
+    }
+
     /// Return all cached blocks (used at explicit shutdown/flush requests).
     pub(crate) unsafe fn flush_all(&mut self) {
         for class in 0..NUM_CLASSES {
@@ -552,8 +642,14 @@ impl ThreadCache {
                 self.flush_bin(class, 0);
             }
         }
+        for mclass in 0..NUM_MEDIUM {
+            if !self.mbins[mclass].head.is_null() {
+                self.flush_mbin(mclass, 0);
+            }
+        }
         self.cached_bytes = 0;
         self.virgin = [0; NUM_CLASSES];
+        self.mvirgin = [0; NUM_MEDIUM];
         // Stashed large regions are unmapped directly (no global lock held
         // here beyond the caller's cache ownership) so an explicit flush
         // actually returns memory instead of shuffling it to shared shards.
