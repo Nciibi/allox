@@ -13,9 +13,9 @@ pub(crate) const PAGE_MASK: usize = PAGE_SIZE - 1;
 /// Marks memory at a 64 KiB boundary as an allocator-managed small page.
 pub(crate) const PAGE_MAGIC: u64 = 0xA110_CCA7_E5A1_1E5D;
 /// Marks the base of a medium multi-page span (first 64 KiB unit).
-pub(crate) const SPAN_MAGIC: u64 = 0x5PA1_1E5D_A110_CCA7;
+pub(crate) const SPAN_MAGIC: u64 = 0xA110_CCA7_5EED_5A11;
 /// Marks a non-first 64 KiB unit of a medium span; +8 holds the master ptr.
-pub(crate) const SPAN_SUBMAGIC: u64 = 0x5VB5_1E5D_A110_CCA7;
+pub(crate) const SPAN_SUBMAGIC: u64 = 0xA110_CCA7_5EED_5A12;
 /// Marks memory at a 64 KiB boundary as a large, directly mapped region.
 pub(crate) const LARGE_MAGIC: u64 = 0x00B1_0C5A_6E0F_F1CE;
 
@@ -77,8 +77,7 @@ impl PageHeader {
 }
 
 #[repr(C, align(16))]
-pub(crate) struct LargeHeader {
-    pub(crate) magic: u64,
+pub(crate) struct LargeHeader {    pub(crate) magic: u64,
     pub(crate) mapped_size: usize,
     /// True base of the OS mapping (may differ from the page this header
     /// appears in, when alignment pushed the user pointer across a boundary).
