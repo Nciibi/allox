@@ -172,7 +172,7 @@ unsafe fn dealloc_small(p: *mut u8) {
 ///   each best-fit scan to `LARGE_SHARD_SLOTS` entries instead of 64.
 ///
 /// Worst-case retention is the global cap plus each live thread's stash cap.
-const LARGE_SHARDS: usize = 8;
+const NUM_LARGE_SHARDS: usize = 8;
 const LARGE_SHARD_SLOTS: usize = 16;
 const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
 
@@ -195,15 +195,15 @@ impl LargeRegionCache {
     }
 }
 
-static LARGE_SHARDS: [sys::Mutex<LargeRegionCache>; LARGE_SHARDS] =
-    [const { sys::Mutex::new(LargeRegionCache::new()) }; LARGE_SHARDS];
+static LARGE_SHARDS: [sys::Mutex<LargeRegionCache>; NUM_LARGE_SHARDS] =
+    [const { sys::Mutex::new(LargeRegionCache::new()) }; NUM_LARGE_SHARDS];
 
 /// Pick a shard from the region size salted by the calling thread, so equal
 /// sizes from different threads spread while similar sizes on one thread
 /// still meet for reuse. `salt` is the thread-cache address (0 off-thread).
 #[inline]
 fn large_shard(mapped_pages: usize, salt: usize) -> usize {
-    (mapped_pages ^ (salt >> 6)) % LARGE_SHARDS
+    (mapped_pages ^ (salt >> 6)) % NUM_LARGE_SHARDS
 }
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
