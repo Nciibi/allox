@@ -445,7 +445,7 @@ impl ThreadCache {
     }
 
     /// Bring total cached bytes under half the budget by repeatedly halving
-    /// the largest bin. Fixed-size passes over a 64-entry array; no allocation.
+    /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
         let target = thread_cache_budget() / 2;
         while self.cached_bytes > target {
@@ -458,12 +458,29 @@ impl ThreadCache {
                     best = class;
                 }
             }
-            if best == usize::MAX {
+            if best != usize::MAX {
+                let len = self.bins[best].len;
+                self.flush_bin(best, len / 2);
+                continue;
+            }
+            // Small bins have nothing worth trimming; shed the largest
+            // medium bin instead (medium blocks are huge, so any non-empty
+            // medium bin outranks the small-bin threshold logic).
+            let mut mbest = usize::MAX;
+            let mut mbest_bytes = 0usize;
+            for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
+                let bin_bytes = self.mbins[mclass].len as usize * size;
+                if self.mbins[mclass].len > 0 && bin_bytes > mbest_bytes {
+                    mbest_bytes = bin_bytes;
+                    mbest = mclass;
+                }
+            }
+            if mbest == usize::MAX {
                 self.cached_bytes = target; // nothing trimmable left; stop
                 break;
             }
-            let len = self.bins[best].len;
-            self.flush_bin(best, len / 2);
+            let len = self.mbins[mbest].len;
+            self.flush_mbin(mbest, len / 2);
         }
     }
 
