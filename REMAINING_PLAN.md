@@ -329,6 +329,17 @@ full stack group array (`[Group::EMPTY; 2056]` ≈ 65 KiB,
 showed in both annotations. Switch those arrays to `MaybeUninit` so only
 slots `0..ng` are ever touched.
 
+**Lever measured (2026-09-23): `MaybeUninit` flush group arrays —
+FLAT, kept.** Sequential quiet-box: mixed-all allox 12.60/13.63/13.58M
+vs baseline 13.57M (no gain; mimalloc 19.3–19.9M, ratio still ~0.7×);
+prodcons 30.2/33.2/29.9M vs baseline 32.7M (mean 31.1M, within run
+noise). Zeroing was real in the profile but not the wall-clock lever —
+same lesson as the owner-load PMU share. Kept for code health (no
+zeroing tax, tests green); not counted as a §6 win. Next: re-profile
+post-drift-cap+MaybeUninit to re-rank remaining hotspots
+(`alloc_impl` 16.6%, `mrefill` 12.7%, residual `dealloc_medium`), then
+one lever from the fresh annotate.
+
 ## 7. Correctness backlog (must clear before 0.2)
 
 * **`cached_bytes` underflow via the trim-lie (FIXED 2026-09-23):**
