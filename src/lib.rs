@@ -44,12 +44,18 @@ mod arena;
 use crate::classes::{
     class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN,
 };
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{big_class_for_size, MAX_BIG_BLOCK};
 use crate::page::{
     align_up, LargeHeader, SpanMaster, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK,
 };
+#[cfg(all(unix, feature = "std"))]
+use crate::page::BigMaster;
 use core::alloc::GlobalAlloc;
 use core::ptr;
 use heap::{HEAP, MEDIUM_HEAP};
+#[cfg(all(unix, feature = "std"))]
+use heap::BIG_HEAP;
 
 /// The allocator handle. Implementor of [`GlobalAlloc`]; also usable through
 /// the free functions [`malloc`], [`calloc`], [`realloc`], [`free`] and
@@ -192,6 +198,36 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
         |c| c.dealloc_medium(p, span),
         || {
             MEDIUM_HEAP.release_blocks(span, p, 1);
+        },
+    );
+}
+
+/// Big-span allocate: arena side-table spans past the chunk cap. Null means
+/// the arena is unavailable — callers fall back to the large path (big
+/// spans exist only in the arena, so there is no legacy-mapped form).
+#[cfg(all(unix, feature = "std"))]
+unsafe fn alloc_big(bclass: usize) -> *mut u8 {
+    let (chain, _, _) = match with_cache(
+        |c| {
+            let p = c.alloc_big(bclass);
+            (p, p.is_null())
+        },
+        || {
+            let (chain, _, _) = BIG_HEAP.take_blocks(bclass);
+            (chain, chain.is_null())
+        },
+    ) {
+        (chain, _) => chain,
+    };
+    chain
+}
+
+#[cfg(all(unix, feature = "std"))]
+unsafe fn dealloc_big(p: *mut u8, span: *mut BigMaster) {
+    with_cache(
+        |c| c.dealloc_big(p, span),
+        || {
+            BIG_HEAP.release_blocks(span, p, 1);
         },
     );
 }
