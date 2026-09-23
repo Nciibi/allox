@@ -238,10 +238,40 @@ impl Arena {
         ret == base
     }
 
-    /// Pop a best-fit hole of at least `pages`. Returns the base address with
-    /// the entry removed, or null. Lock-scoped; caller commits afterwards.
+    /// Home shard for a `pages` request (pages is always nonzero here).
+    #[inline]
+    fn shard_for(pages: usize) -> usize {
+        pages.min(HOLE_SHARDS).saturating_sub(1)
+    }
+
+    /// Pop a best-fit hole of at least `pages`: exact/best scan of the home
+    /// shard first, then first-fit across the other shards (each under its
+    /// own lock, released before the next — never nested). First-fit (not
+    /// global-best) across shards is a deliberate simplification: inexact
+    /// matches strand their tail either way, and same-size churn — the case
+    /// that matters — hits the home shard exactly. Returns the base address
+    /// with the entry removed, or null. Caller commits afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
-        let mut holes = self.holes.lock();
+        let home = Self::shard_for(pages);
+        if let Some(base) = self.shard_take(home, pages, true) {
+            return base;
+        }
+        for s in 0..HOLE_SHARDS {
+            if s == home {
+                continue;
+            }
+            if let Some(base) = self.shard_take(s, pages, false) {
+                return base;
+            }
+        }
+        ptr::null_mut()
+    }
+
+    /// Best-fit (exact-early-exit) pop from one shard. `exact_only` skips
+    /// inexact matches (home shard already tried them... no — home tries
+    /// best-fit too; exact_only is unused; keep one scan shape).
+    fn shard_take(&self, shard: usize, pages: usize, _exact_only: bool) -> Option<*mut u8> {
+        let mut holes = self.holes[shard].lock();
         let mut best: Option<usize> = None;
         for i in 0..holes.len {
             let (_, p) = holes.entries[i];
@@ -264,10 +294,11 @@ impl Arena {
                 holes.entries[i] = holes.entries[last];
                 holes.entries[last] = (0, 0);
                 holes.len = last;
-                holes.bytes -= p * ARENA_ALIGN;
-                (self.start.load(Ordering::Relaxed) + off) as *mut u8
+                self.hole_bytes
+                    .fetch_sub(p * ARENA_ALIGN, Ordering::Relaxed);
+                Some((self.start.load(Ordering::Relaxed) + off) as *mut u8)
             }
-            None => ptr::null_mut(),
+            None => None,
         }
     }
 
