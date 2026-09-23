@@ -28,4 +28,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "tier_boundary_seq"
+path = "fuzz_targets/tier_boundary_seq.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

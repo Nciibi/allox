@@ -131,6 +131,7 @@ jobs:
         run: |
           cargo fuzz run alloc_seq -- -max_total_time=60
           cargo fuzz run zero_init_seq -- -max_total_time=60
+          cargo fuzz run tier_boundary_seq -- -max_total_time=60
 
   miri:
     runs-on: ubuntu-latest
@@ -140,5 +141,12 @@ jobs:
         with:
           toolchain: nightly
           components: miri
-      # Miri cannot execute real syscalls for map/unmap; core unit tests only.
+      # Miri cannot execute real syscalls for map/unmap; unit tests that
+      # need raw mmap are cfg_attr(miri, ignore). Span/big carve and
+      # large_header_of probes use std::alloc buffers and run here.
+      # -Zmiri-strict-provenance: pointer-int casts in header probes must
+      # stay in-bounds of their allocations.
+      - run: cargo +nightly miri setup
       - run: cargo +nightly miri test --lib
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"

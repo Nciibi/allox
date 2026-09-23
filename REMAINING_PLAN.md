@@ -264,9 +264,18 @@ spans, in that order of suspicion. Still no blind experiments.
   (no nightly on the dev box).
 * **Miri + fuzz on new code:** span carving/lookup, exit-hook paths,
   arena commit/release/hole logic, `large_header_of` validation.
-  Miri needs nightly + mocked syscalls for map/unmap (existing pattern);
-  add fuzz targets for alloc/free/realloc sequences crossing small/
-  medium/large boundaries.
+  **DONE 2026-09-23 (Phase 0.2):**
+  - `page.rs`: big carve rewritten on `std::alloc` 64 KiB-aligned buffers
+    (runs under Miri); added `big_contains_is_fail_closed`,
+    `medium_span_of_and_contains`.
+  - `lib.rs`: `header_probe_tests` for `large_header_of` (accept well-formed,
+    reject bad magic / bad size / outside range / off==0).
+  - `arena.rs`: all raw-mmap unit tests `cfg_attr(miri, ignore)`.
+  - Fuzz: new `tier_boundary_seq` target (exact 16 KiB / 65472 / 262144
+    edges + neighbors, mixed align, realloc/calloc/free); CI smoke-runs it.
+  - CI miri job: `miri setup` + `MIRIFLAGS=-Zmiri-strict-provenance`.
+  - Exit-hook path: covered by `tests/thread_exit.rs` in the normal 3-OS
+    test matrix (needs real pthread/Fls, not Miri).
 * **Windows Fls path is reasoning-only.** Never executed here. Needs
   Windows CI running `thread_exit` + stress + benches before any release
   claims cover it.
