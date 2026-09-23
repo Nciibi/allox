@@ -775,7 +775,7 @@ fn main() {
         // allox-only probe run so numbers reflect steady-state behaviour.
         let s0 = allox::stats();
         let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru) = allox::__debug_map_split();
-        let (d0abnd, d0hi) = allox::__debug_arena_detail();
+        let (d0abnd, _d0hi) = allox::__debug_arena_detail();
         let _ = run(&GLOBAL, wl, secs.min(1).max(1));
         let s1 = allox::stats();
         let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru) = allox::__debug_map_split();
