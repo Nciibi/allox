@@ -225,11 +225,13 @@ itself is ~18x spawn per thread) — it needs restating before reuse.
 
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
-Blocked on profiling, not ideas: no `perf`/PMU on the dev box. Get
-`perf stat`/`annotate` (or macOS Instruments) into CI first, then work
-the profile — candidates are refill batching, free-path load chains
-(`of`+`contains`), and TLB behavior on scattered spans, in that order of
-suspicion. No blind experiments (the count-cap regression taught this).
+Was blocked on profiling, not ideas: no `perf`/PMU on the dev box.
+Unblocked 2026-09-23: CI `profile` job added (best-effort `perf stat`
+on mixed-all 8T + spawn-churn, software + hardware counters,
+`continue-on-error`, artifacts uploaded). NEXT: read the first CI
+artifacts, then work the profile — candidates are refill batching,
+free-path load chains (`of`+`contains`), and TLB behavior on scattered
+spans, in that order of suspicion. Still no blind experiments.
 
 ## 7. Correctness backlog (must clear before 0.2)
 
