@@ -524,7 +524,14 @@ impl ThreadCache {
                 }
             }
             if mbest == usize::MAX {
-                self.cached_bytes = target; // nothing trimmable left; stop
+                // Nothing trimmable left: stop WITHOUT touching cached_bytes.
+                // It must stay exactly equal to retained bytes (every push,
+                // pop, refill, and flush adjusts it symmetrically); fudging
+                // it down here used to lag actual retention until a later
+                // pop drove it below zero (debug underflow panic, release
+                // wrap into an over-trim storm). A futile rescan per
+                // over-budget dealloc is the honest price — O(classes), no
+                // syscalls, and it stops the moment bins become trimmable.
                 break;
             }
             let len = self.mbins[mbest].len;
