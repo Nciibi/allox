@@ -38,13 +38,12 @@ const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 /// producer-consumer on the class lock and thrashed the arena). Same-thread
 /// frees below the gate stay header-free (the Phase-0 free-path win).
 ///
-/// The gate sits at the *full* budget (`DIV = 1`), above the trim target
-/// (`budget / 2`): PMU showed the owner load was ~72% of `dealloc_medium`
-/// when the gate sat at `budget / 2`, because steady state after `trim`
-/// lands exactly on the old gate — so the check ran on every free. Allocation
-/// paths still `trim` at `budget / 2`; this gate only decides whether a
-/// free pays for the header/owner load.
-const DRIFT_GATE_DIV: usize = 1;
+/// `DIV = 1` (gate at full budget) was measured and **rejected**: mixed-all
+/// stayed ~0.71× mimalloc (PMU's "72% of dealloc_medium" did not translate
+/// to wall-clock) and prodcons regressed 32.7M → ~26.8M ops/s because
+/// `foreign_bytes` never reached `budget / 8` before `cached_bytes > budget`
+/// already forced `should_shed`, killing the early foreign shed.
+const DRIFT_GATE_DIV: usize = 2;
 
 /// Once this many foreign bytes are held under the drift gate, shed via
 /// `trim` (chunked, page-grouped: one class lock per FLUSH_CHUNK blocks).
