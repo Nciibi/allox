@@ -643,9 +643,9 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         return align.max(1) as *mut u8;
     }
     if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
-        // Big-span range on arena targets is handled below; everywhere else
-        // (and for true large sizes) this is the large path. The big branch
-        // below falls back here on arena-unavailable via alloc_large_ex.
+        // Big-span range on arena targets falls through to the big branch
+        // below; everywhere else (and for true large sizes/alignments)
+        // this is the large path.
         #[cfg(not(all(unix, feature = "std")))]
         {
             let (p, fresh) = alloc_large_ex(size, align);
@@ -656,7 +656,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             return p;
         }
         #[cfg(all(unix, feature = "std"))]
-        if size > MAX_BIG_BLOCK {
+        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
             let (p, fresh) = alloc_large_ex(size, align);
             if !p.is_null() && !fresh {
                 ptr::write_bytes(p, 0, size);
