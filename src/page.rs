@@ -327,17 +327,33 @@ mod tests {
     use super::*;
     use crate::classes::{big_span_pages_for, BIG_CLASSES, NUM_BIG};
 
-    /// Carve audit per big class on real arena slices: magic + virgin flags,
-    /// exact capacity formula, every block 16-aligned inside the extent,
-    /// packed at exactly one-block stride (contiguous carve — P1/P2/P3),
-    /// and containment of sample pointers (P5).
+    /// 64 KiB-aligned multi-page buffer without OS mmap (Miri-safe).
+    /// Caller must free with the same layout.
+    unsafe fn aligned_pages(pages: usize) -> (*mut u8, core::alloc::Layout) {
+        let layout = core::alloc::Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
+            .expect("layout");
+        let p = std::alloc::alloc(layout);
+        assert!(!p.is_null(), "alloc {} pages", pages);
+        // Freshness not guaranteed by std::alloc; zero so virgin asserts hold.
+        core::ptr::write_bytes(p, 0, pages * PAGE_SIZE);
+        (p, layout)
+    }
+
+    unsafe fn aligned_free(p: *mut u8, layout: core::alloc::Layout) {
+        std::alloc::dealloc(p, layout);
+    }
+
+    /// Carve audit per big class on 64 KiB-aligned buffers: magic + virgin
+    /// flags, exact capacity formula, every block 16-aligned inside the
+    /// extent, packed at exactly one-block stride (contiguous carve — P1/P2/
+    /// P3), and containment of sample pointers (P5). Uses std::alloc so the
+    /// whole check runs under Miri (no raw mmap).
     #[test]
     fn big_carve_packs_contiguously() {
         for bclass in [0usize, NUM_BIG / 2, NUM_BIG - 1] {
             let block = BIG_CLASSES[bclass];
             let pages = big_span_pages_for(block);
-            let (raw, _) = unsafe { crate::arena::commit(pages) };
-            assert!(!raw.is_null(), "bclass {}", bclass);
+            let (raw, layout) = unsafe { aligned_pages(pages) };
             let span = raw.cast::<BigMaster>();
             unsafe { (*span).init(bclass, pages as u32) };
             assert_eq!(unsafe { (*span).magic }, BIGMAGIC);
@@ -377,7 +393,80 @@ mod tests {
             let mid = unsafe { (*span).free_head };
             assert!(unsafe { (*span).contains(mid) });
             assert!(!unsafe { (*span).contains(raw) });
-            unsafe { crate::arena::release(raw, pages) };
+            unsafe { aligned_free(raw, layout) };
         }
+    }
+
+    /// BigMaster::contains fail-closed contract: wrong magic, out-of-range
+    /// class, zero npages, and pointers outside the extent all reject.
+    #[test]
+    fn big_contains_is_fail_closed() {
+        let (raw, layout) = unsafe { aligned_pages(2) };
+        let span = raw.cast::<BigMaster>();
+        unsafe {
+            (*span).init(0, 2);
+            assert!((*span).contains(raw.add(BIG_MASTER_SIZE)));
+            assert!((*span).contains(raw.add(2 * PAGE_SIZE - 16)));
+
+            let good_magic = (*span).magic;
+            let good_class = (*span).bclass;
+            let good_npages = (*span).npages;
+
+            (*span).magic = 0;
+            assert!(!(*span).contains(raw.add(BIG_MASTER_SIZE)));
+            (*span).magic = good_magic;
+
+            (*span).bclass = u16::MAX;
+            assert!(!(*span).contains(raw.add(BIG_MASTER_SIZE)));
+            (*span).bclass = good_class;
+
+            (*span).npages = 0;
+            assert!(!(*span).contains(raw.add(BIG_MASTER_SIZE)));
+            (*span).npages = good_npages;
+
+            // Pointer at/before master and past the extent reject.
+            assert!(!(*span).contains(raw));
+            assert!(!(*span).contains(raw.add(2 * PAGE_SIZE)));
+        }
+        unsafe { aligned_free(raw, layout) };
+    }
+
+    /// Medium span: init carves sub-headers, SpanMaster::of resolves master
+    /// and sub pages, contains rejects edges. Miri-safe (std::alloc).
+    #[test]
+    fn medium_span_of_and_contains() {
+        let (raw, layout) = unsafe { aligned_pages(3) };
+        let span = raw.cast::<SpanMaster>();
+        // Class 0 medium: smallest medium block.
+        let mclass = 0usize;
+        unsafe {
+            (*span).init(mclass, 3);
+            assert_eq!((*span).magic, SPAN_MAGIC);
+            assert_eq!((*span).npages, 3);
+            assert!((*span).flags & FLAG_VIRGIN != 0);
+
+            // Master page resolves to itself.
+            assert_eq!(SpanMaster::of(raw), span);
+            // Sub pages resolve via sub-header pointer.
+            for page in 1..3usize {
+                let sub = raw.add(page * PAGE_SIZE);
+                assert_eq!(SpanMaster::of(sub), span, "sub page {}", page);
+            }
+            // Interior data pointer in first page (past master header).
+            let interior = raw.add(SPAN_MASTER_SIZE + 16);
+            assert!((*span).contains(interior));
+            // Edges reject.
+            assert!(!(*span).contains(raw));
+            assert!(!(*span).contains(raw.add(3 * PAGE_SIZE)));
+
+            // of() on non-span memory (zeroed) returns null.
+            let foreign = raw.add(PAGE_SIZE * 3);
+            // Can't read past allocation; use a separate zeroed page instead.
+            let (f2, l2) = aligned_pages(1);
+            assert!(SpanMaster::of(f2).is_null());
+            aligned_free(f2, l2);
+            let _ = foreign;
+        }
+        unsafe { aligned_free(raw, layout) };
     }
 }
