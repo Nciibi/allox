@@ -510,6 +510,7 @@ enum SpanFate {
 /// One same-class span group for [`MediumHeap::release_many`]: the span
 /// plus a pre-terminated chain (`head` linked through to `tail`, null at
 /// tail) and its length. Built by `flush_mbin` while grouping.
+#[derive(Clone, Copy)]
 pub(crate) struct ReleaseChunk {
     pub(crate) span: *mut SpanMaster,
     pub(crate) head: *mut u8,
