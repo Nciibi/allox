@@ -439,4 +439,45 @@ mod tests {
             );
         }
     }
+
+    #[cfg(all(unix, feature = "std"))]
+    #[test]
+    fn big_tables_cover_range_with_bound() {
+        use crate::page::BIG_MASTER_SIZE;
+        assert_eq!(BIG_MASTER_RESERVE, BIG_MASTER_SIZE);
+        assert!(NUM_BIG >= 8, "expected ~11 big classes, got {}", NUM_BIG);
+        assert!(MEDIUM_CLASSES[0] > MAX_SMALL_SIZE);
+        assert!(BIG_CLASSES[0] > MAX_MEDIUM_BLOCK);
+        assert_eq!(MAX_BIG_BLOCK, BIG_BLOCK_CAP);
+        assert!(MAX_BIG_BLOCK <= BIG_BLOCK_CAP);
+        let mut prev = MAX_MEDIUM_BLOCK;
+        for &c in BIG_CLASSES.iter() {
+            assert!(c > prev, "not strictly growing: {}", c);
+            assert!(c % 16 == 0);
+            prev = c;
+        }
+        // Fragmentation bound + LUT agree with scan on every slot.
+        let mut size = MAX_MEDIUM_BLOCK + 1;
+        while size <= MAX_BIG_BLOCK {
+            let cls = BIG_CLASSES[big_class_for_size(size)];
+            assert!(cls >= size, "size {}", size);
+            assert!(cls < size * 9 / 8 + 16, "size {} class {}", size, cls);
+            assert_eq!(big_class_for_size(size), big_scan(size));
+            size += 1;
+        }
+        // Every big span holds comfortably more than one lock's worth of
+        // blocks (data chunks reserve nothing — only the 64 B master).
+        for &b in BIG_CLASSES.iter() {
+            let pages = big_span_pages_for(b);
+            assert!(pages >= 2, "block {} pages {}", b, pages);
+            let usable = pages * 65536 - BIG_MASTER_RESERVE;
+            assert!(
+                usable / b >= TARGET_BLOCKS_PER_BIG_SPAN,
+                "block {} pages {} capacity {}",
+                b,
+                pages,
+                usable / b
+            );
+        }
+    }
 }
