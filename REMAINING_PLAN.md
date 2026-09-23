@@ -1,7 +1,9 @@
 # Remaining plan — from big-spans-validated to 0.2
 
 State at fork-off: **big spans DONE 2026-09-23** (DESIGN_SPANS_BIG
-IMPLEMENTED; large-only 8T 0.05× → 0.67× mimalloc, unmaps 0). Full
+IMPLEMENTED; large-only 8T 0.05× → 0.67× mimalloc, unmaps 0).
+**Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
+mimalloc). Full
 14-workload matrix: ~9–10/14 win-or-tie vs the best comparator on Linux
 x86-64 (json/request beat mimalloc; ecs beats every comparator except
 system's mremap growth — allox ~7.9M vs system ~113M isolated, same
@@ -221,6 +223,24 @@ Options in order:
    above; sharded holes already flat-reverted).
 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
    discipline matters more than the last 10% hit rate here.
+
+## 4b. Remote-free drift cap (DONE 2026-09-23)
+
+ROADMAP P1 step 4 / order item 4: pressure-gated ownership heuristic in
+`src/cache.rs`. `PageHeader`/`SpanMaster`/`BigMaster` carry `owner: u32`
+(1-based monotonic `NEXT_TID`, claimed on refill; benign last-writer
+race). Gate open only when `cached_bytes > budget/2`; foreign frees
+push lockless to the bin and accumulate `foreign_bytes`; when
+`foreign_bytes >= budget/8` or over budget, `trim()` sheds in batch
+(chunked + page-grouped) and clears the counter. Never lock-per-free
+`release_blocks` — that regressed prodcons to 0.60× with arena
+abnd+9721/s / hi6660MiB. Freelist invariant: any raw live block into
+`release_blocks` must have its first word nulled first (cold fallbacks
+in `lib.rs` all do). Clean sequential benches: **prodcons 8T 32.68M =
+1.20× mimalloc** (was 0.60× broken / 1.09× pre-cap baseline; abnd 0/s,
+hi359MiB); **mixed-all 8T 13.57M = 0.72× mimalloc / 1.02× system**
+(flat vs prior 0.74×; abnd 0/s, unmaps 0). Docs updated: CHANGELOG,
+ROADMAP order item 4, DESIGN ownership rule, README table.
 
 ## 5. spawn-churn per-op + exit latency (0.22x mimalloc — DECOMPOSED, no lever pulled)
 
