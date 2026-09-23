@@ -774,11 +774,11 @@ fn main() {
         // Syscall + RSS diagnostics: snapshot allox counters around one extra
         // allox-only probe run so numbers reflect steady-state behaviour.
         let s0 = allox::stats();
-        let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru) = allox::__debug_map_split();
+        let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
         let (d0abnd, _d0hi) = allox::__debug_arena_detail();
         let _ = run(&GLOBAL, wl, secs.min(1).max(1));
         let s1 = allox::stats();
-        let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru) = allox::__debug_map_split();
+        let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
         let (d1abnd, d1hi) = allox::__debug_arena_detail();
         let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
         let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
@@ -789,6 +789,8 @@ fn main() {
         let _small_unmaps = d1smu.saturating_sub(d0smu);
         let arena_reuses = d1aru.saturating_sub(d0aru);
         let _arena_commits = d1ac.saturating_sub(d0ac);
+        let big_maps = d1bm.saturating_sub(d0bm);
+        let big_unmaps = d1bmu.saturating_sub(d0bmu);
         // Abandoned delta over the 1 s probe IS the per-second rate (§3
         // hole-coalescing trigger: >1k/s sustained). Bump high-water is
         // monotonic process-wide (MiB) for reservation sizing; the absolute
