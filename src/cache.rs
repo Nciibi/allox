@@ -350,6 +350,48 @@ impl ThreadCache {
         }
     }
 
+    /// This thread's ownership id, assigned on first use (slow paths only).
+    #[inline]
+    fn tid(&mut self) -> u32 {
+        if self.tid == 0 {
+            // Never hand out 0 (means "unassigned"); wrap is vanishingly rare
+            // and 0 is re-skipped below.
+            let mut id = NEXT_TID.fetch_add(1, Ordering::Relaxed);
+            if id == 0 {
+                id = NEXT_TID.fetch_add(1, Ordering::Relaxed);
+            }
+            self.tid = id;
+        }
+        self.tid
+    }
+
+    /// Claim `page`/`span` for this thread on refill (owner heuristic for the
+    /// drift cap). Benign race: last writer wins; correctness never reads
+    /// `owner` except under the drift gate below.
+    #[inline]
+    fn claim_page(&mut self, page: *mut PageHeader) {
+        let id = self.tid();
+        // SAFETY: caller holds a live page pointer from a refill chain.
+        unsafe {
+            (*page).owner = id;
+        }
+    }
+
+    #[inline]
+    fn claim_span(&mut self, span: *mut SpanMaster) {
+        let id = self.tid();
+        unsafe {
+            (*span).owner = id;
+        }
+    }
+
+    /// True when this cache is under enough pressure that a foreign free
+    /// should bypass the bin (see [`DRIFT_GATE_DIV`]).
+    #[inline]
+    fn drift_gate_open(&self) -> bool {
+        self.cached_bytes > thread_cache_budget() / DRIFT_GATE_DIV
+    }
+
     /// Fast-path allocation. Returns null only when the heap is out of memory.
     pub(crate) unsafe fn alloc(&mut self, class: usize) -> *mut u8 {
         let bin = &mut self.bins[class];
