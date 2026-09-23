@@ -477,9 +477,6 @@ mod tests {
 // `medium_span_of_and_contains`); the proofs here discharge the static
 // sizing/alignment bounds that unit tests only sample at fixed classes.
 // ---------------------------------------------------------------------------
-// `kani` is set by cargo-kani, not a Cargo feature (check-cfg needs Rust
-// 1.80+; MSRV here is 1.79, so allow the unexpected_cfgs lint instead).
-#[allow(unexpected_cfgs)]
 #[cfg(all(kani, unix, feature = "std"))]
 mod kani_proofs {
     use super::*;

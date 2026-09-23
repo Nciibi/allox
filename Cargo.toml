@@ -50,6 +50,12 @@ snmalloc-rs = { version = "0.7", features = ["build_cc"] }
 name = "alloc"
 harness = false
 
+[lints.rust]
+# `cfg(kani)` is set by cargo-kani, not a Cargo feature. check-cfg needs
+# rustc ≥1.80 (warning itself is 1.80+); MSRV 1.79 just ignores this table
+# key's effect on an unknown lint — no build break.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
 [profile.release]
 opt-level = 3
 lto = true
