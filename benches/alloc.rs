@@ -157,7 +157,12 @@ const WORKLOADS: &[Workload] = &[
     },
     Workload {
         name: "large-only 8T",
-        threads: 8,
+        // TEMPORARY S8 SCALING EXPERIMENT (revert after): thread count from
+        // env S8_THREADS (default 8) to map the contention curve.
+        threads: std::env::var("S8_THREADS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8),
         size_range: (32768, 262144),
         free_pct: 50,
         kind: Kind::Standard,
