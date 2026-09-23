@@ -253,24 +253,22 @@ impl Arena {
     /// with the entry removed, or null. Caller commits afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
         let home = Self::shard_for(pages);
-        if let Some(base) = self.shard_take(home, pages, true) {
+        if let Some(base) = self.shard_take(home, pages) {
             return base;
         }
         for s in 0..HOLE_SHARDS {
             if s == home {
                 continue;
             }
-            if let Some(base) = self.shard_take(s, pages, false) {
+            if let Some(base) = self.shard_take(s, pages) {
                 return base;
             }
         }
         ptr::null_mut()
     }
 
-    /// Best-fit (exact-early-exit) pop from one shard. `exact_only` skips
-    /// inexact matches (home shard already tried them... no — home tries
-    /// best-fit too; exact_only is unused; keep one scan shape).
-    fn shard_take(&self, shard: usize, pages: usize, _exact_only: bool) -> Option<*mut u8> {
+    /// Best-fit (exact-early-exit) pop from one shard.
+    fn shard_take(&self, shard: usize, pages: usize) -> Option<*mut u8> {
         let mut holes = self.holes[shard].lock();
         let mut best: Option<usize> = None;
         for i in 0..holes.len {
