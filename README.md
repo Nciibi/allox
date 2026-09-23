@@ -112,8 +112,8 @@ mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and
 the large-only 1T tail above 262144 B (stays large-path by design);
 large-only 8T is now served by arena-backed big spans (0.05× → 0.67×
 mimalloc, zero unmaps in the probe). mixed-all 8T and large-only still
-carry run-to-run regime notes (lock dynamics, same reference).
-full six-allocator output (incl. snmalloc, dlmalloc, and the
+carry run-to-run regime notes (lock dynamics, same reference). Full
+six-allocator output (incl. snmalloc, dlmalloc, and the
 json/request/ecs app shapes) in harness runs.
 
 ## Design
