@@ -191,7 +191,8 @@ fn workloads() -> Vec<Workload> {
         free_pct: 50,
         kind: Kind::SpawnEmpty,
     },
-];
+    ]
+}
 
 fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     match wl.kind {
