@@ -490,7 +490,7 @@ impl ThreadCache {
             let page = PageHeader::of(p);
             let owner = (*page).owner;
             if owner != 0 && owner != self.tid() {
-                HEAP.release_blocks(page, p, 1);
+                crate::heap::HEAP.release_blocks(page, p, 1);
                 #[cfg(feature = "telemetry")]
                 self.note_free(class);
                 return;
