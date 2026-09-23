@@ -31,12 +31,13 @@ use core::sync::atomic::{AtomicU32, Ordering};
 /// never from the environment, since environment access can allocate).
 const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
-/// High-water cap on foreign-page bytes one thread will retain (drift cap,
-/// ROADMAP P1 step 4). Past this, frees of blocks claimed by another thread
-/// return straight to the heap via `release_blocks` instead of growing the
-/// freeer's cache. Sized as a fraction of the thread-cache budget so it
-/// scales with `set_thread_cache_budget`.
-const FOREIGN_CAP_DIV: usize = 4;
+/// Remote-free drift cap (ROADMAP P1 step 4): once a thread's cache exceeds
+/// this fraction of the budget, frees of blocks whose page/span was claimed
+/// by another thread bypass the cache and return straight to the heap via
+/// `release_blocks`. Bounds how much foreign-page junk a freeer can hoard
+/// (producer-consumer / spawn churn) without paying an ownership load on the
+/// common same-thread free path. Local frees keep the full budget.
+const DRIFT_GATE_DIV: usize = 2;
 
 /// Monotonic thread ids for ownership heuristics (1-based; 0 = unassigned).
 static NEXT_TID: AtomicU32 = AtomicU32::new(1);
@@ -53,12 +54,6 @@ fn thread_cache_budget() -> usize {
     }
     #[cfg(not(feature = "std"))]
     DEFAULT_THREAD_CACHE_BUDGET
-}
-
-/// Cap on retained foreign-page bytes for this thread (see [`FOREIGN_CAP_DIV`]).
-#[inline]
-fn foreign_cap() -> usize {
-    thread_cache_budget() / FOREIGN_CAP_DIV
 }
 
 #[cfg(feature = "std")]
@@ -145,10 +140,6 @@ struct Bin {
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
-    /// High-water of foreign-page bytes this thread has retained in its bins
-    /// (drift cap; see [`foreign_cap`]). Monotonic until `flush_all` — a
-    /// conservative bound, not a live census (pops don't decrement).
-    foreign_bytes: usize,
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
     tid: u32,
@@ -217,7 +208,6 @@ impl ThreadCache {
                 len: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
-            foreign_bytes: 0,
             tid: 0,
             virgin: [0; NUM_CLASSES],
             mbins: [Bin {
