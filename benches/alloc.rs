@@ -5,8 +5,9 @@
 //! (= allox); that overhead is identical for all measured allocators.
 //!
 //! P0 honest scoreboard: mimalloc + snmalloc are dev-only comparators — the
-//! library itself stays zero-deps / no-C. jemalloc needs make+autoconf and
-//! is CI-only (see ROADMAP_TO_BEST.md); enable it where those tools exist.
+//! library itself stays zero-deps / no-C. jemalloc is behind the optional
+//! `bench-jemalloc` feature (needs make+autoconf): CI-only, enable it where
+//! those tools exist (`cargo bench --features bench-jemalloc`).
 //!
 //! Run with: cargo bench
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
@@ -63,6 +64,21 @@ unsafe impl GlobalAlloc for Snmalloc {
     }
 }
 static SNMALLOC: Snmalloc = Snmalloc;
+
+// jemalloc (optional, `--features bench-jemalloc`): CI box has make+autoconf.
+#[cfg(feature = "bench-jemalloc")]
+struct Jemalloc;
+#[cfg(feature = "bench-jemalloc")]
+unsafe impl GlobalAlloc for Jemalloc {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        tikv_jemallocator::Jemalloc.alloc(l)
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        tikv_jemallocator::Jemalloc.dealloc(p, l)
+    }
+}
+#[cfg(feature = "bench-jemalloc")]
+static JEMALLOC: Jemalloc = Jemalloc;
 
 struct Rng(u64);
 
