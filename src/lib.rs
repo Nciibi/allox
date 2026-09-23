@@ -825,9 +825,10 @@ unsafe impl GlobalAlloc for Allox {
         // (align > MIN_ALIGN or either size past MAX_MEDIUM_BLOCK), so
         // small/medium traffic pays zero added cost; arena regions,
         // shrinks, and kernel refusals fall through to alloc-copy-free.
-        if layout.align() > MIN_ALIGN
-            || layout.size() > MAX_MEDIUM_BLOCK
-            || new_size > MAX_MEDIUM_BLOCK
+        if !p.is_null()
+            && (layout.align() > MIN_ALIGN
+                || layout.size() > MAX_MEDIUM_BLOCK
+                || new_size > MAX_MEDIUM_BLOCK)
         {
             if let Some((base, mapped)) = large_header_of(p) {
                 let q = try_grow_large_in_place(base, mapped, new_size, layout.align());
