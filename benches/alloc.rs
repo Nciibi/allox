@@ -773,6 +773,19 @@ fn main() {
     println!("{}", "-".repeat(hdr.len()));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
+    // Optional allocator subset for profiling (e.g. BENCH_ALLOC=allox under
+    // `perf`). Empty = all. Matched as substring against the column name.
+    let alloc_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
+    let alloc_idx: Vec<usize> = allocators
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| alloc_filter.is_empty() || a.0.trim().contains(&alloc_filter))
+        .map(|(i, _)| i)
+        .collect();
+    if alloc_idx.is_empty() {
+        eprintln!("BENCH_ALLOC={alloc_filter} matched no allocators");
+        return;
+    }
     for wl in WORKLOADS {
         if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
@@ -781,21 +794,30 @@ fn main() {
         // affects all allocators equally.
         let mut scores = vec![vec![]; allocators.len()];
         for _ in 0..reps {
-            for (i, a) in allocators.iter().enumerate() {
+            for &i in &alloc_idx {
+                let a = &allocators[i];
                 eprintln!("  running {} / {}...", wl.name, a.0);
                 scores[i].push(run(a.1, wl, secs));
             }
         }
-        let medians: Vec<f64> = scores
+        let medians: Vec<Option<f64>> = scores
             .iter_mut()
-            .map(|s| median(s.as_mut_slice()))
+            .enumerate()
+            .map(|(i, s)| {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(median(s.as_mut_slice()))
+                }
+            })
             .collect();
         // Syscall + RSS diagnostics: snapshot allox counters around one extra
         // allox-only probe run so numbers reflect steady-state behaviour.
+        let allox_i = alloc_idx.first().copied().unwrap_or(0);
         let s0 = allox::stats();
         let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
         let (d0abnd, _d0hi) = allox::__debug_arena_detail();
-        let _ = run(&GLOBAL, wl, secs.min(1).max(1));
+        let _ = run(allocators[allox_i].1, wl, secs.min(1).max(1));
         let s1 = allox::stats();
         let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
         let (d1abnd, d1hi) = allox::__debug_arena_detail();
