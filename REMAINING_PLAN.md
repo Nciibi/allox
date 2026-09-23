@@ -1,11 +1,11 @@
-# Remaining plan — from arena-large-wired to 0.2
+# Remaining plan — from big-spans-validated to 0.2
 
-State at fork-off: 7–8/11 bench workloads win-or-tie vs the best comparator
-on Linux x86-64; full suite + telemetry + no_std + release green and
-warning-free. App-shaped workloads added 2026-09-23 (json-ish, request,
-ecs — serde/server/game-engine patterns): 14 total, 8–9/14 win-or-tie
-(json 1.46x mimalloc, request 1.10x snmalloc, ecs beats everyone except
-system 0.06x via mremap — see §4 mremap note). Contra remaining gaps below, each-capable of closing
+State at fork-off: **big spans DONE 2026-09-23** (DESIGN_SPANS_BIG
+IMPLEMENTED; large-only 8T 0.05× → 0.67× mimalloc, unmaps 0). Full
+14-workload matrix: ~9–10/14 win-or-tie vs the best comparator on Linux
+x86-64 (json/request/ecs now beat mimalloc too — ecs 1.41× via big-span
+realloc paths); full suite + telemetry + no_std + release green and
+warning-free. Contra remaining gaps below, each capable of closing
 independently, ordered by ROI. Methodology everywhere: ≥2 s × 3 reps,
 `__debug_map_split` + `peakRSS` probe columns, sensitivity-checked tests
 (disable-the-feature must fail), one point measured before the next starts.
@@ -108,11 +108,16 @@ bench `arena` column (`abnd+rate/s totN hiMiB`).
   no rustup). 512 MiB const keeps its coverage from the `with_size`
   fallback unit tests.
 
-## 4. large-only hit rate (structural; arena only made misses cheaper)
+## 4. large-only hit rate (STRUCTURAL FIX DONE — option 2; residual gaps noted)
 
-`large-only 8T` is 0.07–0.11x mimalloc: shard hit rate under 32K–256K
-uniform variance, not mmap cost. Current probes (2 s × 3 reps): 1T does
-~81k fresh takes/s at ~100% hole reuse, 0 unmaps; 8T does ~58k fresh
+**Option 2 (spans-for-big-sizes) DONE 2026-09-23**: large-only 8T
+**9.06M vs mimalloc 13.51M (0.67×, was 0.05×)**, probe unmaps 0,
+big_maps 1308 — see DESIGN_SPANS_BIG.md status block for full validation.
+Historical context for the options log below (pre-big-span regime):
+
+`large-only 8T` was 0.07–0.11x mimalloc: shard hit rate under 32K–256K
+uniform variance, not mmap cost. Probes (2 s × 3 reps, pre-change): 1T
+did ~81k fresh takes/s at ~100% hole reuse, 0 unmaps; 8T did ~58k fresh
 takes/s at ~19% reuse with ~47k unmaps/s + ~63k transient abandonments.
 Options in order:
 1. Deeper exact pools (slots are static-cheap: 64→256/shard hot+cold ≈

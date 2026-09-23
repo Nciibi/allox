@@ -150,7 +150,7 @@ minimum block = 16 B = max useful fundamental alignment):
   the span master header inside a 64 KiB chunk (`TOP_MEDIUM_BLOCK`).
 - **Big:** (65472, 262144] — same geometric chain, `BIG_REFILL_BATCH = 4`
   (top class and batch sizes are bench-tunable; see
-  `DESIGN_SPANS_BIG.md` open questions).
+  `DESIGN_SPANS_BIG.md` — status IMPLEMENTED, carving proofs P1–P6).
 
 ### 4.3 Allocation paths
 
