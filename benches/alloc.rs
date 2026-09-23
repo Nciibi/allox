@@ -517,9 +517,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
                             let mut bsize = 64usize;
                             while bsize < 8192 {
                                 let nsize = bsize * 2;
-                                let nl = layout_for(nsize);
                                 let np = unsafe { alloc.realloc(bp, bl, nsize) };
-                                let _ = nl;
                                 if np.is_null() {
                                     break;
                                 }
