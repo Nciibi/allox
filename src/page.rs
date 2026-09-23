@@ -18,6 +18,12 @@ pub(crate) const PAGE_MAGIC: u64 = 0xA110_CCA7_E5A1_1E5D;
 pub(crate) const SPAN_MAGIC: u64 = 0xA110_CCA7_5EED_5A11;
 /// Marks a non-first 64 KiB unit of a medium span; +8 holds the master ptr.
 pub(crate) const SPAN_SUBMAGIC: u64 = 0xA110_CCA7_5EED_5A12;
+/// Marks the base of a big multi-page span (first 64 KiB unit). Data chunks
+/// (non-first units) carry NO headers — blocks run contiguously across
+/// chunk boundaries — so lookup goes through the arena side table, never
+/// through masking (see DESIGN_SPANS_BIG.md).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const BIGMAGIC: u64 = 0xA110_CCA7_B16_5A13;
 /// Marks memory at a 64 KiB boundary as a large, directly mapped region.
 pub(crate) const LARGE_MAGIC: u64 = 0x00B1_0C5A_6E0F_F1CE;
 
