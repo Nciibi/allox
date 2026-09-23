@@ -71,7 +71,11 @@ fn churn(mode: &str) {
 
 #[test]
 fn zz_minimize() {
-    let mode: &'static str = match std::env::var("MODE").unwrap().as_str() {
+    if let Ok(b) = std::env::var("BUDGET_MB") {
+        if let Ok(mb) = b.parse::<usize>() {
+            allox::set_thread_cache_budget(mb * 1024 * 1024);
+        }
+    }
         "small" => "small",
         "medium" => "medium",
         "large" => "large",
