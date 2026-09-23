@@ -162,12 +162,19 @@ Options in order:
    noise. Lesson: segregation doesn't create capacity; the transient
    parks ~74k entries against any slot budget in this range, and takes
    miss on phase-mismatch (correlated drain-then-flood bursts), not on
-   lock waiting. Refined next hypothesis (NOT trialed): deepen LARGE
-   COLD slots alone (64 → 512; cold is virtual-only so nearly free, and
-   64 slots × ~150K ≈ 9.6 MB currently binds far below the 64 MB/shard
-   byte cap) to absorb the flood before it reaches holes — validate
-   with 8T ×5 runs per config (medians + reuse/unmaps), since single
-   comparisons drown in regime noise.
+   lock waiting.
+   KEPT 2026-09-23: deep LARGE COLD slots alone (64 → 512, hot
+   untouched). Cold is virtual-only after discard, so depth is nearly
+   free — and 64 slots × ~150 KiB capped retention far below the
+   64 MB/shard byte cap, starving exact reuse and flooding the holes.
+   large-only 8T ×5 runs per config: baseline median 1.605M (range
+   1.10–2.03M) → trial median 2.06M (range 1.87–2.16M): +28%, and the
+   trial worst beats the baseline median. Unmaps 30–50k/s collapse
+   toward 0 (three runs at exactly 0); reuse 12–19k → 23–27k/s;
+   abandonment persists (~64–73k transient — cheap address-space flow,
+   no syscalls) while mapped retention rises (discarded-virtual, RSS
+   flat). No regressions: large-only 1T 240k, mixed-all 8T 12.3M /
+   1T 2.3M all in-band; full suite green.
 2. Spans-for-big-sizes: extend span machinery past the 65472 block cap.
    Requires sub-header redesign (blocks bigger than a 64 KiB chunk can't
    dodge per-page headers — chunk-group headers or whole-span carve with
