@@ -175,9 +175,12 @@ unsafe fn alloc_small(class: usize) -> *mut u8 {
 }
 
 unsafe fn dealloc_small(p: *mut u8) {
+    // free() has no layout: load class from the page header once, then
+    // hand it to the cache (which no longer re-derives it).
     let page = page::PageHeader::of(p);
+    let class = (*page).class as usize;
     with_cache(
-        |c| c.dealloc(p),
+        |c| c.dealloc(p, class),
         || {
             HEAP.release_blocks(page, p, 1);
         },
@@ -194,8 +197,9 @@ unsafe fn alloc_medium(mclass: usize) -> *mut u8 {    with_cache(
 }
 
 unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
+    let mclass = (*span).mclass as usize;
     with_cache(
-        |c| c.dealloc_medium(p, span),
+        |c| c.dealloc_medium(p, mclass),
         || {
             MEDIUM_HEAP.release_blocks(span, p, 1);
         },
@@ -837,23 +841,43 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
         return;
     }
     if size > MAX_SMALL_SIZE {
-        // Span pages stay 64 KiB-aligned, so this masking is fault-safe.
-        let span = SpanMaster::of(p);
+        // Layout-routed: class comes from size (LUT), never from a header
+        // load — the SPAN_MAGIC load + sub-header follow was ~48% of free
+        // cycles on mixed-all (perf annotate 2026-09-23). The span is only
+        // needed on the cold no-TLS fallback.
+        let mclass = medium_class_for_size(size);
         #[cfg(debug_assertions)]
-        if span.is_null() || !(*span).contains(p) {
-            corrupt_pointer();
+        {
+            let span = SpanMaster::of(p);
+            if span.is_null() || !(*span).contains(p) || (*span).mclass as usize != mclass {
+                corrupt_pointer();
+            }
         }
-        dealloc_medium(p, span);
+        with_cache(
+            |c| c.dealloc_medium(p, mclass),
+            || {
+                let span = SpanMaster::of(p);
+                MEDIUM_HEAP.release_blocks(span, p, 1);
+            },
+        );
         return;
     }
+    // Small: class from size; page header only on the cold fallback path.
+    let class = class_for_size(size);
     #[cfg(debug_assertions)]
     {
         let page = page::PageHeader::of(p);
-        if (*page).magic != page::PAGE_MAGIC {
+        if (*page).magic != page::PAGE_MAGIC || (*page).class as usize != class {
             corrupt_pointer();
         }
     }
-    dealloc_small(p);
+    with_cache(
+        |c| c.dealloc(p, class),
+        || {
+            let page = page::PageHeader::of(p);
+            HEAP.release_blocks(page, p, 1);
+        },
+    );
 }
 
 unsafe impl GlobalAlloc for Allox {

@@ -406,12 +406,13 @@ impl ThreadCache {
         (first, virgin)
     }
 
-    pub(crate) unsafe fn dealloc(&mut self, p: *mut u8) {
+    /// Free into the thread cache with a class already known from the
+    /// pointer's header (`free()` path) or from layout size (fast path).
+    /// Class is a parameter so layout-routed frees never load a header.
+    pub(crate) unsafe fn dealloc(&mut self, p: *mut u8, class: usize) {
         #[cfg(debug_assertions)]
         debug_validate_free(p);
 
-        let page = PageHeader::of(p);
-        let class = (*page).class as usize;
         let bin = &mut self.bins[class];
         push_block(&mut bin.head, p);
         bin.len += 1;
@@ -489,11 +490,19 @@ impl ThreadCache {
         (first, virgin)
     }
 
-    pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, span: *mut SpanMaster) {
+    /// Medium free with `mclass` already known (layout-routed fast path;
+    /// `free()` callers pass `(*span).mclass` after their own header load).
+    /// No span load here — the span is only needed on the cold no-TLS
+    /// fallback, which re-derives it from the pointer.
+    pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, mclass: usize) {
         #[cfg(debug_assertions)]
-        debug_validate_free_medium(p, span);
+        {
+            let span = SpanMaster::of(p);
+            debug_assert!(!span.is_null() && (*span).contains(p));
+            debug_assert_eq!((*span).mclass as usize, mclass);
+            debug_validate_free_medium(p, span);
+        }
 
-        let mclass = (*span).mclass as usize;
         let bin = &mut self.mbins[mclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
