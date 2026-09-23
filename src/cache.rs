@@ -674,6 +674,25 @@ impl ThreadCache {
                     mbest = mclass;
                 }
             }
+            // Big bins outrank medium the same way (arena targets only).
+            #[cfg(all(unix, feature = "std"))]
+            let mut bbest = usize::MAX;
+            #[cfg(all(unix, feature = "std"))]
+            let mut bbest_bytes = 0usize;
+            #[cfg(all(unix, feature = "std"))]
+            for (bclass, size) in BIG_CLASSES.iter().enumerate() {
+                let bin_bytes = self.bigbins[bclass].len as usize * size;
+                if self.bigbins[bclass].len > 0 && bin_bytes > bbest_bytes {
+                    bbest_bytes = bin_bytes;
+                    bbest = bclass;
+                }
+            }
+            #[cfg(all(unix, feature = "std"))]
+            if bbest != usize::MAX && bbest_bytes > mbest_bytes {
+                let len = self.bigbins[bbest].len;
+                self.flush_bbin(bbest, len / 2);
+                continue;
+            }
             if mbest == usize::MAX {
                 // Nothing trimmable left: stop WITHOUT touching cached_bytes.
                 // It must stay exactly equal to retained bytes (every push,
