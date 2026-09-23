@@ -108,9 +108,25 @@ bench `arena` column (`abnd+rate/s totN hiMiB`).
 ## 4. large-only hit rate (structural; arena only made misses cheaper)
 
 `large-only 8T` is 0.07–0.11x mimalloc: shard hit rate under 32K–256K
-uniform variance, not mmap cost. Options in order:
+uniform variance, not mmap cost. Current probes (2 s × 3 reps): 1T does
+~81k fresh takes/s at ~100% hole reuse, 0 unmaps; 8T does ~58k fresh
+takes/s at ~19% reuse with ~47k unmaps/s + ~63k transient abandonments.
+Options in order:
 1. Deeper exact pools (slots are static-cheap: 64→256/shard hot+cold ≈
-   65 KiB) + measure. Revert if flat.
+   65 KiB) + measure. Revert if flat. MEASURED 2026-09-23: FLAT,
+   REVERTED. 1T 220k → 230k (inside its ±5% noise band; byte caps bind
+   long before 64 slots do, as the code comment already states). 8T
+   uninterpretable (see regime note below).
+   KEY DIAGNOSTIC for everything below: large-only 8T is regime-dominated,
+   not pool-depth-dominated. Same binary back-to-back: 1.65M / 2.40M /
+   2.46M with probes ranging from (mapped +83, abnd +2/s, unmaps 47k) to
+   (mapped +45k/s retained, abnd +20–45k/s steady, unmaps 5–19k) — i.e.
+   lock-convoyed efficient-reuse vs lock-barged wasteful-abandonment
+   across the shard locks + the single global hole lock (4k-entry
+   best-fit scans at ~500k lock/s). No pool-depth conclusion is drawable
+   until the regime is stabilized (per-size/sharded hole pools? try-lock
+   pop? take-path scan budgets?). That stabilization is the prerequisite
+   point before option 2, not after it.
 2. Spans-for-big-sizes: extend span machinery past the 65472 block cap.
    Requires sub-header redesign (blocks bigger than a 64 KiB chunk can't
    dodge per-page headers — chunk-group headers or whole-span carve with
