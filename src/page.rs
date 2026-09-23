@@ -460,12 +460,9 @@ mod tests {
             assert!(!(*span).contains(raw.add(3 * PAGE_SIZE)));
 
             // of() on non-span memory (zeroed) returns null.
-            let foreign = raw.add(PAGE_SIZE * 3);
-            // Can't read past allocation; use a separate zeroed page instead.
             let (f2, l2) = aligned_pages(1);
             assert!(SpanMaster::of(f2).is_null());
             aligned_free(f2, l2);
-            let _ = foreign;
         }
         unsafe { aligned_free(raw, layout) };
     }

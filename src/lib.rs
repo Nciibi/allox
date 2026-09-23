@@ -1297,7 +1297,7 @@ pub fn flush_current_thread() {
     tls::flush();
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod header_probe_tests {
     use super::*;
     use crate::page::{LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_SIZE};
@@ -1379,24 +1379,27 @@ mod header_probe_tests {
     }
 
     #[test]
-    fn large_header_rejects_pointer_outside_range() {
-        // user pointer beyond base+mapped: off >= mapped fails.
+    fn large_header_rejects_pointer_past_mapped_end() {
+        // Probe a pointer whose header-slot lies in zeroed memory past the
+        // region: magic miss (never reads out of bounds — header is at p-32,
+        // still inside buf).
         let mut f = FakeLarge::new(PAGE_SIZE, LARGE_HEADER_SIZE + 64);
-        // Probe a pointer far past the region (still within buf so no fault).
         let p = unsafe { f.buf.as_mut_ptr().add(PAGE_SIZE + 128) };
-        // Header at p-32 is zeroed user data, not our header — magic miss.
         assert!(unsafe { large_header_of(p) }.is_none());
-
-        // Craft header whose base field points outside: off wraps/rejects.
+        // Craft a header at the real slot whose base is *above* p, so
+        // wrapping_sub yields a huge off >= mapped → reject.
         unsafe {
-            let h = f.buf.as_mut_ptr().add(f.base_off).cast::<LargeHeader>();
-            (*h).base = (f.buf.as_mut_ptr() as usize + 10 * PAGE_SIZE) as *mut u8;
+            let probe = f.buf.as_mut_ptr().add(PAGE_SIZE + 128);
+            let h = probe.sub(LARGE_HEADER_SIZE).cast::<LargeHeader>();
+            (*h).magic = LARGE_MAGIC;
+            (*h).mapped_size = PAGE_SIZE;
+            (*h).base = probe.add(64);
         }
-        let p = f.user();
-        // off = p - fake_base underflows as usize wrapping_sub → large →
-        // either fails range or is accepted only if still < mapped; force
-        // rejection by checking wrapping: base far above p → huge off.
-        let _ = p;
+        let p = unsafe { f.buf.as_mut_ptr().add(PAGE_SIZE + 128) };
+        assert!(
+            unsafe { large_header_of(p) }.is_none(),
+            "base above p must reject (wrapping off >= mapped)"
+        );
     }
 
     #[test]
