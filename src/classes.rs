@@ -214,10 +214,160 @@ pub(crate) const fn medium_class_for_size(size: usize) -> usize {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Big classes: (MAX_MEDIUM_BLOCK, MAX_BIG_BLOCK], served from whole spans
+// with a single meta chunk plus pure data chunks (see `page::BigMaster`
+// and DESIGN_SPANS_BIG.md). Same ~12.5% geometric growth; blocks may exceed
+// a 64 KiB chunk because data chunks carry no headers and blocks run
+// contiguously across chunk boundaries.
+//
+// Arena-gated with the side-table lookup: without the arena there is no
+// page-indexed master map, so big spans cannot exist and these sizes route
+// to the large path. Non-arena targets never reference this section.
+// ---------------------------------------------------------------------------
+
+/// Room a big block needs at the span base: the master header (`page::
+/// BIG_MASTER_SIZE`, kept literal here to avoid a module cycle; asserted
+/// equal in tests below). Data chunks reserve nothing.
+#[cfg(all(unix, feature = "std"))]
+const BIG_MASTER_RESERVE: usize = 64;
+
+/// Largest big block (explicit top class, phase 1 cap). The 1T bench tail
+/// past 256 KiB stays on the large path; revisit with its own numbers.
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const BIG_BLOCK_CAP: usize = 262144;
+
+/// Blocks packed per big span at carve time (same amortization rationale
+/// as `TARGET_BLOCKS_PER_SPAN`; an 8 x 256 KiB span is ~2 MiB).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const TARGET_BLOCKS_PER_BIG_SPAN: usize = 8;
+
+#[cfg(all(unix, feature = "std"))]
+const fn count_big() -> usize {
+    let mut n = 0;
+    let mut size = medium_step(MAX_MEDIUM_BLOCK);
+    while size <= BIG_BLOCK_CAP {
+        n += 1;
+        let next = medium_step(size);
+        if next <= size {
+            break; // overflow / saturation guard (unreachable at these sizes)
+        }
+        size = next;
+    }
+    n
+}
+
+/// Number of big size classes: the geometric chain plus one explicit top
+/// class at exactly BIG_BLOCK_CAP when the chain stops short (same tail
+/// argument as TOP_MEDIUM_BLOCK: without it, requests in
+/// (geo_last, 262144] would fall to the mmap large path).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const NUM_BIG: usize = {
+    let mut last = medium_step(MAX_MEDIUM_BLOCK);
+    let mut size = last;
+    while size <= BIG_BLOCK_CAP {
+        last = size;
+        let next = medium_step(size);
+        if next <= size {
+            break;
+        }
+        size = next;
+    }
+    if last < BIG_BLOCK_CAP {
+        count_big() + 1
+    } else {
+        count_big()
+    }
+};
+
+#[cfg(all(unix, feature = "std"))]
+const fn build_big() -> [usize; NUM_BIG] {
+    let mut table = [0usize; NUM_BIG];
+    let mut size = medium_step(MAX_MEDIUM_BLOCK);
+    let mut i = 0;
+    // Geometric chain first...
+    while i < NUM_BIG && size <= BIG_BLOCK_CAP {
+        table[i] = size;
+        size = medium_step(size);
+        i += 1;
+    }
+    // ...then the explicit top class if the chain stopped short.
+    if i < NUM_BIG {
+        table[i] = BIG_BLOCK_CAP;
+    }
+    table
+}
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const BIG_CLASSES: [usize; NUM_BIG] = build_big();
+
+/// Largest servable big block (top of the generated table).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const MAX_BIG_BLOCK: usize = BIG_CLASSES[NUM_BIG - 1];
+
+/// Span length in 64 KiB pages for a big block size: covers the master
+/// header plus `TARGET_BLOCKS_PER_BIG_SPAN` blocks, rounded up to whole
+/// pages. Only the 64 B master is skipped (data chunks reserve nothing),
+/// so usable space always exceeds the target (asserted in tests).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const fn big_span_pages_for(block: usize) -> usize {
+    let need = BIG_MASTER_RESERVE + TARGET_BLOCKS_PER_BIG_SPAN * block;
+    (need + 65536 - 1) / 65536
+}
+
+/// Direct-mapped size -> big-class table for
+/// `size in (MAX_MEDIUM_BLOCK, MAX_BIG_BLOCK]`, slot
+/// `(size-MAX_MEDIUM_BLOCK-1)/16`.
+#[cfg(all(unix, feature = "std"))]
+const BIG_LUT_LEN: usize = (MAX_BIG_BLOCK - MAX_MEDIUM_BLOCK) / MIN_ALIGN;
+
+#[cfg(all(unix, feature = "std"))]
+const fn big_scan(size: usize) -> usize {
+    let mut i = 0;
+    while i < NUM_BIG - 1 {
+        if BIG_CLASSES[i] >= size {
+            return i;
+        }
+        i += 1;
+    }
+    NUM_BIG - 1
+}
+
+#[cfg(all(unix, feature = "std"))]
+const fn build_big_lut() -> [u8; BIG_LUT_LEN + 1] {
+    let mut lut = [0u8; BIG_LUT_LEN + 1];
+    let mut q = 0;
+    while q <= BIG_LUT_LEN {
+        lut[q] = big_scan(MAX_MEDIUM_BLOCK + 1 + q * MIN_ALIGN) as u8;
+        q += 1;
+    }
+    lut
+}
+
+#[cfg(all(unix, feature = "std"))]
+const BIG_LUT: [u8; BIG_LUT_LEN + 1] = build_big_lut();
+
+/// Index of the smallest big class that fits `size`.
+///
+/// Requires `MAX_MEDIUM_BLOCK < size <= MAX_BIG_BLOCK` (callers route on
+/// the size first; out-of-range inputs saturate instead of trapping).
+#[cfg(all(unix, feature = "std"))]
+#[inline]
+pub(crate) const fn big_class_for_size(size: usize) -> usize {
+    if size <= MAX_MEDIUM_BLOCK || size > MAX_BIG_BLOCK {
+        NUM_BIG - 1
+    } else {
+        BIG_LUT[(size - MAX_MEDIUM_BLOCK - 1) / MIN_ALIGN] as usize
+    }
+}
+
 /// Telemetry dimension: small classes followed by medium classes.
-/// Only used with the `telemetry` feature (gated to avoid dead-code noise).
-#[cfg(feature = "telemetry")]
+#[cfg(all(feature = "telemetry", not(all(unix, feature = "std"))))]
 pub(crate) const TOTAL_CLASSES: usize = NUM_CLASSES + NUM_MEDIUM;
+
+/// Telemetry dimension with big classes appended (arena targets only).
+#[cfg(all(feature = "telemetry", unix, feature = "std"))]
+pub(crate) const TOTAL_CLASSES: usize = NUM_CLASSES + NUM_MEDIUM + NUM_BIG;
 
 #[cfg(test)]
 mod tests {
