@@ -1060,6 +1060,14 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         if !span.is_null() && (*span).contains(p) {
             classes::MEDIUM_CLASSES[(*span).mclass as usize]
         } else {
+            // Big spans (arena only): side-table lookup, validated.
+            #[cfg(all(unix, feature = "std"))]
+            {
+                let big = crate::arena::big_table_get(p);
+                if !big.is_null() && (*big).contains(p) {
+                    return classes::BIG_CLASSES[(*big).bclass as usize];
+                }
+            }
             0
         }
     }
