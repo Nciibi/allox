@@ -604,8 +604,29 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     if size == 0 {
         return align.max(1) as *mut u8;
     }
-    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
-        return alloc_large(size, align);
+    // Big spans exist only in the arena (unix + std): elsewhere sizes past
+    // the medium cap route straight to large, and the big machinery below
+    // doesn't exist (gated out, so no dead code either).
+    #[cfg(all(unix, feature = "std"))]
+    {
+        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
+            return alloc_large(size, align);
+        }
+        if size > MAX_MEDIUM_BLOCK {
+            let p = alloc_big(big_class_for_size(size));
+            if p.is_null() {
+                // Arena unavailable (exhaustion/init failure): legacy large
+                // path, which may still hit its caches or map directly.
+                return alloc_large(size, align);
+            }
+            return p;
+        }
+    }
+    #[cfg(not(all(unix, feature = "std")))]
+    {
+        if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+            return alloc_large(size, align);
+        }
     }
     if size > MAX_SMALL_SIZE {
         return alloc_medium(medium_class_for_size(size));
