@@ -24,6 +24,9 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 - C ABI (`malloc`/`calloc`/`realloc`/`free`/`aligned_alloc`, zero sizes
   return null), `GlobalAlloc` impl with layout-routed free, `usable_size`,
   debug double-free/corrupt-pointer validation.
+- Layout-routed frees derive size class from the layout LUT instead of
+  loading a page/span header (~48% of free-path cycles on mixed-all
+  before the change — `perf annotate`).
 - Opt-in telemetry feature with per-class histograms (~4% worst-case
   overhead, zero when disabled). NOTE: the telemetry array dimension
   covers small + medium + big classes on arena targets and may still
