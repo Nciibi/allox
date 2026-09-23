@@ -3,9 +3,8 @@
 State at fork-off: **big spans DONE 2026-09-23** (DESIGN_SPANS_BIG
 IMPLEMENTED; large-only 8T 0.05× → 0.67× mimalloc, unmaps 0).
 **Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
-mimalloc). Full
-14-workload matrix: ~9–10/14 win-or-tie vs the best comparator on Linux
-x86-64 (json/request beat mimalloc; ecs beats every comparator except
+mimalloc). Full 14-workload matrix: ~9–10/14 win-or-tie vs the best
+comparator on Linux
 system's mremap growth — allox ~7.9M vs system ~113M isolated, same
 0.06× story as the mremap note in §4). Full suite + telemetry + no_std +
 release green and warning-free. Contra remaining gaps below, each
