@@ -487,7 +487,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
                 .stack_size(1 << 20)
                 .spawn(move || {
                     let mut rng =
-                        Rng(0x1SONJA ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                        Rng(0x150A ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         // One document: tiny values + growing buffers.
