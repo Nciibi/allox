@@ -37,7 +37,14 @@ const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 /// batch via `trim` — never one `release_blocks` per free (that serialized
 /// producer-consumer on the class lock and thrashed the arena). Same-thread
 /// frees below the gate stay header-free (the Phase-0 free-path win).
-const DRIFT_GATE_DIV: usize = 2;
+///
+/// The gate sits at the *full* budget (`DIV = 1`), above the trim target
+/// (`budget / 2`): PMU showed the owner load was ~72% of `dealloc_medium`
+/// when the gate sat at `budget / 2`, because steady state after `trim`
+/// lands exactly on the old gate — so the check ran on every free. Allocation
+/// paths still `trim` at `budget / 2`; this gate only decides whether a
+/// free pays for the header/owner load.
+const DRIFT_GATE_DIV: usize = 1;
 
 /// Once this many foreign bytes are held under the drift gate, shed via
 /// `trim` (chunked, page-grouped: one class lock per FLUSH_CHUNK blocks).
