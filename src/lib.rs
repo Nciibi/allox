@@ -775,6 +775,18 @@ unsafe fn dealloc_impl(p: *mut u8) {
         dealloc_medium(p, span);
         return;
     }
+    // Big spans last: side-table lookup (arena only; data chunks carry no
+    // headers to mask). Costs two loads + one compare on paths that already
+    // missed everything else; small/medium hot paths gain one predictable
+    // branch. Every hit is validated by contains() before use.
+    #[cfg(all(unix, feature = "std"))]
+    {
+        let big = crate::arena::big_table_get(p);
+        if !big.is_null() && (*big).contains(p) {
+            dealloc_big(p, big);
+            return;
+        }
+    }
     corrupt_pointer()
 }
 
@@ -786,11 +798,46 @@ unsafe fn dealloc_impl(p: *mut u8) {
 unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     debug_assert!(align.is_power_of_two());
     if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+        // Big-span range on arena targets routes below; everywhere else
+        // (and for true large sizes/alignments) this is the large path.
+        #[cfg(not(all(unix, feature = "std")))]
+        {
+            #[cfg(debug_assertions)]
+            if large_header_of(p).is_none() {
+                corrupt_pointer();
+            }
+            free_large(p);
+            return;
+        }
+        #[cfg(all(unix, feature = "std"))]
+        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
+            #[cfg(debug_assertions)]
+            if large_header_of(p).is_none() {
+                corrupt_pointer();
+            }
+            free_large(p);
+            return;
+        }
+    }
+    #[cfg(all(unix, feature = "std"))]
+    if size > MAX_MEDIUM_BLOCK {
+        // Big spans stay 64 KiB-aligned, so the side table covers them;
+        // the table miss falls through to the corrupt-pointer abort below
+        // (contract violation: layout does not match the pointer).
+        let big = crate::arena::big_table_get(p);
         #[cfg(debug_assertions)]
-        if large_header_of(p).is_none() {
+        if big.is_null() || !(*big).contains(p) {
             corrupt_pointer();
         }
-        free_large(p);
+        // Release builds trust the contract layout (same discipline as the
+        // span arm): locate by table, validate, release.
+        #[cfg(not(debug_assertions))]
+        {
+            if big.is_null() {
+                corrupt_pointer();
+            }
+        }
+        dealloc_big(p, big);
         return;
     }
     if size > MAX_SMALL_SIZE {
