@@ -186,8 +186,6 @@ const WORKLOADS: &[Workload] = &[
 ];
 
 fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
-
-fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
