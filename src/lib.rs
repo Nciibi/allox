@@ -898,6 +898,20 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
+        // Big same-class resize is identity too (big spans never move;
+        // arena targets only — elsewhere these sizes are large-routed and
+        // never reach here as big).
+        #[cfg(all(unix, feature = "std"))]
+        if !p.is_null()
+            && layout.align() <= MIN_ALIGN
+            && layout.size() > MAX_MEDIUM_BLOCK
+            && layout.size() <= MAX_BIG_BLOCK
+            && new_size > MAX_MEDIUM_BLOCK
+            && new_size <= MAX_BIG_BLOCK
+            && big_class_for_size(layout.size()) == big_class_for_size(new_size)
+        {
+            return p;
+        }
         let new_p = self.alloc(core::alloc::Layout::from_size_align_unchecked(
             new_size,
             layout.align(),
