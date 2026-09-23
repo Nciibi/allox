@@ -321,3 +321,63 @@ pub(crate) unsafe fn pop_block(head: &mut *mut u8) -> Option<*mut u8> {
         Some(b)
     }
 }
+
+#[cfg(all(test, unix, feature = "std"))]
+mod tests {
+    use super::*;
+    use crate::classes::{big_span_pages_for, BIG_CLASSES, NUM_BIG};
+
+    /// Carve audit per big class on real arena slices: magic + virgin flags,
+    /// exact capacity formula, every block 16-aligned inside the extent,
+    /// packed at exactly one-block stride (contiguous carve — P1/P2/P3),
+    /// and containment of sample pointers (P5).
+    #[test]
+    fn big_carve_packs_contiguously() {
+        for bclass in [0usize, NUM_BIG / 2, NUM_BIG - 1] {
+            let block = BIG_CLASSES[bclass];
+            let pages = big_span_pages_for(block);
+            let (raw, _) = unsafe { crate::arena::commit(pages) };
+            assert!(!raw.is_null(), "bclass {}", bclass);
+            let span = raw.cast::<BigMaster>();
+            unsafe { (*span).init(bclass, pages as u32) };
+            assert_eq!(unsafe { (*span).magic }, BIGMAGIC);
+            assert_eq!(unsafe { (*span).bclass } as usize, bclass);
+            assert_eq!(unsafe { (*span).npages } as usize, pages);
+            assert!(unsafe { (*span).flags } & FLAG_VIRGIN != 0);
+            let capacity = (pages * PAGE_SIZE - BIG_MASTER_SIZE) / block;
+            assert_eq!(unsafe { (*span).free_count } as usize, capacity);
+            // Walk the chain: stride must equal block size exactly.
+            let mut addrs = Vec::new();
+            let mut cur = unsafe { (*span).free_head };
+            while !cur.is_null() {
+                addrs.push(cur as usize);
+                cur = unsafe { *cur.cast::<*mut u8>() };
+            }
+            assert_eq!(addrs.len(), capacity, "bclass {}", bclass);
+            addrs.sort_unstable();
+            let base = raw as usize;
+            for (k, a) in addrs.iter().enumerate() {
+                assert_eq!(*a % 16, 0, "unaligned block {}", k);
+                assert!(
+                    *a >= base + BIG_MASTER_SIZE && *a + block <= base + pages * PAGE_SIZE,
+                    "block {} outside extent",
+                    k
+                );
+                if k > 0 {
+                    assert_eq!(
+                        *a - addrs[k - 1],
+                        block,
+                        "non-contiguous carve at {} (bclass {})",
+                        k,
+                        bclass
+                    );
+                }
+            }
+            // contains() agrees on interior pointers, rejects the edges.
+            let mid = unsafe { (*span).free_head };
+            assert!(unsafe { (*span).contains(mid) });
+            assert!(!unsafe { (*span).contains(raw) });
+            unsafe { crate::arena::release(raw, pages) };
+        }
+    }
+}
