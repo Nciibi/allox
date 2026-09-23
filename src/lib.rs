@@ -1346,7 +1346,7 @@ mod header_probe_tests {
         assert!(got.is_some(), "valid header rejected");
         let (base, mapped) = got.unwrap();
         assert_eq!(mapped, PAGE_SIZE);
-        assert_eq!(base, f.buf.as_ptr());
+        assert_eq!(base as *const u8, f.buf.as_ptr());
     }
 
     #[test]
