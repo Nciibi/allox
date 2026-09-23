@@ -919,14 +919,15 @@ impl ThreadCache {
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
                 for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_mut() };
+                    let g = unsafe { groups[i].assume_init_ref() };
                     if g.page == page {
-                        slot = Some(g);
+                        slot = Some(i);
                         break;
                     }
                 }
                 match slot {
-                    Some(g) => {
+                    Some(i) => {
+                        let g = unsafe { groups[i].assume_init_mut() };
                         *g.tail.cast::<*mut u8>() = b;
                         g.tail = b;
                         g.n += 1;
@@ -989,14 +990,15 @@ impl ThreadCache {
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
                 for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_mut() };
+                    let g = unsafe { groups[i].assume_init_ref() };
                     if g.master == master {
-                        slot = Some(g);
+                        slot = Some(i);
                         break;
                     }
                 }
                 match slot {
-                    Some(g) => {
+                    Some(i) => {
+                        let g = unsafe { groups[i].assume_init_mut() };
                         *g.tail.cast::<*mut u8>() = b;
                         g.tail = b;
                         g.n += 1;
@@ -1080,14 +1082,15 @@ impl ThreadCache {
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
                 for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_mut() };
+                    let g = unsafe { groups[i].assume_init_ref() };
                     if g.master == master {
-                        slot = Some(g);
+                        slot = Some(i);
                         break;
                     }
                 }
                 match slot {
-                    Some(g) => {
+                    Some(i) => {
+                        let g = unsafe { groups[i].assume_init_mut() };
                         *g.tail.cast::<*mut u8>() = b;
                         g.tail = b;
                         g.n += 1;
