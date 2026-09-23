@@ -87,9 +87,11 @@ fn global_realloc_zero_layout_grows_fresh() {
 fn large_realloc_grows_without_copy_loss() {
     // Doubling growth 64 KiB -> 1 MiB: contents must survive every step
     // whether the kernel grows in place or relocates (or falls back to
-    // alloc-copy-free on non-Linux / arena regions).
+    // alloc-copy-free on non-Linux / arena regions). The original 64 KiB
+    // keeps its pattern; grown tails keep the 0x5A written each step.
     unsafe {
-        let mut size = 65536usize;
+        const ORIG: usize = 65536;
+        let mut size = ORIG;
         let mut p = malloc(size);
         assert!(!p.is_null());
         for i in 0..size {
@@ -99,8 +101,11 @@ fn large_realloc_grows_without_copy_loss() {
             let nsize = size * 2;
             let np = realloc(p, nsize);
             assert!(!np.is_null());
-            for i in 0..size {
+            for i in 0..ORIG {
                 assert_eq!(*np.add(i), (i % 251) as u8, "lost byte at {}", i);
+            }
+            for i in ORIG..size {
+                assert_eq!(*np.add(i), 0x5A, "lost tail byte at {}", i);
             }
             assert!(usable_size(np) >= nsize);
             // Fresh tail is writable.
@@ -124,7 +129,8 @@ fn global_realloc_large_grows_without_copy_loss() {
     use std::alloc::{GlobalAlloc, Layout};
     unsafe {
         let a = allox::Allox;
-        let mut size = 70000usize; // large tier, odd size (not class-round)
+        const ORIG: usize = 70000; // large tier, odd size (not class-round)
+        let mut size = ORIG;
         let mut layout = Layout::from_size_align(size, 16).unwrap();
         let mut p = a.alloc(layout);
         assert!(!p.is_null());
@@ -135,10 +141,14 @@ fn global_realloc_large_grows_without_copy_loss() {
             let nsize = size * 2 + 123;
             let np = a.realloc(p, layout, nsize);
             assert!(!np.is_null());
-            for i in 0..size {
+            for i in 0..ORIG {
                 assert_eq!(*np.add(i), (i % 251) as u8, "lost byte at {}", i);
             }
+            for i in ORIG..size {
+                assert_eq!(*np.add(i), 0x5A, "lost tail byte at {}", i);
+            }
             assert!(np as usize % 16 == 0, "alignment lost");
+            core::ptr::write_bytes(np.add(size), 0x5A, nsize - size);
             p = np;
             layout = Layout::from_size_align(nsize, 16).unwrap();
             size = nsize;
