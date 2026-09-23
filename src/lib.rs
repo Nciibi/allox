@@ -821,21 +821,17 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     }
     #[cfg(all(unix, feature = "std"))]
     if size > MAX_MEDIUM_BLOCK {
-        // Big spans stay 64 KiB-aligned, so the side table covers them;
-        // the table miss falls through to the corrupt-pointer abort below
-        // (contract violation: layout does not match the pointer).
+        // Big-span range routes by side table (contract layout, zero
+        // probing reads like the span arm). A table miss is a contract
+        // violation in any build (never segfault on it); contains() is
+        // debug-verified like the span arm.
         let big = crate::arena::big_table_get(p);
-        #[cfg(debug_assertions)]
-        if big.is_null() || !(*big).contains(p) {
+        if big.is_null() {
             corrupt_pointer();
         }
-        // Release builds trust the contract layout (same discipline as the
-        // span arm): locate by table, validate, release.
-        #[cfg(not(debug_assertions))]
-        {
-            if big.is_null() {
-                corrupt_pointer();
-            }
+        #[cfg(debug_assertions)]
+        if !(*big).contains(p) {
+            corrupt_pointer();
         }
         dealloc_big(p, big);
         return;
