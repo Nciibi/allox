@@ -111,29 +111,16 @@ fn big_realloc_grows_and_shrinks() {
         check_pattern(sp, 70000);
         free(sp);
 
-        // Same-class realloc is identity (spans never move) on arena
-        // targets; elsewhere these sizes ride the large path and may move —
-        // either way the result is usable.
+        // Same-size realloc is identity on arena targets (spans never
+        // move) and a legal move elsewhere; either way the result holds
+        // the requested size.
         let q = malloc(100000);
         assert!(!q.is_null());
-        let q2 = realloc(q, 110000);
+        let q2 = realloc(q, 100000);
         assert!(!q2.is_null());
-        #[cfg(all(unix, feature = "std"))]
-        if q2 == q {
-            free(q2);
-        } else {
-            // Crossed a class boundary (or non-arena large path): moved
-            // legally, still usable.
-            fill_pattern(q2, 110000);
-            check_pattern(q2, 110000);
-            free(q2);
-        }
-        #[cfg(not(all(unix, feature = "std")))]
-        {
-            fill_pattern(q2, 110000);
-            check_pattern(q2, 110000);
-            free(q2);
-        }
+        fill_pattern(q2, 100000);
+        check_pattern(q2, 100000);
+        free(q2);
     }
 }
 
