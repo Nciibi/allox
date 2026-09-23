@@ -62,7 +62,7 @@ fn zz_minimize() {
             .map(|_| {
                 std::thread::Builder::new()
                     .stack_size(1 << 20)
-                    .spawn(|| churn(&mode))
+                    .spawn(move || churn(mode))
                     .unwrap()
             })
             .collect();
