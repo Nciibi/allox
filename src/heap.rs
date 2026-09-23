@@ -506,17 +506,23 @@ enum SpanFate {
     Unmap(usize),
 }
 
-/// Splice `chain` (n blocks of `span`) back onto the span. Shared core for
-/// the blocking and try paths; syscalls happen in the caller, outside locks.
-unsafe fn mrelease_inner(list: &mut MSpanList, span: *mut SpanMaster, chain: *mut u8, n: u32) -> SpanFate {
+/// Splice `head..=tail` (n blocks of `span`) back onto the span. Tail is
+/// supplied by the caller (flush groups track it; single frees use head)
+/// so the hot path never walks the chain under the lock — that walk was
+/// pure pointer-chasing on top of the cold `mclass` load at entry (perf
+/// annotate: 85% of `release_blocks` stalled on `(*span).mclass`).
+/// Syscalls happen in the caller, outside locks.
+unsafe fn mrelease_inner(
+    list: &mut MSpanList,
+    span: *mut SpanMaster,
+    head: *mut u8,
+    tail: *mut u8,
+    n: u32,
+) -> SpanFate {
     // Freed blocks are dirty by definition.
     (*span).flags &= !FLAG_VIRGIN;
-    let mut tail = chain;
-    while !(*tail.cast::<*mut u8>()).is_null() {
-        tail = *tail.cast::<*mut u8>();
-    }
     *tail.cast::<*mut u8>() = (*span).free_head;
-    (*span).free_head = chain;
+    (*span).free_head = head;
     (*span).free_count += n;
     (*span).used -= n;
     if (*span).used == 0 {
