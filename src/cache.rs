@@ -824,6 +824,80 @@ impl ThreadCache {
         }
     }
 
+    /// Shrink big `bclass`'s bin down to `floor_blocks`, returning removed
+    /// blocks to their owning spans grouped by master (one heap lock per span
+    /// per chunk). Owning spans come from the arena side table (data chunks
+    /// carry no headers to mask).
+    #[cfg(all(unix, feature = "std"))]
+    unsafe fn flush_bbin(&mut self, bclass: usize, floor_blocks: u32) {
+        const BFLUSH_CHUNK: u32 = 64;
+        const MAX_BFLUSH_GROUPS: usize = BFLUSH_CHUNK as usize + 4;
+        let block_size = BIG_CLASSES[bclass];
+        let bin = &mut self.bigbins[bclass];
+
+        while bin.len > floor_blocks {
+            let mut groups = [BGroup::EMPTY; MAX_BFLUSH_GROUPS];
+            let mut ng = 0usize;
+            let mut popped = 0u32;
+
+            while bin.len > floor_blocks && popped < BFLUSH_CHUNK {
+                let b = match pop_block(&mut bin.head) {
+                    Some(b) => b,
+                    None => break,
+                };
+                let below = bin.len - 1;
+                bin.len = below;
+                if below < self.bvirgin[bclass] {
+                    self.bvirgin[bclass] -= 1;
+                }
+                popped += 1;
+                self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
+
+                let master = crate::arena::big_table_get(b);
+                debug_assert!(!master.is_null() && (*master).contains(b));
+                *b.cast::<*mut u8>() = ptr::null_mut();
+                let mut slot = None;
+                for g in groups.iter_mut().take(ng) {
+                    if g.master == master {
+                        slot = Some(g);
+                        break;
+                    }
+                }
+                match slot {
+                    Some(g) => {
+                        *g.tail.cast::<*mut u8>() = b;
+                        g.tail = b;
+                        g.n += 1;
+                    }
+                    None => {
+                        // Groups buffer always has room: at most BFLUSH_CHUNK
+                        // blocks popped per chunk, one group each worst case.
+                        debug_assert!(ng < MAX_BFLUSH_GROUPS);
+                        if ng >= MAX_BFLUSH_GROUPS {
+                            // No room to group: release solo.
+                            crate::heap::BIG_HEAP.release_blocks(master, b, 1);
+                            continue;
+                        }
+                        groups[ng] = BGroup {
+                            master,
+                            head: b,
+                            tail: b,
+                            n: 1,
+                        };
+                        ng += 1;
+                    }
+                }
+            }
+
+            for g in groups.iter_mut().take(ng) {
+                crate::heap::BIG_HEAP.release_blocks(g.master, g.head, g.n);
+            }
+            if popped == 0 {
+                break;
+            }
+        }
+    }
+
     /// Return all cached blocks (used at explicit shutdown/flush requests,
     /// and by the OS thread-exit hook).
     pub(crate) unsafe fn flush_all(&mut self) {
@@ -837,9 +911,19 @@ impl ThreadCache {
                 self.flush_mbin(mclass, 0);
             }
         }
+        #[cfg(all(unix, feature = "std"))]
+        for bclass in 0..NUM_BIG {
+            if !self.bigbins[bclass].head.is_null() {
+                self.flush_bbin(bclass, 0);
+            }
+        }
         self.cached_bytes = 0;
         self.virgin = [0; NUM_CLASSES];
         self.mvirgin = [0; NUM_MEDIUM];
+        #[cfg(all(unix, feature = "std"))]
+        {
+            self.bvirgin = [0; NUM_BIG];
+        }
         // Stashed large regions are released directly (no global lock held
         // here beyond the caller's cache ownership) so an explicit flush
         // actually returns memory instead of shuffling it to shared shards.
