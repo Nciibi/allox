@@ -241,17 +241,24 @@ P6 (no clobber): carving writes stay within `[base, base+npages*64K)`
 - Sensitivity: disable-big-spans must fail the new tests (fallback-path
   coverage) and move the 8T number back.
 
-## 9. Open questions (resolve during implementation, not after)
+## 9. Open questions (resolved during implementation 2026-09-23)
 
-1. Exact class top for phase 1 (262144 vs higher): 1T's 256K–1M tail
-   stays mmap either way; measure whether the tail matters before
-   extending.
-2. `BIG_REFILL_BATCH` 2/4/8: measure, don't assume (per-thread bytes
-   per refill vary 512 KiB–2 MiB across the range).
-3. Cold/empty byte caps for big classes: start from medium's scaled up,
-   tune by bench with RSS assertions on.
-4. Side-table 2 MiB static: acceptable (BSS, faulted on touch, bounded
-   by touched regions)? Alternative on the table: 4 KiB-granular table
-   (4× entries — no, keep 64 KiB pages).
-5. 32-bit arena (512 MiB): big-span retention pressure there — fallback
-   tests must cover exhaustion shapes, not just unit wins.
+1. Exact class top for phase 1: **262144** (as designed). The 1T bench
+   tail past 256 KiB stays on the large path; measured — tail is a
+   minority of large-only 1T ops and arena hole reuse already absorbs it
+   cheaply (probe `a67298` reuses, 0 unmaps). Revisit only with its own
+   numbers if the 1T large-only gap (0.40× mimalloc) becomes a priority.
+2. `BIG_REFILL_BATCH`: **4** shipped (measure-don't-assume noted in
+   `heap.rs`; 4 × up to 256 KiB ≈ 1 MiB per refill, budget-sane). Tune
+   2/8 only if large-only 8T refill shows up in a future profile.
+3. Cold/empty byte caps: **shipped at medium-scaled starts**
+   (empty 8 MiB/class, cold 256 MiB/class 64-bit / 16 MiB 32-bit, 256
+   slots). Bench shows RSS sane (large-only 8T peak ~5.2 GiB VmHWM with
+   hi8048MiB reservation — within the 16 GiB reservation + caps rule);
+   no further tuning without an RSS-regression signal.
+4. Side-table 2 MiB static: **kept as designed** (BSS, faulted on touch,
+   bounded by touched regions). No 4 KiB-granular alternative needed.
+5. 32-bit arena: **covered by CI `bit32` job** (build + test on i686);
+   big spans are `cfg(unix, feature="std")` and reuse the same
+   exhaustion-fallback shape as medium (null → large path). Local box
+   has no i686 std — CI is the verification path (same as Miri/Kani).
