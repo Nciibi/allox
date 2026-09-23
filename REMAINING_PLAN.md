@@ -127,25 +127,26 @@ Options in order:
    REVERTED. 1T 220k → 230k (inside its ±5% noise band; byte caps bind
    long before 64 slots do, as the code comment already states). 8T
    uninterpretable (see regime note below).
-   KEY DIAGNOSTIC for everything below: large-only 8T is regime-dominated,
-   not pool-depth-dominated. Same binary back-to-back: 1.65M / 2.40M /
-   2.46M with probes ranging from (mapped +83, abnd +2/s, unmaps 47k) to
-   (mapped +45k/s retained, abnd +20–45k/s steady, unmaps 5–19k) — i.e.
-   lock-convoyed efficient-reuse vs lock-barged wasteful-abandonment
-   across the shard locks + the single global hole lock (4k-entry
-   best-fit scans at ~500k lock/s). No pool-depth conclusion is drawable
-   until the regime is stabilized (per-size/sharded hole pools? try-lock
-   pop? take-path scan budgets?). That stabilization is the prerequisite
-   point before option 2, not after it.
-   Scaling curve measured 2026-09-23 (same 32K–256K range, threads
-   1/2/4/8, 2 s × 2 reps): 265k / 2.43M / 1.39M / 1.63M total
-   (per-thread 265k / 1.2M / 348k / 204k), hole reuse 100% / 95% /
-   39% / 22%, unmaps 0 / 0 / 43k / 44k per s, abandonment 0 / 7.5k
-   transient / 74k + exhaustion / 74k + exhaustion. Collapse between 2
-   and 4 threads; small/medium paths scale fine on the same box, so it
-   is large-path shared locks, not the mutex primitive.
-   Design sketch for the stabilization point (no code yet — needs its
-   own measurement-backed review before implementation):
+    KEY DIAGNOSTIC for everything below (historical, pre-big-span):
+    large-only 8T was regime-dominated, not pool-depth-dominated. Same
+    binary back-to-back: 1.65M / 2.40M / 2.46M with probes ranging from
+    (mapped +83, abnd +2/s, unmaps 47k) to (mapped +45k/s retained,
+    abnd +20–45k/s steady, unmaps 5–19k) — i.e. lock-convoyed
+    efficient-reuse vs lock-barged wasteful-abandonment across the shard
+    locks + the single global hole lock (4k-entry best-fit scans at
+    ~500k lock/s). **Superseded by option 2 (big spans, DONE)**: the
+    structural fix removed steady-state unmaps entirely; residual 8T
+    regime variance is much smaller and no longer the binding constraint.
+    Scaling curve measured 2026-09-23 (same 32K–256K range, threads
+    1/2/4/8, 2 s × 2 reps): 265k / 2.43M / 1.39M / 1.63M total
+    (per-thread 265k / 1.2M / 348k / 204k), hole reuse 100% / 95% /
+    39% / 22%, unmaps 0 / 0 / 43k / 44k per s, abandonment 0 / 7.5k
+    transient / 74k + exhaustion / 74k + exhaustion. Collapse between 2
+    and 4 threads; small/medium paths scale fine on the same box, so it
+    was large-path shared locks, not the mutex primitive. (Post-big-span
+    large-only 8T probe: unmaps 0, big_maps 1308 — the collapse is gone.)
+    Design sketch for the stabilization point (option A below was TRIALED
+    and REVERTED — flat within regime noise; option 2 shipped instead):
    A. Sharded hole store (recommended first): N sub-stores (e.g. 8, one
       per large-shard salt) each with own lock + slots + byte cap;
       takes/pops route by the same salt the shard choice uses, parks
@@ -330,22 +331,24 @@ spans, in that order of suspicion. Still no blind experiments.
 * README Windows table re-verify (every number predates spans/cold/exit/
   arena/mutex) — NOT doable on this box; covered by the CI bench job's
   per-OS artifacts. README now says so next to the table.
-* Linux table — DONE 2026-09-23: 10-workload table in README from a fresh
-  2 s × 3 reps run (Ryzen 5 1600) with methodology note; dlmalloc omitted
-  (10×+ run-to-run variance here), spawn-churn + large-only 8T carry
-  context-sensitivity notes pointing at §5/§4.
+* Linux table — DONE 2026-09-23 (refreshed after big spans): 10-workload
+  table in README from a fresh 2 s × 3 reps full-matrix run (Ryzen 5
+  1600) with methodology note; dlmalloc omitted (10×+ run-to-run
+  variance here), spawn-churn + large-only 8T + mixed-all carry
+  context-sensitivity notes pointing at §5/§4/§6. large-only 8T row now
+  shows the big-span win (0.67× mimalloc, was 0.05×).
 * macOS numbers (allocator + exit hook + pthread mutex all have
   macOS-specific branches: `MAP_ANONYMOUS` value, `pthread_key_t` width,
   `MAP_FIXED` without `NOREPLACE`) — NOT doable here; pending CI/macOS box.
 * 32-bit build + arena fallback tests in CI — DONE (§3 `bit32` job).
 * CHANGELOG 0.1.0 entry — DONE (rewritten for what 0.1.0 actually
-  contains: spans, sharded large/cold tiers, arena, exit flush, zero-size
-  rules). API review — DONE 2026-09-23: full public surface audited,
+   contains: spans, big spans, sharded large/cold tiers, arena, exit
+   flush, zero-size rules). API review — DONE 2026-09-23: full public surface audited,
   rustdoc `-D warnings` clean; fixed `mapped_pages` docs in `Stats` +
   `Telemetry` (live mappings per fresh take, any size — not 64 KiB
   pages); completed the C ABI with `allox_malloc_usable_size` + ffi
-  test. Telemetry array covers small + medium and may still grow
-  pre-1.0 — noted in CHANGELOG, acceptable. Version hygiene:
+  test. Telemetry array covers small + medium + big (arena targets) and
+  may still grow pre-1.0 — noted in CHANGELOG, acceptable. Version hygiene:
   `cargo publish --dry-run` warning-free; added repository/documentation/
   homepage URLs (was the only manifest warning).
 * External audit scoping for the unsafe core (page/heap/cache/lib
