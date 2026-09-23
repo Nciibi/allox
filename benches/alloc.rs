@@ -840,15 +840,23 @@ fn main() {
         let abnd_rate = d1abnd.saturating_sub(d0abnd);
         let hi_mib = d1hi / (1024 * 1024);
         let rss = peak_rss_kib();
-        let allox_s = medians[0];
-        let talc_s = medians[1];
-        let mut row = format!("{:<15} {:>11.0}", wl.name, medians[0]);
+        let fmt_opt = |o: Option<f64>| match o {
+            Some(v) => format!("{:>11.0}", v),
+            None => format!("{:>11}", "-"),
+        };
+        let allox_s = medians[0].unwrap_or(0.0);
+        let talc_s = medians.get(1).and_then(|x| *x).unwrap_or(0.0);
+        let mut row = format!("{:<15}{}", wl.name, fmt_opt(medians[0]));
         for m in medians.iter().skip(1) {
-            row.push_str(&format!(" {:>11.0}", m));
+            row.push_str(&fmt_opt(*m));
         }
         row.push_str(&format!(
             " {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
-            allox_s / talc_s.max(1.0),
+            if talc_s > 0.0 {
+                allox_s / talc_s
+            } else {
+                0.0
+            },
             format!(
                 "{}/{}/{}/{}/a{}/b{}",
                 map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps
