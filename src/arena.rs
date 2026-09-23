@@ -420,6 +420,67 @@ pub(crate) fn high_water() -> u64 {
     ARENA.high_water()
 }
 
+// ---------------------------------------------------------------------------
+// Big-span side table: page-indexed master lookup for big spans, whose data
+// chunks carry no headers (blocks cross chunk boundaries), so masking cannot
+// locate them. Entry `i` is the master address for arena page `i`, or 0.
+//
+// The table covers the GLOBAL arena only (offsets are instance-relative, so
+// test instances must never touch it — and never do: only BigHeap carve /
+// unmap paths write it, and those run solely against the global arena).
+// 16 GiB / 64 KiB = 262144 entries x 8 B = 2 MiB static (BSS, faulted on
+// touch, bounded by touched regions). Smaller reservations use a prefix;
+// out-of-reservation pointers never index it (bounds-checked first).
+//
+// Lifecycle (allatis under the owning class lock unless noted): set for all
+// span pages at carve; kept across empty/cold parks (virtual retained, base
+// stable, discard never touches this table); cleared for all pages on TRUE
+// UNMAP before unmapping. Hole entries are therefore always table-clean:
+// holes only come from unmap-fate releases (cleared there) or never-handed
+// bump ranges (never set). Reads use Acquire loads with no lock; every hit
+// is validated by `BigMaster::contains` before use (fail-closed like all
+// magic probes in dispatch).
+// ---------------------------------------------------------------------------
+
+/// Slots for the largest possible reservation (64-bit); smaller
+/// reservations use a prefix (bounds-checked at every access).
+const BIG_MAP_SLOTS: usize = (16 * 1024 * 1024 * 1024) / ARENA_ALIGN;
+
+static BIG_MAP: [AtomicUsize; BIG_MAP_SLOTS] = [const { AtomicUsize::new(0) }; BIG_MAP_SLOTS];
+
+/// Page index of `p` in the global reservation, or `None` outside it
+/// (legacy mappings, foreign memory) or before init.
+fn big_page_index(p: *mut u8) -> Option<usize> {
+    if ARENA.state.load(Ordering::Acquire) != 1 {
+        return None;
+    }
+    let start = ARENA.start.load(Ordering::Relaxed);
+    let end = ARENA.end.load(Ordering::Relaxed);
+    let b = p as usize;
+    if b < start || b >= end {
+        return None;
+    }
+    let idx = (b - start) / ARENA_ALIGN;
+    if idx >= BIG_MAP_SLOTS {
+        return None;
+    }
+    Some(idx)
+}
+
+/// Record `master` for all `pages` starting at arena-owned `base`
+/// (carve path, under the class lock). Out-of-range inputs are ignored
+/// (debug-asserted): callers pass freshly committed arena slices.
+pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMaster) {
+    use crate::page::BigMaster as _BM;
+    let _ = _BM::class_sanity_placeholder();
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(master as usize, Ordering::Release),
+            None => debug_assert!(false, "big table set outside reservation"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
