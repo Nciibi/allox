@@ -18,6 +18,11 @@ fn telemetry_accounting() {
     // ---- Exact single-threaded accounting after a forced flush ----
     allox::flush_current_thread();
     let mut ptrs = Vec::with_capacity(10_000); // reserve before baseline
+    // Publish the reservation itself: an 80 KiB buffer routes to big spans
+    // (batched pending telemetry), so without this flush its counts would
+    // leak into the measured delta (large-path direct atomics never had
+    // this lag). Matches the documented contract: flush first for exactness.
+    allox::flush_current_thread();
     let before = snapshot();
 
     for i in 0..10_000u32 {
