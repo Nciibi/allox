@@ -504,8 +504,51 @@ pub(crate) unsafe fn big_table_get(p: *mut u8) -> *mut BigMaster {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::page::BigMaster;
 
     const MB: usize = 1024 * 1024;
+
+    /// Side-table lifecycle on the global arena (the only arena the table
+    /// indexes): set covers every page, get resolves each page to the
+    /// master, clear drops all of them, and foreign pointers miss.
+    /// Fresh bump slices give disjoint offsets, so parallel tests can't
+    /// alias entries.
+    #[test]
+    fn big_table_set_get_clear() {
+        unsafe {
+            let (raw, _) = ARENA.commit(4);
+            assert!(!raw.is_null());
+            let mut master = BigMaster {
+                magic: 0,
+                prev: ptr::null_mut(),
+                next: ptr::null_mut(),
+                free_head: ptr::null_mut(),
+                free_count: 0,
+                used: 0,
+                bclass: 0,
+                flags: 0,
+                npages: 4,
+                _pad: 0,
+            };
+            let mptr = &mut master as *mut BigMaster;
+            big_table_set(raw, 4, mptr);
+            for i in 0..4usize {
+                let p = (raw as usize + i * ARENA_ALIGN) as *mut u8;
+                assert_eq!(big_table_get(p), mptr, "page {}", i);
+            }
+            big_table_clear(raw, 4);
+            for i in 0..4usize {
+                let p = (raw as usize + i * ARENA_ALIGN) as *mut u8;
+                assert!(big_table_get(p).is_null(), "page {} not cleared", i);
+            }
+            // Foreign (legacy) mapping misses.
+            let guard = super::super::sys::map(ARENA_ALIGN);
+            assert!(!guard.is_null());
+            assert!(big_table_get(guard).is_null());
+            super::super::sys::unmap(guard, ARENA_ALIGN);
+            ARENA.release(raw, 4);
+        }
+    }
 
     #[test]
     fn commits_are_64k_aligned_and_zeroed() {
