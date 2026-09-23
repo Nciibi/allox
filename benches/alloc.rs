@@ -811,8 +811,8 @@ fn main() {
             medians[4],
             medians[5],
             allox_s / talc_s.max(1.0),
-            format!("{}/{}/{}/{}/a{}", map_delta, span_maps, small_maps, mapped_delta, arena_reuses),
-            format!("{}/{}", unmap_delta, span_unmaps),
+            format!("{}/{}/{}/{}/a{}/b{}", map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps),
+            format!("{}/{}/b{}", unmap_delta, span_unmaps, big_unmaps),
             rss,
             format!("abnd+{}/s tot{} hi{}MiB", abnd_rate, d1abnd, hi_mib),
         );
