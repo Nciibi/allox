@@ -803,7 +803,7 @@ fn main() {
         let medians: Vec<Option<f64>> = scores
             .iter_mut()
             .enumerate()
-            .map(|(i, s)| {
+            .map(|(_, s)| {
                 if s.is_empty() {
                     None
                 } else {
