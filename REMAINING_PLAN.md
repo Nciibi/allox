@@ -127,6 +127,33 @@ Options in order:
    until the regime is stabilized (per-size/sharded hole pools? try-lock
    pop? take-path scan budgets?). That stabilization is the prerequisite
    point before option 2, not after it.
+   Scaling curve measured 2026-09-23 (same 32K–256K range, threads
+   1/2/4/8, 2 s × 2 reps): 265k / 2.43M / 1.39M / 1.63M total
+   (per-thread 265k / 1.2M / 348k / 204k), hole reuse 100% / 95% /
+   39% / 22%, unmaps 0 / 0 / 43k / 44k per s, abandonment 0 / 7.5k
+   transient / 74k + exhaustion / 74k + exhaustion. Collapse between 2
+   and 4 threads; small/medium paths scale fine on the same box, so it
+   is large-path shared locks, not the mutex primitive.
+   Design sketch for the stabilization point (no code yet — needs its
+   own measurement-backed review before implementation):
+   A. Sharded hole store (recommended first): N sub-stores (e.g. 8, one
+      per large-shard salt) each with own lock + slots + byte cap;
+      takes/pops route by the same salt the shard choice uses, parks
+      route by the freeing path's salt. Same-thread churn (the common
+      case) stays exact-pooled; contention ÷ N; scans ÷ N. Risk:
+      cross-thread (prodcons) pooling degrades to bump/fallback unless
+      takes fall back to a global scan on shard miss (shard lock released
+      first — never nest hole locks). Validate: 8T reuse% + unmaps/s +
+      regime spread across 3 runs.
+   B. Exact-size fast pools + bounded scans: per-size hole stacks popped
+      O(1) on exact hit, best-fit across sizes only on miss, with a scan
+      budget. Smaller change than A, keeps one lock (convoy risk stays).
+   C. try-lock pop (fall back to bump on contention): needs try_lock on
+      the internal mutexes first. Risks accelerating exhaustion under
+      load (bumps instead of waits). Measure before/after on 8T spread.
+   Do NOT pursue: bigger global slots (8192+ — unbounded tuning, scan
+   cost grows, §4 bullet 3), looser byte caps (E4 proved it worsens
+   abandonment 59k → 74k by removing the throttle).
 2. Spans-for-big-sizes: extend span machinery past the 65472 block cap.
    Requires sub-header redesign (blocks bigger than a 64 KiB chunk can't
    dodge per-page headers — chunk-group headers or whole-span carve with
