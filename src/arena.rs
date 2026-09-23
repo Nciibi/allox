@@ -31,6 +31,7 @@
 //! syscalls are hand-declared so the lib stays dependency-free). Everywhere
 //! else the callers use their legacy paths directly.
 
+use crate::page::BigMaster;
 use crate::sys::{discard, Mutex};
 use core::ptr;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
@@ -476,6 +477,27 @@ pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMa
             Some(idx) => BIG_MAP[idx].store(master as usize, Ordering::Release),
             None => debug_assert!(false, "big table set outside reservation"),
         }
+    }
+}
+
+/// Forget all `pages` starting at arena-owned `base` (true-unmap path,
+/// under the class lock, before unmapping). Same bounds discipline as set.
+pub(crate) unsafe fn big_table_clear(base: *mut u8, pages: u32) {
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(0, Ordering::Release),
+            None => debug_assert!(false, "big table clear outside reservation"),
+        }
+    }
+}
+
+/// Master owning the arena page containing `p`, or null (outside the
+/// reservation, uninitialized arena, or no span parked here). Lock-free;
+/// every hit must be validated with `BigMaster::contains` before use.
+pub(crate) unsafe fn big_table_get(p: *mut u8) -> *mut BigMaster {
+    match big_page_index(p) {
+        Some(idx) => BIG_MAP[idx].load(Ordering::Acquire) as *mut BigMaster,
+        None => ptr::null_mut(),
     }
 }
 
