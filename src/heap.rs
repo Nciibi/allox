@@ -701,3 +701,346 @@ impl MediumHeap {
 }
 
 pub(crate) static MEDIUM_HEAP: MediumHeap = MediumHeap::new();
+
+// ---------------------------------------------------------------------------
+// Big-span heap: one partial-span list per big class, mirroring MediumHeap
+// deliberately instead of sharing code (the medium invariants around
+// sub-headers, carving, and cold reuse were hard-won; see
+// DESIGN_SPANS_BIG.md §5.4). Big spans hold blocks past the 64 KiB chunk
+// cap from one meta chunk plus pure data chunks; lookup goes through the
+// arena side table, never masking. Arena targets only.
+// ---------------------------------------------------------------------------
+
+/// Blocks moved from big spans into a thread cache per slow-path take.
+/// Smaller than the medium batch: big blocks are huge (up to 256 KiB), so
+/// 4 per refill already moves ~1 MiB; measure 2/4/8 during tuning.
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const BIG_REFILL_BATCH: u32 = 4;
+
+/// Fully-freed big spans kept mapped per big class before unmapping.
+/// Byte-scaled like the medium caps (a few big spans hot; spans run to
+/// ~2 MiB, so the count cap alone would retain far too little).
+#[cfg(all(unix, feature = "std"))]
+const EMPTY_BIG_SPAN_CACHE_PER_CLASS: u32 = 4;
+#[cfg(all(unix, feature = "std"))]
+const MAX_EMPTY_BIG_SPAN_BYTES_PER_CLASS: usize = 8 * 1024 * 1024;
+/// Cap on cold (discarded-physical, retained-virtual) big-span bytes per
+/// class. Deep on 64-bit where virtual is free (starting values; tune by
+/// bench with RSS assertions — see DESIGN_SPANS_BIG.md open question 3).
+#[cfg(all(target_pointer_width = "64", unix, feature = "std"))]
+const MAX_COLD_BIG_SPAN_BYTES_PER_CLASS: usize = 256 * 1024 * 1024;
+#[cfg(all(not(target_pointer_width = "64"), unix, feature = "std"))]
+const MAX_COLD_BIG_SPAN_BYTES_PER_CLASS: usize = 16 * 1024 * 1024;
+
+/// Cold big-span array slots per class (values, never intrusive links —
+/// same discard lesson as medium spans).
+#[cfg(all(unix, feature = "std"))]
+const MAX_COLD_BIG_SPAN_SLOTS: usize = 256;
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) struct BSpanList {
+    /// Partial spans (spare free blocks), doubly linked via prev/next.
+    head: *mut BigMaster,
+    /// Fully free spans held for reuse; singly linked via `next`.
+    /// Never discarded, so intrusive links stay valid.
+    empty: *mut BigMaster,
+    empty_count: u32,
+    empty_bytes: usize,
+    /// Cold spans: virtual reservation retained, physical dropped via
+    /// discard. Stored as (base, npages) VALUES — never intrusive links,
+    /// because discard zeroes everything inside the span. Re-carved (no
+    /// side-table rewrite: entries still point at the same master) on
+    /// reuse.
+    cold: [(*mut u8, u32); MAX_COLD_BIG_SPAN_SLOTS],
+    cold_len: u32,
+    cold_bytes: usize,
+}
+
+// Raw pointers are only manipulated while holding the enclosing Mutex.
+#[cfg(all(unix, feature = "std"))]
+unsafe impl Send for BSpanList {}
+
+#[cfg(all(unix, feature = "std"))]
+impl BSpanList {
+    pub(crate) const fn new() -> Self {
+        BSpanList {
+            head: ptr::null_mut(),
+            empty: ptr::null_mut(),
+            empty_count: 0,
+            empty_bytes: 0,
+            cold: [(ptr::null_mut(), 0); MAX_COLD_BIG_SPAN_SLOTS],
+            cold_len: 0,
+            cold_bytes: 0,
+        }
+    }
+}
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) struct BigHeap {
+    classes: [Mutex<BSpanList>; NUM_BIG],
+}
+
+#[cfg(all(unix, feature = "std"))]
+unsafe fn blink_partial(list: &mut *mut BigMaster, s: *mut BigMaster) {
+    (*s).prev = ptr::null_mut();
+    (*s).next = *list;
+    if !(*list).is_null() {
+        (**list).prev = s;
+    }
+    *list = s;
+    (*s).flags |= FLAG_IN_PARTIAL;
+}
+
+/// Returns true if the span was linked and has been removed.
+#[cfg(all(unix, feature = "std"))]
+unsafe fn bunlink_partial(list: &mut *mut BigMaster, s: *mut BigMaster) -> bool {
+    if (*s).flags & FLAG_IN_PARTIAL == 0 {
+        return false;
+    }
+    let prev = (*s).prev;
+    let next = (*s).next;
+    if !prev.is_null() {
+        (*prev).next = next;
+    } else {
+        *list = next;
+    }
+    if !next.is_null() {
+        (*next).prev = prev;
+    }
+    (*s).prev = ptr::null_mut();
+    (*s).next = ptr::null_mut();
+    (*s).flags &= !FLAG_IN_PARTIAL;
+    true
+}
+
+/// Pop up to `cap` blocks from the spans of one partial list. Caller must
+/// hold the class' lock. `*virgin` stays true only if every contributing
+/// span is still OS-zero.
+#[cfg(all(unix, feature = "std"))]
+unsafe fn bfill_from_list(
+    list: &mut *mut BigMaster,
+    chain: &mut *mut u8,
+    count: &mut u32,
+    virgin: &mut bool,
+    cap: u32,
+) {
+    while *count < cap {
+        let span = *list;
+        if span.is_null() {
+            break;
+        }
+        if (*span).flags & FLAG_VIRGIN == 0 {
+            *virgin = false;
+        }
+        match pop_block(&mut (*span).free_head) {
+            Some(b) => {
+                *b.cast::<*mut u8>() = *chain;
+                *chain = b;
+                *count += 1;
+                (*span).free_count -= 1;
+                (*span).used += 1;
+                if (*span).free_count == 0 {
+                    bunlink_partial(list, span);
+                }
+            }
+            None => {
+                // Empty span must never be on the partial list; recover anyway.
+                bunlink_partial(list, span);
+            }
+        }
+    }
+}
+
+/// Post-lock fate of a released big span: kept (nothing more to do) or
+/// over caps (caller unmaps or parks in arena holes). Cold parking
+/// discards inline (see below).
+#[cfg(all(unix, feature = "std"))]
+enum BigSpanFate {
+    Keep,
+    Unmap(usize),
+}
+
+/// Splice `chain` (n blocks of `span`) back onto the span. Syscalls happen
+/// in the caller, outside locks — except the cold discard, which runs
+/// UNDER the lock (exclusive ownership pre-unlock; same race medium spans
+/// hit the hard way), and the side-table clear on Unmap, which also runs
+/// under the lock so no concurrent lookup can observe a parked-then-gone
+/// span (see below).
+#[cfg(all(unix, feature = "std"))]
+unsafe fn brelease_inner(list: &mut BSpanList, span: *mut BigMaster, chain: *mut u8, n: u32) -> BigSpanFate {
+    // Freed blocks are dirty by definition.
+    (*span).flags &= !FLAG_VIRGIN;
+    let mut tail = chain;
+    while !(*tail.cast::<*mut u8>()).is_null() {
+        tail = *tail.cast::<*mut u8>();
+    }
+    *tail.cast::<*mut u8>() = (*span).free_head;
+    (*span).free_head = chain;
+    (*span).free_count += n;
+    (*span).used -= n;
+    if (*span).used == 0 {
+        bunlink_partial(&mut list.head, span);
+        let span_bytes = (*span).mapped_bytes();
+        // Byte-scaled retention: count cap AND byte cap.
+        if list.empty_count < EMPTY_BIG_SPAN_CACHE_PER_CLASS
+            && list.empty_bytes + span_bytes <= MAX_EMPTY_BIG_SPAN_BYTES_PER_CLASS
+        {
+            // Delayed reclamation: keep the span mapped for reuse.
+            // Side-table entries stay valid (still mapped, same master).
+            (*span).next = list.empty;
+            list.empty = span;
+            list.empty_count += 1;
+            list.empty_bytes += span_bytes;
+            BigSpanFate::Keep
+                } else if (list.cold_len as usize) < MAX_COLD_BIG_SPAN_SLOTS
+                    && list.cold_bytes + span_bytes <= MAX_COLD_BIG_SPAN_BYTES_PER_CLASS
+                {
+                    // Cold: drop physical, keep virtual. Array-stored (base,
+                    // npages); table entries stay valid (same master on
+                    // re-carve — never rewritten, never stale).
+                    // Discard runs UNDER the lock: exclusive ownership
+                    // pre-unlock, same discipline as medium spans.
+                    let idx = list.cold_len as usize;
+                    list.cold[idx] = (span.cast::<u8>(), (*span).npages);
+                    list.cold_len += 1;
+                    list.cold_bytes += span_bytes;
+                    sys::discard(span.cast::<u8>(), span_bytes);
+                    BigSpanFate::Keep
+                } else {
+            // Over caps: forget the side-table entries NOW (under lock),
+            // before the caller unmaps or parks the slice in arena holes.
+            // After this point no lookup may resolve into this span.
+            crate::arena::big_table_clear(span.cast::<u8>(), (*span).npages);
+            BigSpanFate::Unmap(span_bytes)
+        }
+    } else {
+        if (*span).flags & FLAG_IN_PARTIAL == 0 {
+            blink_partial(&mut list.head, span);
+        }
+        BigSpanFate::Keep
+    }
+}
+
+#[cfg(all(unix, feature = "std"))]
+unsafe fn bact_fate(base: *mut u8, fate: BigSpanFate) {
+    match fate {
+        BigSpanFate::Keep => {}
+        BigSpanFate::Unmap(bytes) => {
+            // Table already cleared under the lock in brelease_inner.
+            // Arena-owned slices park in holes (no syscall, counters stay
+            // balanced); legacy mappings need the true unmap + decrements.
+            if crate::arena::contains(base, bytes) {
+                crate::arena::release(base, bytes / PAGE_SIZE);
+                return;
+            }
+            sys::unmap(base, bytes);
+            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            BIG_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(all(unix, feature = "std"))]
+impl BigHeap {
+    pub(crate) const fn new() -> Self {
+        BigHeap {
+            classes: [const { Mutex::new(BSpanList::new()) }; NUM_BIG],
+        }
+    }
+
+    /// Acquire up to BIG_REFILL_BATCH free blocks of `bclass` as an
+    /// intrusive chain. Returns `(null, 0, _)` when the arena is
+    /// unavailable (callers fall back to the large path — big spans exist
+    /// only in the arena, so there is no legacy-mapped fallback here) or
+    /// on OS exhaustion.
+    pub(crate) unsafe fn take_blocks(&self, bclass: usize) -> (*mut u8, u32, bool) {
+        let mut chain: *mut u8 = ptr::null_mut();
+        let mut count: u32 = 0;
+        let mut virgin = true;
+
+        {
+            let mut list = self.classes[bclass].lock();
+            bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+
+            if count == 0 && !list.empty.is_null() {
+                let span = list.empty;
+                list.empty = (*span).next;
+                (*span).next = ptr::null_mut();
+                list.empty_count -= 1;
+                list.empty_bytes -= (*span).mapped_bytes();
+                if (*span).flags & FLAG_VIRGIN == 0 {
+                    virgin = false;
+                }
+                blink_partial(&mut list.head, span);
+                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+            }
+
+            if count == 0 && list.cold_len > 0 {
+                // Cold big span: virtual survived, contents didn't (discard
+                // zeroes headers too — npages comes from the array, never
+                // from inside the span). Re-carve (no syscalls, no table
+                // rewrite — entries still point at this master) and treat
+                // as non-virgin so calloc always memsets.
+                list.cold_len -= 1;
+                let cidx = list.cold_len as usize;
+                let (base, pages) = list.cold[cidx];
+                list.cold[cidx] = (ptr::null_mut(), 0);
+                list.cold_bytes -= pages as usize * PAGE_SIZE;
+                let span = base.cast::<BigMaster>();
+                (*span).init(bclass, pages);
+                (*span).flags &= !FLAG_VIRGIN;
+                virgin = false;
+                blink_partial(&mut list.head, span);
+                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+            }
+        }
+
+        if count == 0 {
+            let pages = big_span_pages_for(crate::classes::BIG_CLASSES[bclass]);
+            let (raw, fresh) = crate::arena::commit(pages);
+            if !raw.is_null() {
+                let span = raw.cast::<BigMaster>();
+                (*span).init(bclass, pages as u32);
+                // Record every page in the side table BEFORE the span
+                // becomes visible (still under no other lock, but no other
+                // thread can reach it yet — it is exclusively ours until
+                // linked below).
+                crate::arena::big_table_set(raw, pages as u32, span);
+                if fresh {
+                    MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                }
+                MAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                BIG_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                let mut list = self.classes[bclass].lock();
+                blink_partial(&mut list.head, span);
+                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+            } else {
+                virgin = false;
+            }
+        }
+
+        (chain, count, virgin)
+    }
+
+    /// Return a chain of `n` blocks, all belonging to `span`, to that span.
+    pub(crate) unsafe fn release_blocks(&self, span: *mut BigMaster, chain: *mut u8, n: u32) {
+        let bclass = (*span).bclass as usize;
+        let base = span.cast::<u8>();
+        let fate = {
+            let mut list = self.classes[bclass].lock();
+            brelease_inner(&mut list, span, chain, n)
+        };
+        bact_fate(base, fate);
+    }
+
+    /// Lock access to a class' partial list for external validation
+    /// (debug double-free detection).
+    #[cfg(debug_assertions)]
+    pub(crate) fn debug_lock_big(&self, bclass: usize) -> MutexGuard<'_, BSpanList> {
+        self.classes[bclass].lock()
+    }
+}
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) static BIG_HEAP: BigHeap = BigHeap::new();
