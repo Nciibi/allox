@@ -2,7 +2,7 @@
 
 use core::ffi::c_void;
 
-use crate::{calloc, free, malloc, realloc};
+use crate::{calloc, free, malloc, realloc, usable_size};
 
 #[no_mangle]
 pub extern "C" fn allox_malloc(size: usize) -> *mut c_void {
@@ -31,4 +31,11 @@ pub unsafe extern "C" fn allox_free(ptr: *mut c_void) {
 #[no_mangle]
 pub extern "C" fn allox_aligned_alloc(align: usize, size: usize) -> *mut c_void {
     unsafe { crate::aligned_alloc(align, size) as *mut c_void }
+}
+
+/// # Safety
+/// `ptr` must be null or a live allocation of this allocator (0 for null).
+#[no_mangle]
+pub unsafe extern "C" fn allox_malloc_usable_size(ptr: *mut c_void) -> usize {
+    usable_size(ptr as *mut u8)
 }

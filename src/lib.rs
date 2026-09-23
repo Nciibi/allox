@@ -1028,7 +1028,7 @@ pub mod telemetry {
         /// Allocations served by direct OS mappings (large/over-aligned).
         pub large_allocs: u64,
         /// Live virtual mappings from the OS (one per fresh take, any size;
-        /// see [`Stats::mapped_pages`] for the exact counting rule).
+        /// same counting rule as `Stats::mapped_pages`).
         pub mapped_pages: u64,
         /// Total OS map calls.
         pub map_calls: u64,

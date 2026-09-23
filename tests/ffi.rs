@@ -9,6 +9,7 @@ extern "C" {
     fn allox_realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
     fn allox_free(ptr: *mut c_void);
     fn allox_aligned_alloc(align: usize, size: usize) -> *mut c_void;
+    fn allox_malloc_usable_size(ptr: *mut c_void) -> usize;
 }
 
 #[test]
@@ -32,5 +33,11 @@ fn c_abi_roundtrip() {
         allox_free(a);
 
         allox_free(std::ptr::null_mut());
+
+        assert_eq!(allox_malloc_usable_size(std::ptr::null_mut()), 0);
+        let u = allox_malloc(100);
+        assert!(!u.is_null());
+        assert!(allox_malloc_usable_size(u) >= 100);
+        allox_free(u);
     }
 }
