@@ -229,38 +229,10 @@ impl Arena {
         ret == base
     }
 
-    /// Home shard for a `pages` request (pages is always nonzero here).
-    #[inline]
-    fn shard_for(pages: usize) -> usize {
-        pages.min(HOLE_SHARDS).saturating_sub(1)
-    }
-
-    /// Pop a best-fit hole of at least `pages`: exact/best scan of the home
-    /// shard first, then first-fit across the other shards (each under its
-    /// own lock, released before the next — never nested). First-fit (not
-    /// global-best) across shards is a deliberate simplification: inexact
-    /// matches strand their tail either way, and same-size churn — the case
-    /// that matters — hits the home shard exactly. Returns the base address
-    /// with the entry removed, or null. Caller commits afterwards.
+    /// Pop a best-fit hole of at least `pages`. Returns the base address with
+    /// the entry removed, or null. Lock-scoped; caller commits afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
-        let home = Self::shard_for(pages);
-        if let Some(base) = self.shard_take(home, pages) {
-            return base;
-        }
-        for s in 0..HOLE_SHARDS {
-            if s == home {
-                continue;
-            }
-            if let Some(base) = self.shard_take(s, pages) {
-                return base;
-            }
-        }
-        ptr::null_mut()
-    }
-
-    /// Best-fit (exact-early-exit) pop from one shard.
-    fn shard_take(&self, shard: usize, pages: usize) -> Option<*mut u8> {
-        let mut holes = self.holes[shard].lock();
+        let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
         for i in 0..holes.len {
             let (_, p) = holes.entries[i];
@@ -283,11 +255,10 @@ impl Arena {
                 holes.entries[i] = holes.entries[last];
                 holes.entries[last] = (0, 0);
                 holes.len = last;
-                self.hole_bytes
-                    .fetch_sub(p * ARENA_ALIGN, Ordering::Relaxed);
-                Some((self.start.load(Ordering::Relaxed) + off) as *mut u8)
+                holes.bytes -= p * ARENA_ALIGN;
+                (self.start.load(Ordering::Relaxed) + off) as *mut u8
             }
-            None => None,
+            None => ptr::null_mut(),
         }
     }
 
@@ -296,45 +267,17 @@ impl Arena {
     /// Overflow discards nothing (caller already did) and abandons the entry:
     /// virtual stays reserved, physical dropped, nothing ever reuses or
     /// unmaps it. Bounded by overflow rate; counted for observability.
-    ///
-    /// The byte budget is claimed lock-free (CAS) before taking the shard
-    /// lock and refunded on slot overflow, so the global cap stays exact
-    /// without a global lock; per-shard slots bound scan length.
     fn holes_give(&self, base: *mut u8, pages: usize) {
         let start = self.start.load(Ordering::Relaxed);
         let off = (base as usize).wrapping_sub(start);
         let bytes = pages * ARENA_ALIGN;
-        // Claim byte budget first (exact cap, no global lock).
-        loop {
-            let cur = self.hole_bytes.load(Ordering::Relaxed);
-            match cur.checked_add(bytes) {
-                Some(next) if next <= HOLE_CAP_BYTES => {
-                    match self.hole_bytes.compare_exchange(
-                        cur,
-                        next,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => break,
-                        Err(_) => core::hint::spin_loop(),
-                    }
-                }
-                _ => {
-                    self.abandoned.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
-            }
-        }
-        let shard = Self::shard_for(pages);
-        let mut holes = self.holes[shard].lock();
-        if holes.len < HOLE_SLOTS_PER_SHARD {
+        let mut holes = self.holes.lock();
+        if holes.len < HOLE_SLOTS && holes.bytes + bytes <= HOLE_CAP_BYTES {
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
+            holes.bytes += bytes;
         } else {
-            // Slot overflow: refund the byte claim, then abandon (same
-            // accounting as before — virtual retained, never reused).
-            self.hole_bytes.fetch_sub(bytes, Ordering::Relaxed);
             self.abandoned.fetch_add(1, Ordering::Relaxed);
         }
     }
