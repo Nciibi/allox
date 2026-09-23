@@ -688,14 +688,54 @@ impl MediumHeap {
     }
 
     /// Return a chain of `n` blocks, all belonging to `span`, to that span.
-    pub(crate) unsafe fn release_blocks(&self, span: *mut SpanMaster, chain: *mut u8, n: u32) {
-        let mclass = (*span).mclass as usize;
+    /// `mclass` and `tail` are caller-supplied: flush groups already know
+    /// both; `free()`-style single frees pass `head == tail`. Avoids the
+    /// cold header load and chain walk that dominated this fn under perf.
+    pub(crate) unsafe fn release_blocks(
+        &self,
+        mclass: usize,
+        span: *mut SpanMaster,
+        head: *mut u8,
+        tail: *mut u8,
+        n: u32,
+    ) {
+        debug_assert!(mclass < NUM_MEDIUM);
+        debug_assert!((*span).mclass as usize == mclass);
         let base = span.cast::<u8>();
         let fate = {
             let mut list = self.classes[mclass].lock();
-            mrelease_inner(&mut list, span, chain, n)
+            mrelease_inner(&mut list, span, head, tail, n)
         };
         mact_fate(base, fate);
+    }
+
+    /// Release several same-class span groups under one lock. Used by
+    /// `flush_mbin`, which already grouped by master — one lock+unlock for
+    /// the whole chunk instead of one per group. Fates are applied after
+    /// unlock so unmapping never runs under the class lock.
+    pub(crate) unsafe fn release_many(&self, mclass: usize, chunks: &[ReleaseChunk]) {
+        debug_assert!(mclass < NUM_MEDIUM);
+        if chunks.is_empty() {
+            return;
+        }
+        // Stack fates: flush caps groups at MAX_MFLUSH_GROUPS (260).
+        debug_assert!(chunks.len() <= 260);
+        let mut fates = [SpanFate::Keep; 264];
+        {
+            let mut list = self.classes[mclass].lock();
+            for (i, c) in chunks.iter().enumerate() {
+                debug_assert!((*c.span).mclass as usize == mclass);
+                fates[i] = mrelease_inner(&mut list, c.span, c.head, c.tail, c.n);
+            }
+        }
+        for (c, fate) in chunks.iter().zip(fates.iter()) {
+            // Move fate out (SpanFate is not Copy — rebuild by replace).
+            let f = match fate {
+                SpanFate::Keep => SpanFate::Keep,
+                SpanFate::Unmap(bytes) => SpanFate::Unmap(*bytes),
+            };
+            mact_fate(c.span.cast::<u8>(), f);
+        }
     }
 
     /// Lock access to a class' partial list for external validation
