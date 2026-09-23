@@ -401,6 +401,12 @@ pub(crate) fn stats() -> (u64, u64, u64) {
     ARENA.stats()
 }
 
+/// Reservation high-water in bytes (monotonic bump frontier). Hidden
+/// observability for reservation-sizing validation.
+pub(crate) fn high_water() -> u64 {
+    ARENA.high_water()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
