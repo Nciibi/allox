@@ -168,17 +168,18 @@ suspicion. No blind experiments (the count-cap regression taught this).
 
 ## 7. Correctness backlog (must clear before 0.2)
 
-* **`cached_bytes` underflow via the trim-lie (found 2026-09-23, still
-  open):** `trim()` sets `cached_bytes = target` when nothing is
-  trimmable while blocks remain binned, so the counter persistently
-  lags actual retention; later pops can drive it below zero → debug
-  panic at `cache.rs:alloc` (`cached_bytes -=`, plain `-=`), release
-  wrap → over-trim storm. Deterministic with tiny budgets
-  (`set_thread_cache_budget(0)` fails 12/12 on the main thread);
-  rare with the default 32 MiB (needs >16 MiB cached with no bin over
-  64 blocks). Counter is trim-heuristic-only (no heap corruption from
-  it), but the accounting should be fixed (saturating ops and/or no
-  lying reset) with a regression test.
+* **`cached_bytes` underflow via the trim-lie (FIXED 2026-09-23):**
+  `trim()` used to set `cached_bytes = target` when nothing was
+  trimmable while blocks remained binned, lagging actual retention
+  until a later pop drove it below zero (debug panic at
+  `cache.rs:alloc`, release wrap into an over-trim storm). Deterministic
+  with tiny budgets, rare with the default 32 MiB. Fix: stop without
+  touching the counter (plain `break`) — audit of all 19 adjustment
+  sites shows it is otherwise exactly retained-bytes, so the plain
+  `-=` pops can no longer underflow. Regression test
+  `tiny_budget_churn_never_underflows` (failed pre-fix, deterministically,
+  including cross-thread pollution into `many_small_churn`). Bench smoke
+  flat (25–28M in-band).
 * **Realloc zero-size dangling bug (FIXED 2026-09-23):**
   `GlobalAlloc::realloc` same-class identity fired on `layout.size() == 0`
   and returned the dangling pointer for nonzero `new_size`; worse, the
