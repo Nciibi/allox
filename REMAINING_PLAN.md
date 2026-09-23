@@ -310,6 +310,25 @@ shift* is the reliable result. Next levers in measured order:
 (2) residual free-path (budget atomic), (3) TLB/spread only if (1)(2)
 flat. CI profile job still needs a fix (empty artifacts).
 
+**Post-drift-cap re-profile (2026-09-23, flat `-F 4999 --no-call-graph`,
+BENCH_ALLOC=allox, mixed-all 8T):** `dealloc_medium` 21.5%, `alloc_impl`
+16.6%, `flush_mbin` 16.0%, `mrefill` 12.7%, harness backtrace 11.5%,
+`flush_bin` 4.3%, memmove 4.0%, `dealloc` 3.9%. Inside `dealloc_medium`,
+~72% of samples sat on the drift-gate owner/span probe (magic load 40%
++ owner load 32%). **Lever measured & rejected:** raising
+`DRIFT_GATE_DIV` 2→1 (gate at full budget instead of trim target).
+Quiet-box sequential: mixed-all stayed ~13.3–14.6M vs mimalloc
+19.1–19.5M (**~0.71×, no gain**) while prodcons regressed **32.7M →
+~26.8M** (early foreign shed died — `foreign_bytes` never reached
+`budget/8` before `cached_bytes > budget` already forced `should_shed`).
+Reverted; `DIV=2` stands. PMU share ≠ wall-clock lever here.
+
+Next lever from the same profile: `flush_bin`/`flush_mbin` each zero a
+full stack group array (`[Group::EMPTY; 2056]` ≈ 65 KiB,
+`[MGroup::EMPTY; 260]` ≈ 8 KiB) on every call — stack probe + memset
+showed in both annotations. Switch those arrays to `MaybeUninit` so only
+slots `0..ng` are ever touched.
+
 ## 7. Correctness backlog (must clear before 0.2)
 
 * **`cached_bytes` underflow via the trim-lie (FIXED 2026-09-23):**
