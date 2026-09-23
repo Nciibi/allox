@@ -101,19 +101,20 @@ dlmalloc omitted: 10×+ run-to-run variance on this box.
 | tight-small 8T (64 B) | 217.6 M/s | 2.1 M/s | 224.9 M/s | 219.6 M/s | **102×** | 0.99× | 0.97× |
 | mixed-small 8T (16–4096 B) | 146.2 M/s | 1.8 M/s | 31.8 M/s | 36.8 M/s | **83.3×** | **3.97×** | **4.60×** |
 | mixed-all 1T (16–65536 B) | 1.81 M/s | 0.46 M/s | 3.08 M/s | 4.06 M/s | **3.97×** | 0.44× | 0.59× |
-| mixed-all 8T (16–65536 B) | 12.1 M/s | 0.97 M/s | 14.1 M/s | 18.6 M/s | **12.5×** | 0.65× | 0.86× |
+| mixed-all 8T (16–65536 B) | 13.6 M/s | 0.97 M/s | 13.3 M/s | 18.7 M/s | **14.0×** | 0.72× | **1.02×** |
 | large-only 1T (32K–1M) | 265 K/s | 200 K/s | 245 K/s | 655 K/s | **1.32×** | 0.40× | **1.08×** |
 | large-only 8T (32K–256K) | 9.06 M/s | 405 K/s | 705 K/s | 13.5 M/s | **22.4×** | 0.67× | **12.9×** |
-| prodcons 8T (remote free) | 32.7 M/s | 1.1 M/s | 8.7 M/s | 30.0 M/s | **30.3×** | **1.09×** | **3.77×** |
+| prodcons 8T (remote free) | 32.7 M/s | 1.1 M/s | 8.6 M/s | 27.3 M/s | **30.3×** | **1.20×** | **3.80×** |
 | spawn-churn | 11.1 M/s | 2.4 M/s | 10.8 M/s | 12.4 M/s | **4.65×** | 0.90× | **1.03×** |
 
 Small + remote-free + big-span paths win or tie everywhere except
-mixed-all per-op (see REMAINING_PLAN §6) and the large-only 1T tail above
-262144 B (stays large-path by design); large-only 8T is now served by
-arena-backed big spans (0.05× → 0.67× mimalloc, zero unmaps in the probe).
-mixed-all 8T and large-only still carry run-to-run regime notes (lock
-dynamics, same reference). Full six-allocator output (incl. snmalloc,
-dlmalloc, and the json/request/ecs app shapes) in harness runs.
+mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and
+the large-only 1T tail above 262144 B (stays large-path by design);
+large-only 8T is now served by arena-backed big spans (0.05× → 0.67×
+mimalloc, zero unmaps in the probe). mixed-all 8T and large-only still
+carry run-to-run regime notes (lock dynamics, same reference).
+full six-allocator output (incl. snmalloc, dlmalloc, and the
+json/request/ecs app shapes) in harness runs.
 
 ## Design
 
