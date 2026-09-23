@@ -278,13 +278,11 @@ impl GlobalHeap {
         }
 
         if count == 0 {
-            let (raw, fresh) = map_heap_pages(1);
+            let raw = sys::map(PAGE_SIZE);
             if !raw.is_null() {
                 let page = raw.cast::<PageHeader>();
                 (*page).init(class);
-                if fresh {
-                    MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
-                }
+                MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 SMALL_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[class].lock();
@@ -311,17 +309,6 @@ impl GlobalHeap {
                 sys::discard(page.cast::<u8>(), PAGE_SIZE);
             }
             PageFate::Unmap => {
-                // Arena-owned pages park in holes (no syscall, counters stay
-                // balanced); legacy mappings need the true unmap +
-                // decrements. Same shape as the span fate arm below and
-                // large's `crate::unmap_or_return`.
-                #[cfg(all(unix, feature = "std"))]
-                {
-                    if crate::arena::contains(page.cast::<u8>(), PAGE_SIZE) {
-                        crate::arena::release(page.cast::<u8>(), 1);
-                        return;
-                    }
-                }
                 sys::unmap(page.cast::<u8>(), PAGE_SIZE);
                 MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
                 UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
@@ -560,30 +547,24 @@ unsafe fn mact_fate(base: *mut u8, fate: SpanFate) {
     }
 }
 
-/// Map fresh heap pages (small pages or medium spans): arena commit first
-/// (1 VMA op, 64 KiB-aligned by construction), legacy over-map-trim
-/// fallback when the arena is unavailable. Fresh zeros either way, so the
-/// caller keeps `FLAG_VIRGIN` set exactly as for legacy maps (carving
-/// dirties only freelist-link words — the virgin invariant).
-///
-/// Returns `(base, fresh)`: `fresh` is true for genuinely new virtual
-/// (arena bump or legacy map) and false for recommitted arena holes. The
-/// caller counts one mapping op (`MAP_CALLS` + class split) per non-null
-/// return but live virtual (`MAPPED_PAGES`) only when `fresh` is set,
-/// mirroring `map_large_region`.
+/// Map fresh span pages: arena commit first (1 VMA op, 64 KiB-aligned by
+/// construction), legacy over-map-trim fallback when the arena is
+/// unavailable. Fresh zeros either way, so the caller keeps `FLAG_VIRGIN`
+/// set exactly as for legacy maps (carving dirties only freelist-link
+/// words — the virgin invariant). Accounting stays at the caller, once per
+/// non-null return, mirroring `map_large_region`.
 #[inline]
-unsafe fn map_heap_pages(pages: usize) -> (*mut u8, bool) {
+unsafe fn map_span_pages(pages: usize) -> *mut u8 {
     #[cfg(all(unix, feature = "std"))]
     {
         debug_assert_eq!(PAGE_SIZE, crate::arena::ARENA_ALIGN);
-        let (base, fresh) = crate::arena::commit(pages);
+        let base = crate::arena::commit(pages);
         if !base.is_null() {
             debug_assert_eq!(base as usize & (PAGE_SIZE - 1), 0);
-            return (base, fresh);
+            return base;
         }
     }
-    let base = sys::map(pages * PAGE_SIZE);
-    (base, !base.is_null())
+    sys::map(pages * PAGE_SIZE)
 }
 
 impl MediumHeap {
@@ -639,13 +620,11 @@ impl MediumHeap {
 
         if count == 0 {
             let pages = span_pages_for(crate::classes::MEDIUM_CLASSES[mclass]);
-            let (raw, fresh) = map_heap_pages(pages);
+            let raw = map_span_pages(pages);
             if !raw.is_null() {
                 let span = raw.cast::<SpanMaster>();
                 (*span).init(mclass, pages as u32);
-                if fresh {
-                    MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
-                }
+                MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();

@@ -94,10 +94,6 @@ fn stats_are_sane() {
     let p = unsafe { allox::malloc(1 << 20) }; // large path
     assert!(!p.is_null());
     let mid = allox::stats();
-    // A fresh 1 MiB region always costs one mapping op. `mapped_pages`
-    // would also move on a bump/legacy commit, but an arena hole reuse
-    // recommits already-counted virtual without moving it — so the op
-    // counter is the robust assertion here.
-    assert!(mid.map_calls > before.map_calls);
+    assert!(mid.mapped_pages > before.mapped_pages);
     unsafe { allox::free(p) };
 }

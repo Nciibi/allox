@@ -340,25 +340,16 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
 /// Map a large region: arena commit first (1 VMA op, 64 KiB-aligned by
 /// construction), legacy `map_any` fallback when the arena is unavailable
 /// (non-unix, reservation failure, bump exhaustion). Fresh zeros either way.
-///
-/// Returns `(base, fresh)`: `fresh` is true for genuinely new virtual
-/// (arena bump or legacy map) and false for recommitted arena holes. The
-/// caller counts one mapping op (`MAP_CALLS`) per non-null return but live
-/// virtual (`MAPPED_PAGES`) only when `fresh` is set — hole releases never
-/// decrement it, so counting reuses would drift it into a cumulative
-/// counter under churn (see `arena::Arena::commit`).
 #[inline]
-pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
+pub(crate) unsafe fn map_large_region(mapped: usize) -> *mut u8 {
     #[cfg(all(unix, feature = "std"))]
     {
-        let (base, fresh) =
-            crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
+        let base = crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
         if !base.is_null() {
-            return (base, fresh);
+            return base;
         }
     }
-    let base = sys::map_any(mapped);
-    (base, !base.is_null())
+    sys::map_any(mapped)
 }
 
 /// Release a large region: back to arena holes when arena-owned (no
@@ -442,19 +433,14 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     // Large regions are located by offset header, never by address masking,
     // so kernel page alignment suffices — no over-map/trim tax (unix), and
     // elsewhere map_any is already the optimal primitive.
-    let (base, fresh) = map_large_region(mapped);
+    let base = map_large_region(mapped);
     if base.is_null() {
         return (ptr::null_mut(), false);
     }
-    // Count the fresh mapping exactly once here: every success is one
-    // kernel mapping op (`MAP_CALLS`); live virtual (`MAPPED_PAGES`) only
-    // grows for genuinely new address space — arena hole reuses recommit
-    // virtual that is already counted (their release never decremented it).
-    // All disposals below balance it via unmap_or_return (arena parks keep
-    // it counted; legacy unmaps decrement).
-    if fresh {
-        heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-    }
+    // Count the fresh mapping exactly once here (arena and legacy alike —
+    // both are one kernel mapping op). All disposals below balance it via
+    // unmap_or_return (arena parks keep it counted; legacy unmaps decrement).
+    heap::MAPPED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     heap::MAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     // Header lives directly before the user pointer: high alignment can push
     // the user pointer past the first 64 KiB boundary of the region, so the
