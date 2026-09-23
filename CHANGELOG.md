@@ -19,8 +19,10 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   tier, per-thread stash, virtual-memory arena backing (unix) with hole
   reuse and graceful legacy fallback.
 - Thread-exit flush (pthread key / FlsAlloc); contention-parking mutexes
-  (SRWLock on Windows, pthread on unix). (Remote-free drift caps are
-  *not* in this release — see ROADMAP_TO_BEST.md P1 step 4.)
+  (SRWLock on Windows, pthread on unix). Pressure-gated remote-free drift
+  cap: under cache pressure, frees of blocks owned by another thread are
+  counted and shed in batch via the existing chunked trim (never a
+  lock-per-free release); ownership is a performance heuristic only.
 - C ABI (`malloc`/`calloc`/`realloc`/`free`/`aligned_alloc`, zero sizes
   return null), `GlobalAlloc` impl with layout-routed free, `usable_size`,
   debug double-free/corrupt-pointer validation.

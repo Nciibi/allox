@@ -178,7 +178,12 @@ flush chunks: 2048 / 256 / 64 respectively — bounds lock hold time.)
 
 Ownership rule (v1): a freed block goes to the *freeing* thread's cache
 regardless of which thread allocated it. Blocks carry no affinity; correctness
-never depends on ownership, only performance.
+never depends on ownership, only performance. Performance exception (drift
+cap): when a thread's cache exceeds half its budget, a header load checks a
+best-effort `owner` field (set on refill, last-writer-wins); frees of
+foreign-owned blocks are counted in `foreign_bytes` and, once that reaches
+budget/8, shed in batch through the normal chunked `trim` — never a
+lock-per-free release. Same-thread frees below the gate stay header-free.
 
 **Cache retention policy (measured, important):** freed blocks are extremely
 likely to be re-allocated by the same thread; round-tripping them through the
@@ -214,8 +219,10 @@ so reentrant allocation cannot occur.
   vs spinning on sharded low-contention workloads (mixed-all 8T flat) —
   kept for preemption-robustness, not speed.
 - Note: because freed blocks go to the *freeing* thread's cache (no block
-  ownership), mimalloc-style atomic cross-thread free lists are unnecessary;
-  lock sharding addresses the remaining contention directly.
+  ownership for correctness), mimalloc-style atomic cross-thread free lists
+  are unnecessary; lock sharding addresses the remaining contention
+  directly. The drift-cap `owner` field is a pressure-gated heuristic only
+  (see §4.3 ownership rule).
 
 ### 4.4.1 Measured results (Windows x86-64, median of 5)
 See README.md for the full four-way table (allox / talc / dlmalloc / system).

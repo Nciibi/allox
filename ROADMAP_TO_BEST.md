@@ -89,6 +89,11 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
   cross-thread drift (if `cached_bytes` from foreign pages > X, return
   directly via `HEAP.release_blocks`), or add mimalloc-style per-page
   remote list. Start with cap — smaller change in `src/cache.rs:262-277`.
+  **DONE 2026-09-23** — pressure-gated owner check + `foreign_bytes`
+  batched shed via `trim` (per-free `release_blocks` regressed prodcons
+  to 0.60× and thrashed the arena; batched shed: prodcons 8T 32.7M,
+  1.20× mimalloc, abnd 0/s). Owner fields on PageHeader/SpanMaster/BigMaster;
+  correctness never reads `owner`.
 * Add `producer-consumer 8T` + `thread-spawn` benches + RSS assertion:
   post-free mapped pages must be < e.g. 512 after flush.
 
@@ -162,7 +167,8 @@ green (12 binaries), all feature combos warning-free. The remaining MT gaps
 (spawn-churn 0.22x isolated; large-only 1T tail >262144) are per-op/syscall
 volume and class-cap edges, not lock parking — large-only 8T was fixed by
 spans-for-big-sizes (DONE 2026-09-23, 0.67× mimalloc).
-4. P1 exit-flush + drift cap → after spans. (Exit-flush landed with P1e.)
+4. P1 exit-flush + drift cap → DONE (exit-flush with P1e; drift cap
+   2026-09-23, batched shed — prodcons 8T 1.20× mimalloc).
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.
 
