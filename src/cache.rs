@@ -99,6 +99,26 @@ impl MGroup {
     };
 }
 
+/// One span's share of a big flush chunk (mirrors [`MGroup`]).
+#[cfg(all(unix, feature = "std"))]
+#[derive(Clone, Copy)]
+struct BGroup {
+    master: *mut BigMaster,
+    head: *mut u8,
+    tail: *mut u8,
+    n: u32,
+}
+
+#[cfg(all(unix, feature = "std"))]
+impl BGroup {
+    const EMPTY: BGroup = BGroup {
+        master: ptr::null_mut(),
+        head: ptr::null_mut(),
+        tail: ptr::null_mut(),
+        n: 0,
+    };
+}
+
 #[derive(Clone, Copy)]
 struct Bin {
     head: *mut u8,
@@ -274,6 +294,30 @@ impl ThreadCache {
         self.pending.frees += 1;
         self.pending.bytes_out += MEDIUM_CLASSES[mclass] as u64;
         self.pending.per_class[NUM_CLASSES + mclass] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
+    }
+
+    #[inline]
+    #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+    fn note_alloc_big(&mut self, bclass: usize) {
+        self.pending.ops += 1;
+        self.pending.allocs += 1;
+        self.pending.bytes_in += BIG_CLASSES[bclass] as u64;
+        self.pending.per_class[NUM_CLASSES + NUM_MEDIUM + bclass] += 1;
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
+    }
+
+    #[inline]
+    #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+    fn note_free_big(&mut self, bclass: usize) {
+        self.pending.ops += 1;
+        self.pending.frees += 1;
+        self.pending.bytes_out += BIG_CLASSES[bclass] as u64;
+        self.pending.per_class[NUM_CLASSES + NUM_MEDIUM + bclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
