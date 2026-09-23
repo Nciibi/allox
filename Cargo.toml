@@ -26,6 +26,14 @@ std = []
 # Opt-in so production builds pay exactly zero for it; enable and query via
 # `allox::telemetry::snapshot()`.
 telemetry = []
+# Dev-only: jemalloc bench comparator (needs make+autoconf — CI box only).
+# NEVER enable for library consumers; default build stays zero-deps/no-C.
+bench-jemalloc = ["dep:tikv-jemallocator"]
+
+[dependencies]
+# Optional, off by default: only `cargo bench --features bench-jemalloc`
+# (CI) pulls it in. See feature comment.
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 # Benchmark comparators only — never dependencies of the library itself.
@@ -33,8 +41,8 @@ talc = "5"
 spinning_top = "0.3"
 dlmalloc = { version = "0.2", features = ["global"] }
 # P0 honest scoreboard: C comparators, dev-only so the lib stays zero-deps / no-C.
-# NOTE: tikv-jemallocator needs make+autoconf (absent here); enable in CI where
-# those exist. mimalloc + snmalloc-rs(build_cc) only need cc/c++.
+# mimalloc + snmalloc-rs(build_cc) only need cc/c++; jemalloc is the
+# optional bench-jemalloc feature above (needs make+autoconf).
 mimalloc = "0.1"
 snmalloc-rs = { version = "0.7", features = ["build_cc"] }
 
