@@ -207,19 +207,13 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 /// spans exist only in the arena, so there is no legacy-mapped form).
 #[cfg(all(unix, feature = "std"))]
 unsafe fn alloc_big(bclass: usize) -> *mut u8 {
-    let (chain, _, _) = match with_cache(
-        |c| {
-            let p = c.alloc_big(bclass);
-            (p, p.is_null())
-        },
+    with_cache(
+        |c| c.alloc_big(bclass),
         || {
             let (chain, _, _) = BIG_HEAP.take_blocks(bclass);
-            (chain, chain.is_null())
+            chain
         },
-    ) {
-        (chain, _) => chain,
-    };
-    chain
+    )
 }
 
 #[cfg(all(unix, feature = "std"))]
