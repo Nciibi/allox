@@ -564,6 +564,20 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        // Claim every span in the batch for this thread (drift-cap owner).
+        {
+            let mut b = chain;
+            for _ in 0..count {
+                if b.is_null() {
+                    break;
+                }
+                let span = SpanMaster::of(b);
+                if !span.is_null() {
+                    self.claim_span(span);
+                }
+                b = *b.cast::<*mut u8>();
+            }
+        }
         let first = chain;
         let rest = *first.cast::<*mut u8>();
         let bin = &mut self.mbins[mclass];
@@ -585,6 +599,20 @@ impl ThreadCache {
             debug_assert!(!span.is_null() && (*span).contains(p));
             debug_assert_eq!((*span).mclass as usize, mclass);
             debug_validate_free_medium(p, span);
+        }
+
+        // Drift cap: same pressure gate as small frees (see `dealloc`).
+        if self.drift_gate_open() {
+            let span = SpanMaster::of(p);
+            if !span.is_null() {
+                let owner = (*span).owner;
+                if owner != 0 && owner != self.tid() {
+                    MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
+                    #[cfg(feature = "telemetry")]
+                    self.note_free_medium(mclass);
+                    return;
+                }
+            }
         }
 
         let bin = &mut self.mbins[mclass];
