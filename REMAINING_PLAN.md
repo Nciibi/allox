@@ -207,15 +207,23 @@ suspicion. No blind experiments (the count-cap regression taught this).
 
 ## 8. Cross-platform + release 0.2 checklist
 
-* Re-verify the README Windows table post-spans/cold/exit/arena/mutex
-  (every number in it predates this work). Publish a Linux table next to
-  it with the ≥2 s × 3 reps methodology note.
+* README Windows table re-verify (every number predates spans/cold/exit/
+  arena/mutex) — NOT doable on this box; covered by the CI bench job's
+  per-OS artifacts. README now says so next to the table.
+* Linux table — DONE 2026-09-23: 10-workload table in README from a fresh
+  2 s × 3 reps run (Ryzen 5 1600) with methodology note; dlmalloc omitted
+  (10×+ run-to-run variance here), spawn-churn + large-only 8T carry
+  context-sensitivity notes pointing at §5/§4.
 * macOS numbers (allocator + exit hook + pthread mutex all have
   macOS-specific branches: `MAP_ANONYMOUS` value, `pthread_key_t` width,
-  `MAP_FIXED` without `NOREPLACE`).
-* 32-bit build + arena fallback tests in CI.
-* CHANGELOG 0.1.0 entry, API review (telemetry array already grew pre-1.0
-  — acceptable, note it), version-bump hygiene, `cargo publish --dry-run`.
+  `MAP_FIXED` without `NOREPLACE`) — NOT doable here; pending CI/macOS box.
+* 32-bit build + arena fallback tests in CI — DONE (§3 `bit32` job).
+* CHANGELOG 0.1.0 entry — DONE (rewritten for what 0.1.0 actually
+  contains: spans, sharded large/cold tiers, arena, exit flush, zero-size
+  rules). API review: telemetry array covers small + medium and may still
+  grow pre-1.0 — noted in CHANGELOG, acceptable. Version hygiene:
+  `cargo publish --dry-run` warning-free; added repository/documentation/
+  homepage URLs (was the only manifest warning).
 * External audit scoping for the unsafe core (page/heap/cache/lib
   unsafe blocks + new arena/exit code). Not a launch blocker for 0.2
   (README already says unaudited), but schedule it.
