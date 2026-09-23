@@ -216,7 +216,9 @@ const NUM_LARGE_SHARDS: usize = 8;
 /// bounds retention — 64 slots × 16 B = 1 KiB of static storage per shard.
 /// Single-threaded same-size traffic lands on one shard and must not
 /// slot-starve there (the old single 64-slot cache never did).
-const LARGE_SHARD_SLOTS: usize = 64;
+/// TEMPORARY EXPERIMENT S4.1 (revert after measurement): 256 slots to test
+/// whether depth helps large-only hit rate (predict flat: byte caps bind).
+const LARGE_SHARD_SLOTS: usize = 256;
 const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
 /// Cold (discarded, virtually retained) bytes per shard. Deep on 64-bit
 /// where virtual is free; shallow on 32-bit address spaces.
@@ -224,7 +226,7 @@ const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB tota
 const LARGE_COLD_CAP_BYTES: usize = 64 * 1024 * 1024; // 8 x 64 MiB virtual
 #[cfg(not(target_pointer_width = "64"))]
 const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
-const LARGE_COLD_SLOTS: usize = 64;
+const LARGE_COLD_SLOTS: usize = 256; // TEMPORARY EXPERIMENT S4.1 (see above)
 
 struct LargeRegionCache {
     len: usize,
