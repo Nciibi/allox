@@ -405,7 +405,7 @@ mod tests {
     fn commits_are_64k_aligned_and_zeroed() {
         let a = Arena::with_size(64 * MB);
         for pages in [1usize, 3, 17, 129] {
-            let b = unsafe { a.commit(pages) };
+            let b = unsafe { a.commit(pages).0 };
             assert!(!b.is_null(), "commit {} pages", pages);
             assert_eq!(b as usize % ARENA_ALIGN, 0);
             assert!(a.contains(b, pages * ARENA_ALIGN));
@@ -413,7 +413,7 @@ mod tests {
             unsafe {
                 core::ptr::write_bytes(b, 0xAB, pages * ARENA_ALIGN);
                 a.release(b, pages);
-                let b2 = a.commit(pages);
+                let b2 = a.commit(pages).0;
                 assert!(!b2.is_null());
                 for i in 0..pages * ARENA_ALIGN {
                     assert_eq!(*b2.add(i), 0, "stale byte at {}", i);
@@ -429,25 +429,25 @@ mod tests {
         let a = Arena::with_size(4 * ARENA_ALIGN);
         let mut bases = Vec::new();
         for _ in 0..4 {
-            let b = unsafe { a.commit(1) };
+            let b = unsafe { a.commit(1).0 };
             assert!(!b.is_null());
             bases.push(b);
         }
-        assert!(unsafe { a.commit(1) }.is_null());
-        assert!(unsafe { a.commit(64) }.is_null());
+        assert!(unsafe { a.commit(1).0 }.is_null());
+        assert!(unsafe { a.commit(64).0 }.is_null());
         // Exact-size holes serve exact requests (no syscalls beyond commit).
         for b in bases.drain(..) {
             unsafe { a.release(b, 1) };
         }
         for _ in 0..4 {
-            let b = unsafe { a.commit(1) };
+            let b = unsafe { a.commit(1).0 };
             assert!(!b.is_null(), "exact hole reuse");
             unsafe { a.release(b, 1) };
         }
         // Documented v1 limitation: holes never coalesce, so four 1-page
         // holes can't serve a 4-page request — the caller falls back to a
         // legacy mapping (correct, just one syscall). Future: coalescing.
-        assert!(unsafe { a.commit(4) }.is_null());
+        assert!(unsafe { a.commit(4).0 }.is_null());
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
         let a = Arena::with_size(64 * MB);
         let mut bases = Vec::new();
         for _ in 0..8 {
-            bases.push(unsafe { a.commit(2) });
+            bases.push(unsafe { a.commit(2).0 });
         }
         let (c0, _, _) = a.stats();
         assert_eq!(c0, 8);
@@ -463,7 +463,7 @@ mod tests {
             unsafe { a.release(b, 2) };
         }
         for _ in 0..8 {
-            let b = unsafe { a.commit(2) };
+            let b = unsafe { a.commit(2).0 };
             assert!(!b.is_null());
             unsafe { a.release(b, 2) };
         }
@@ -473,16 +473,31 @@ mod tests {
     }
 
     #[test]
+    fn commit_reports_fresh_only_for_new_virtual() {
+        // Live-virtual accounting depends on this: bump commits are new
+        // address space (callers count MAPPED_PAGES), hole reuses recommit
+        // virtual that is already counted (callers must not count again,
+        // since releases never decrement).
+        let a = Arena::with_size(64 * MB);
+        let (b1, fresh1) = unsafe { a.commit(2) };
+        assert!(!b1.is_null() && fresh1, "bump commit is new virtual");
+        unsafe { a.release(b1, 2) };
+        let (b2, fresh2) = unsafe { a.commit(2) };
+        assert!(!b2.is_null() && !fresh2, "hole reuse is already-counted virtual");
+        unsafe { a.release(b2, 2) };
+    }
+
+    #[test]
     fn split_remainder_stays_usable() {
         let a = Arena::with_size(64 * MB);
-        let big = unsafe { a.commit(16) };
+        let big = unsafe { a.commit(16).0 };
         assert!(!big.is_null());
         unsafe { a.release(big, 16) };
         // Best-fit takes the 16-page hole for a 1-page request...
-        let small = unsafe { a.commit(1) };
+        let small = unsafe { a.commit(1).0 };
         assert!(!small.is_null());
         // ...and the 15-page remainder must serve a later request.
-        let rest = unsafe { a.commit(15) };
+        let rest = unsafe { a.commit(15).0 };
         assert!(!rest.is_null(), "split remainder lost");
         unsafe {
             a.release(small, 1);
@@ -500,7 +515,7 @@ mod tests {
         let mut v = Vec::new();
         for i in 0..64usize {
             let pages = 1 + (i * 7919) % 9;
-            let b = unsafe { a.commit(pages) };
+            let b = unsafe { a.commit(pages).0 };
             assert!(!b.is_null());
             unsafe { core::ptr::write_bytes(b, i as u8, pages * ARENA_ALIGN) };
             v.push((b, pages));

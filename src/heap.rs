@@ -278,11 +278,13 @@ impl GlobalHeap {
         }
 
         if count == 0 {
-            let raw = map_heap_pages(1);
+            let (raw, fresh) = map_heap_pages(1);
             if !raw.is_null() {
                 let page = raw.cast::<PageHeader>();
                 (*page).init(class);
-                MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                if fresh {
+                    MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                }
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 SMALL_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[class].lock();
@@ -562,21 +564,26 @@ unsafe fn mact_fate(base: *mut u8, fate: SpanFate) {
 /// (1 VMA op, 64 KiB-aligned by construction), legacy over-map-trim
 /// fallback when the arena is unavailable. Fresh zeros either way, so the
 /// caller keeps `FLAG_VIRGIN` set exactly as for legacy maps (carving
-/// dirties only freelist-link words — the virgin invariant). Accounting
-/// stays at the caller, once per non-null return, mirroring
-/// `map_large_region`.
+/// dirties only freelist-link words — the virgin invariant).
+///
+/// Returns `(base, fresh)`: `fresh` is true for genuinely new virtual
+/// (arena bump or legacy map) and false for recommitted arena holes. The
+/// caller counts one mapping op (`MAP_CALLS` + class split) per non-null
+/// return but live virtual (`MAPPED_PAGES`) only when `fresh` is set,
+/// mirroring `map_large_region`.
 #[inline]
-unsafe fn map_heap_pages(pages: usize) -> *mut u8 {
+unsafe fn map_heap_pages(pages: usize) -> (*mut u8, bool) {
     #[cfg(all(unix, feature = "std"))]
     {
         debug_assert_eq!(PAGE_SIZE, crate::arena::ARENA_ALIGN);
-        let base = crate::arena::commit(pages);
+        let (base, fresh) = crate::arena::commit(pages);
         if !base.is_null() {
             debug_assert_eq!(base as usize & (PAGE_SIZE - 1), 0);
-            return base;
+            return (base, fresh);
         }
     }
-    sys::map(pages * PAGE_SIZE)
+    let base = sys::map(pages * PAGE_SIZE);
+    (base, !base.is_null())
 }
 
 impl MediumHeap {
