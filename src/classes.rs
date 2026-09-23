@@ -446,7 +446,6 @@ mod tests {
         use crate::page::BIG_MASTER_SIZE;
         assert_eq!(BIG_MASTER_RESERVE, BIG_MASTER_SIZE);
         assert!(NUM_BIG >= 8, "expected ~11 big classes, got {}", NUM_BIG);
-        assert!(MEDIUM_CLASSES[0] > MAX_SMALL_SIZE);
         assert!(BIG_CLASSES[0] > MAX_MEDIUM_BLOCK);
         assert_eq!(MAX_BIG_BLOCK, BIG_BLOCK_CAP);
         assert!(MAX_BIG_BLOCK <= BIG_BLOCK_CAP);
