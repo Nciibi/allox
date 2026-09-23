@@ -107,18 +107,16 @@ extern "C" {
 /// discarded slices read back as zeros, so any metadata stored inside them
 /// would not survive. Offsets (not absolute bases) keep the entries
 /// position-independent garbage on reset paths.
-struct HoleStore {
+struct HoleShard {
     len: usize,
-    bytes: usize,
-    entries: [(usize, usize); HOLE_SLOTS],
+    entries: [(usize, usize); HOLE_SLOTS_PER_SHARD],
 }
 
-impl HoleStore {
+impl HoleShard {
     const fn new() -> Self {
-        HoleStore {
+        HoleShard {
             len: 0,
-            bytes: 0,
-            entries: [(0, 0); HOLE_SLOTS],
+            entries: [(0, 0); HOLE_SLOTS_PER_SHARD],
         }
     }
 }
@@ -129,7 +127,11 @@ pub(crate) struct Arena {
     end: AtomicUsize,
     bump: AtomicUsize, // byte offset of the next fresh slice
     init_guard: AtomicU8, // spin-serializes first reservation (0 free, 1 held)
-    holes: Mutex<HoleStore>,
+    holes: [Mutex<HoleShard>; HOLE_SHARDS],
+    /// Parked-hole bytes across all shards (the byte cap is global so total
+    /// dark virtual stays bounded regardless of size skew; claimed with a
+    /// lock-free CAS before taking a shard lock, refunded on slot overflow).
+    hole_bytes: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
@@ -149,7 +151,8 @@ impl Arena {
             end: AtomicUsize::new(0),
             bump: AtomicUsize::new(0),
             init_guard: AtomicU8::new(0),
-            holes: Mutex::new(HoleStore::new()),
+            holes: [const { Mutex::new(HoleShard::new()) }; HOLE_SHARDS],
+            hole_bytes: AtomicUsize::new(0),
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
