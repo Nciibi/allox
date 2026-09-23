@@ -744,6 +744,8 @@ fn main() {
     impl<T: GlobalAlloc + Sync> SyncGlobalAlloc for T {}
 
     // Dynamic list: jemalloc column appears only under `bench-jemalloc`.
+    // `mut` is only consumed when that feature pushes the extra entry.
+    #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
     let mut allocators: Vec<Named> = vec![
         Named("allox", &GLOBAL),
         Named("talc ", &TALC),
