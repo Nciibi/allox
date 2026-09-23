@@ -114,8 +114,10 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
 
 ## P3 — Polish
 
-* Fix doc drift: budget 32 MiB (`src/cache.rs:24`) vs 64 MiB in `DESIGN.md`,
-  MSRV 1.70 vs 1.79 in `Cargo.toml:5`.
+* Fix doc drift: budget 32 MiB (`src/cache.rs:32`) vs 64 MiB in `DESIGN.md`,
+  MSRV 1.70 vs 1.79 in `Cargo.toml:5`. **DONE 2026-09-23** — DESIGN.md
+  reconciled (MSRV, budget, wasm status, medium/big tiers, module layout),
+  CHANGELOG remote-free drift-cap claim corrected.
 * Extend `stats()`/`telemetry` with RSS, per-class live, large/medium
   counters.
 * Complete C ABI: `malloc_usable_size`, `mallinfo`-equivalent, C11

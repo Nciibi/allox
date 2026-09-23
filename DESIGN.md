@@ -137,34 +137,44 @@ magic, then span containment; corrupt pointers abort. Debug builds also walk
 the page freelist to catch double frees.
 
 ### 4.2 Size classes
-Generated at compile time: start 16 B, grow ~12.5% rounded up to 16 B, cap
-16384 B (~58 classes). Internal fragmentation <= 12.5%, same bound as
-mimalloc/tcmalloc. Minimum block = 16 B = max useful fundamental alignment.
-A 1 KiB direct-mapped table (index `(size+15)/16`) turns class lookup into
-a shift and a load; measured necessary after the scan version showed up in
-mixed-size profiles.
+
+Three tables, all generated at compile time with the same ~12.5% geometric
+step (internal fragmentation <= 12.5%, same bound as mimalloc/tcmalloc;
+minimum block = 16 B = max useful fundamental alignment):
+
+- **Small:** 16 B .. 16384 B (~58 classes). A 1 KiB direct-mapped table
+  (index `(size+15)/16`) turns class lookup into a shift and a load;
+  measured necessary after the scan version showed up in mixed-size
+  profiles.
+- **Medium:** (16384, 65472] — steps sized so a block still fits beside
+  the span master header inside a 64 KiB chunk (`TOP_MEDIUM_BLOCK`).
+- **Big:** (65472, 262144] — same geometric chain, `BIG_REFILL_BATCH = 4`
+  (top class and batch sizes are bench-tunable; see
+  `DESIGN_SPANS_BIG.md` open questions).
 
 ### 4.3 Allocation paths
 
 ```
 alloc(size, align):
-  size==0             -> dangling(align)
-  align>16 or >16 KiB -> large_alloc: map region, write LargeHeader
-  else:
-    p = cache.bin[class].pop()            -- FAST PATH
-    if p == null:
-      page = heap.acquire_page(class)     -- lock, or fresh map
-      move up-to-32 blocks page->bin      -- batching amortizes the lock
-      p = bin.pop()
-    calloc: explicit zeroing (recycled pages are not zeroed)
+  size==0                  -> dangling(align)
+  size <= 16 KiB, align<=16 -> small: cache.bin[class].pop()  -- FAST PATH
+                               on miss: heap.acquire_page + batch refill
+  size <= 65472             -> medium: cache medium bin, MediumHeap spans
+  size <= 262144, arena     -> big: cache big bin, BigHeap spans (+ side table)
+  else (large, over-align,
+        or no arena)        -> large: thread stash / sharded region cache
+                               / arena commit, write LargeHeader
+  calloc: explicit zeroing (virgin OS-zero fast path skips memset)
 
 dealloc(p):
-  base = p & !(PAGE_SIZE-1); hdr = *base
-  PAGE_MAGIC: validate(debug) ; cache.bin[hdr.class].push(p)
-              if bin.len > LIMIT: flush grouped by page under heap lock
-  LARGE_MAGIC: sys.unmap(base, hdr.mapped_size)
-  else: abort (corrupt pointer)
+  large-header offset probe -> LARGE: unmap_or_return (stash/cache/hole)
+  page-mask magic           -> small: cache.bin[class].push(p); trim on budget
+  span containment          -> medium/big: cache push; grouped flush
+  else                      -> abort (corrupt pointer)
 ```
+
+(refill batches: small 64, medium 16, big 4 blocks per lock acquisition;
+flush chunks: 2048 / 256 / 64 respectively — bounds lock hold time.)
 
 Ownership rule (v1): a freed block goes to the *freeing* thread's cache
 regardless of which thread allocated it. Blocks carry no affinity; correctness
