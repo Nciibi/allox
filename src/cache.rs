@@ -504,6 +504,94 @@ impl ThreadCache {
         }
     }
 
+    /// Big fast-path allocation. Returns null when the arena is unavailable
+    /// (callers fall back to the large path) or on OS exhaustion.
+    #[cfg(all(unix, feature = "std"))]
+    pub(crate) unsafe fn alloc_big(&mut self, bclass: usize) -> *mut u8 {
+        let bin = &mut self.bigbins[bclass];
+        if let Some(p) = pop_block(&mut bin.head) {
+            let below = bin.len - 1;
+            bin.len = below;
+            self.cached_bytes -= BIG_CLASSES[bclass];
+            if below < self.bvirgin[bclass] {
+                self.bvirgin[bclass] -= 1;
+            }
+            #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+            self.note_alloc_big(bclass);
+            return p;
+        }
+        let (p, _) = self.bigrefill(bclass);
+        #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+        if !p.is_null() {
+            self.note_alloc_big(bclass);
+        }
+        p
+    }
+
+    /// Big allocation reporting OS-zero status for `alloc_zeroed`.
+    #[cfg(all(unix, feature = "std"))]
+    pub(crate) unsafe fn alloc_big_zeroed(&mut self, bclass: usize) -> (*mut u8, bool) {
+        let bin = &mut self.bigbins[bclass];
+        if let Some(p) = pop_block(&mut bin.head) {
+            let below = bin.len - 1;
+            bin.len = below;
+            self.cached_bytes -= BIG_CLASSES[bclass];
+            let zeroed = below < self.bvirgin[bclass];
+            if zeroed {
+                self.bvirgin[bclass] -= 1;
+            }
+            #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+            self.note_alloc_big(bclass);
+            return (p, zeroed);
+        }
+        let r = self.bigrefill(bclass);
+        #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+        if !r.0.is_null() {
+            self.note_alloc_big(bclass);
+        }
+        r
+    }
+
+    /// Big slow path: pull one span's worth of blocks from the heap.
+    /// Null means arena-unavailable or exhausted (caller routes large).
+    #[cfg(all(unix, feature = "std"))]
+    #[inline]
+    unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
+        self.arm_exit_hook();
+        if self.cached_bytes > thread_cache_budget() / 2 {
+            self.trim();
+        }
+        let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
+        if chain.is_null() {
+            return (ptr::null_mut(), false);
+        }
+        let first = chain;
+        let rest = *first.cast::<*mut u8>();
+        let bin = &mut self.bigbins[bclass];
+        bin.head = rest;
+        bin.len += count - 1;
+        self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+        self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
+        (first, virgin)
+    }
+
+    #[cfg(all(unix, feature = "std"))]
+    pub(crate) unsafe fn dealloc_big(&mut self, p: *mut u8, span: *mut BigMaster) {
+        #[cfg(debug_assertions)]
+        debug_validate_free_big(p, span);
+
+        let bclass = (*span).bclass as usize;
+        let bin = &mut self.bigbins[bclass];
+        push_block(&mut bin.head, p);
+        bin.len += 1;
+        self.cached_bytes += BIG_CLASSES[bclass];
+        #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+        self.note_free_big(bclass);
+        if self.cached_bytes > thread_cache_budget() {
+            self.trim();
+        }
+    }
+
     /// Take a stashed large region with at least `pages_needed` pages.
     /// Exact-size matches win over merely-fitting ones (see
     /// `LargeRegionCache::take_fit` for why); best-fit otherwise. Lock-free:
