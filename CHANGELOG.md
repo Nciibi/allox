@@ -2,12 +2,22 @@
 
 ## 0.1.0 (unpublished)
 
-Initial release.
+Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 
-- Thread-cached page allocator: 64 KiB pages, ~12.5% size classes (16 B to 16 KiB), direct-mapped class lookup.
-- Lock-free per-thread fast paths; sharded per-class heap mutexes; batched slow paths.
-- Delayed page reclamation and virgin-page zero-init fast path for calloc.
-- Large/over-aligned allocations via directly mapped tagged regions; invalid frees abort; debug double-free detection.
+- Small allocations (16 B–16 KiB, ~12.5% classes): lock-free per-thread
+  caches with batched refill, sharded per-class heap, empty + cold
+  (discarded-physical) page retention, virgin-page zero-init fast path.
+- Medium allocations (up to 65472 B): multi-page spans with sharded
+  span heap, exact-fit selection, cold-span retention.
+- Large/over-aligned: sharded exact-fit-first region caches with cold
+  tier, per-thread stash, virtual-memory arena backing (unix) with hole
+  reuse and graceful legacy fallback.
+- Thread-exit flush (pthread key / FlsAlloc) with remote-free drift caps;
+  contention-parking mutexes (SRWLock on Windows, pthread on unix).
+- C ABI (`malloc`/`calloc`/`realloc`/`free`/`aligned_alloc`, zero sizes
+  return null), `GlobalAlloc` impl with layout-routed free, `usable_size`,
+  debug double-free/corrupt-pointer validation.
+- Opt-in telemetry feature with per-class histograms (~4% worst-case
+  overhead, zero when disabled). NOTE: the telemetry array dimension
+  already covers small + medium classes and may still grow pre-1.0.
 - Backends: Windows (VirtualAlloc), POSIX (mmap), wasm32 (memory.grow).
-- Opt-in telemetry feature with per-class histograms (~4% worst-case overhead, zero when disabled).
-- Pure Rust, zero dependencies, no build script. MSRV 1.79.
