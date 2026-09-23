@@ -513,6 +513,8 @@ mod tests {
     /// master, clear drops all of them, and foreign pointers miss.
     /// Fresh bump slices give disjoint offsets, so parallel tests can't
     /// alias entries.
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn big_table_set_get_clear() {
         unsafe {
@@ -550,6 +552,8 @@ mod tests {
         }
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn commits_are_64k_aligned_and_zeroed() {
         let a = Arena::with_size(64 * MB);
@@ -572,6 +576,8 @@ mod tests {
         }
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn exhaustion_falls_back_to_null() {
         // 256 KiB arena = 4 pages: exact-supply then graceful nulls.
@@ -599,6 +605,8 @@ mod tests {
         assert!(unsafe { a.commit(4).0 }.is_null());
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn hole_reuse_avoids_new_commits() {
         let a = Arena::with_size(64 * MB);
@@ -621,6 +629,8 @@ mod tests {
         assert_eq!(r1, 8, "all served from holes, none from bump");
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn commit_reports_fresh_only_for_new_virtual() {
         // Live-virtual accounting depends on this: bump commits are new
@@ -636,6 +646,8 @@ mod tests {
         unsafe { a.release(b2, 2) };
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn split_remainder_stays_usable() {
         let a = Arena::with_size(64 * MB);
@@ -654,6 +666,8 @@ mod tests {
         }
     }
 
+    // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn commits_never_clobber_neighbors() {
         // Guard mapping via the legacy path, then churn the arena around it.
