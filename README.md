@@ -188,8 +188,9 @@ node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_sm
 v0.1 — working and tested (unit, integration as `#[global_allocator]`,
 multi-threaded randomized stress with full integrity verification, C ABI).
 Fastest pure-Rust allocator on the benchmarked hosted workloads as of the
-table above. Not yet audited; API may still change before 0.2.
-Linux/macOS results pending CI runs on those platforms.
+tables above. Not yet audited; API may still change before 0.2.
+Windows table predates the span/arena/exit-flush work (re-verify via CI
+bench artifacts); macOS results pending CI runs on that platform.
 
 ## Development
 
