@@ -780,38 +780,46 @@ unsafe impl GlobalAlloc for Allox {
 // Free-function API
 // ---------------------------------------------------------------------------
 
-/// Allocate `size` bytes with alignment 16. Returns null on failure or when
-/// `size` exceeds [`isize::MAX`].
+/// Allocate `size` bytes with alignment 16. Returns null on failure, when
+/// `size` exceeds [`isize::MAX`], or when `size` is zero (C allows either
+/// null or a unique freeable pointer for zero size; null keeps `free` /
+/// `realloc` / `usable_size` on their null contracts instead of probing
+/// headers of a dangling pointer).
 ///
 /// # Safety
 /// Returned pointer must be freed with [`free`]/[`realloc`], never used after.
 pub unsafe fn malloc(size: usize) -> *mut u8 {
-    if size > isize::MAX as usize {
+    if size == 0 || size > isize::MAX as usize {
         return ptr::null_mut();
     }
     alloc_impl(size, 1)
 }
 
-/// Allocate `nmemb * size` zero-initialized bytes. Returns null on overflow
-/// or exhaustion.
+/// Allocate `nmemb * size` zero-initialized bytes. Returns null on overflow,
+/// exhaustion, or zero total (same zero-size rule as [`malloc`]).
 ///
 /// # Safety
 /// Same ownership rules as [`malloc`].
 pub unsafe fn calloc(nmemb: usize, size: usize) -> *mut u8 {
     let total = match nmemb.checked_mul(size) {
-        Some(t) if t <= isize::MAX as usize => t,
+        Some(t) if t > 0 && t <= isize::MAX as usize => t,
         _ => return ptr::null_mut(),
     };
     alloc_zeroed_impl(total, 1)
 }
 
 /// Resize an allocation from [`malloc`]/[`calloc`]/[`realloc`].
-/// Returns null (leaving the original intact) on failure.
+/// Returns null (leaving the original intact) on failure. Resizing to zero
+/// frees the original and returns null (C semantics).
 ///
 /// # Safety
 /// `p` must be null or a live allocation of this allocator.
 pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     if size > isize::MAX as usize {
+        return ptr::null_mut();
+    }
+    if size == 0 {
+        free(p);
         return ptr::null_mut();
     }
     if p.is_null() {
@@ -873,11 +881,13 @@ pub unsafe fn free(p: *mut u8) {
 }
 
 /// Allocate `size` bytes with at least `align` alignment (power of two).
+/// Returns null on invalid alignment, overflow, or zero size (same
+/// zero-size rule as [`malloc`]).
 ///
 /// # Safety
 /// Same ownership rules as [`malloc`].
 pub unsafe fn aligned_alloc(align: usize, size: usize) -> *mut u8 {
-    if align == 0 || !align.is_power_of_two() || size > isize::MAX as usize {
+    if align == 0 || !align.is_power_of_two() || size == 0 || size > isize::MAX as usize {
         return ptr::null_mut();
     }
     alloc_impl(size, align)
