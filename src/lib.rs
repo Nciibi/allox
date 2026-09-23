@@ -731,7 +731,13 @@ unsafe impl GlobalAlloc for Allox {
             self.dealloc(p, layout);
             return layout.align().max(1) as *mut u8;
         }
+        // Same-class identity fires only for real (nonzero) allocations: a
+        // zero-size layout's pointer is dangling by Rust convention, and
+        // handing it back for a nonzero size would alias address ~align as
+        // live memory. Zero sizes fall through to fresh alloc below (the
+        // copy is skipped and the dealloc is a no-op for them).
         if !p.is_null()
+            && layout.size() != 0
             && layout.align() <= MIN_ALIGN
             && layout.size() <= MAX_SMALL_SIZE
             && new_size <= MAX_SMALL_SIZE
@@ -758,7 +764,9 @@ unsafe impl GlobalAlloc for Allox {
             return ptr::null_mut();
         }
         let copy = layout.size().min(new_size);
-        ptr::copy_nonoverlapping(p, new_p, copy);
+        if copy > 0 {
+            ptr::copy_nonoverlapping(p, new_p, copy);
+        }
         self.dealloc(p, layout);
         new_p
     }
