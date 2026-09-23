@@ -237,7 +237,15 @@ impl Arena {
         let mut best: Option<usize> = None;
         for i in 0..holes.len {
             let (_, p) = holes.entries[i];
-            if p >= pages && best.map_or(true, |b| p < holes.entries[b].1) {
+            if p == pages {
+                // Exact hit is always the best fit — take it at once instead
+                // of scanning the rest. Behavior-preserving (an exact match
+                // beats every inexact one), but keeps deep stores cheap on
+                // the common same-size-reuse path.
+                best = Some(i);
+                break;
+            }
+            if p > pages && best.map_or(true, |b| p < holes.entries[b].1) {
                 best = Some(i);
             }
         }
