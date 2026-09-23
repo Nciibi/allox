@@ -104,10 +104,7 @@ struct Workload {
     kind: Kind,
 }
 
-// TEMPORARY S8 SCALING EXPERIMENT (revert after): workloads from a fn so
-// the large-only 8T thread count can come from S8_THREADS env.
-fn workloads() -> Vec<Workload> {
-    vec![
+const WORKLOADS: &[Workload] = &[
     Workload {
         name: "tight-small 1T",
         threads: 1,
@@ -160,12 +157,7 @@ fn workloads() -> Vec<Workload> {
     },
     Workload {
         name: "large-only 8T",
-        // TEMPORARY S8 SCALING EXPERIMENT (revert after): thread count from
-        // env S8_THREADS (default 8) to map the contention curve.
-        threads: std::env::var("S8_THREADS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(8),
+        threads: 8,
         size_range: (32768, 262144),
         free_pct: 50,
         kind: Kind::Standard,
@@ -191,8 +183,9 @@ fn workloads() -> Vec<Workload> {
         free_pct: 50,
         kind: Kind::SpawnEmpty,
     },
-    ]
-}
+];
+
+fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
 
 fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     match wl.kind {
@@ -517,7 +510,7 @@ fn main() {
     println!("{}", "-".repeat(155));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
-    for wl in workloads().iter() {
+    for wl in WORKLOADS {
         if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
         }
