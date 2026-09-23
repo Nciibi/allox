@@ -75,8 +75,13 @@ fn zz_minimize() {
         "small" => "small",
         "medium" => "medium",
         "large" => "large",
-        _ => panic!("MODE=small|medium|large"),
+        "single" => "single",
+        _ => panic!("MODE=small|medium|large|single"),
     };
+    if mode == "single" {
+        churn(mode);
+        return;
+    }
     allox::flush_current_thread();
     for _ in 0..5 {
         let handles: Vec<_> = (0..4)
