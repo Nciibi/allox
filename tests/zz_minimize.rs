@@ -19,6 +19,10 @@ fn churn(mode: &str) {
             for p in v {
                 unsafe { allox::free(p) };
             }
+            // FLUSH=1: flush explicitly before thread exit (hook becomes no-op).
+            if std::env::var("FLUSH").as_deref() == Ok("1") {
+                allox::flush_current_thread();
+            }
         }
         "medium" => {
             let mut v = Vec::with_capacity(200);
