@@ -179,10 +179,21 @@ suspicion. No blind experiments (the count-cap regression taught this).
   64 blocks). Counter is trim-heuristic-only (no heap corruption from
   it), but the accounting should be fixed (saturating ops and/or no
   lying reset) with a regression test.
-* **Realloc zero-size dangling bug (flagged, pre-existing):**
-  `GlobalAlloc::realloc` same-class identity with `layout.size() == 0`
-  can return the dangling pointer for nonzero `new_size`. Fix + targeted
-  test (`realloc(dangling_0_layout, 8)` must not return the dangling).
+* **Realloc zero-size dangling bug (FIXED 2026-09-23):**
+  `GlobalAlloc::realloc` same-class identity fired on `layout.size() == 0`
+  and returned the dangling pointer for nonzero `new_size`; worse, the
+  whole zero-size family was untested and broken — `free(malloc(0))`,
+  `realloc(malloc(0), 8)`, and `usable_size(malloc(0))` all probed
+  headers of address ~1 (debug panic, release segfault). Fix:
+  identity paths require nonzero size + skip 0-byte copies (Rust
+  `alloc` keeps its documented dangling convention); C-flavored
+  `malloc`/`calloc`/`aligned_alloc` return null for zero size
+  (conforming), so `free`/`realloc`/`usable_size` stay on their null
+  contracts by construction; free-fn `realloc(p, 0)` frees + returns
+  null. Tests: `zero_size_family_is_sound`,
+  `global_realloc_zero_layout_grows_fresh` (both failed pre-fix).
+  Miri/fuzz coverage of the new paths rides the existing CI jobs
+  (no nightly on the dev box).
 * **Miri + fuzz on new code:** span carving/lookup, exit-hook paths,
   arena commit/release/hole logic, `large_header_of` validation.
   Miri needs nightly + mocked syscalls for map/unmap (existing pattern);
