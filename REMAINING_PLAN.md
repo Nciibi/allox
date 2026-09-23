@@ -157,6 +157,15 @@ Options in order:
    Do NOT pursue: bigger global slots (8192+ — unbounded tuning, scan
    cost grows, §4 bullet 3), looser byte caps (E4 proved it worsens
    abandonment 59k → 74k by removing the throttle).
+* **mremap-based large growth (found 2026-09-23 via ecs workload, NOT
+  trialed).** ecs 8T: allox 6.4M vs system 111M (0.06x) while beating
+  every other allocator 3–25x; probes show healthy caching (a47, 0
+  unmaps), so the gap is pure O(n) copy cost on realloc doubling vs
+  glibc's zero-copy mremap growth. Lever: grow large regions in place
+  (mremap MAYMOVE / arena-adjacent commit) with alloc-copy-free
+  fallback. Needs its own design (arena interplay, header updates,
+  failure fallback) + measurement before code — queued behind the
+  regime work, not instead of it.
    TRIALED 2026-09-23, REVERTED (no effect): 16 size-shards × 1024
    slots + global CAS-claimed byte cap (exact-size home shard, first-fit
    fallback across shards, never nested locks). Result on large-only 8T
@@ -282,7 +291,19 @@ suspicion. No blind experiments (the count-cap regression taught this).
   homepage URLs (was the only manifest warning).
 * External audit scoping for the unsafe core (page/heap/cache/lib
   unsafe blocks + new arena/exit code). Not a launch blocker for 0.2
-  (README already says unaudited), but schedule it.
+  (README already says unaudited), but schedule it. Scope when
+  scheduling (2026-09-23 note): `page.rs` (header carving, masking
+  dispatch, span sub-headers), `heap.rs` (take/release chains, used
+  counting, cold re-carve), `cache.rs` (bin accounting incl. the fixed
+  trim-lie, flush grouping, virgin tracking), `lib.rs` (large headers,
+  realloc copies, layout routing, zero-size contracts),
+  `arena.rs` (MAP_FIXED commits with ret==base check, hole store
+  exclusivity, discard-then-park ordering), `thread_exit.rs`
+  (pthread/Fls hook reentrancy, blocking flush), `sys/*` (raw syscall
+  wrappers, pthread-mutex init/storage), `ffi.rs` (C ABI null and
+  alignment contracts). Focus invariants: virgin (fresh-zero) claims,
+  discard-then-park ordering, exit-hook safety, counter semantics
+  (MAPPED_PAGES fresh-only, cached_bytes exact).
 
 ## Explicitly out of scope
 
