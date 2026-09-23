@@ -70,23 +70,40 @@ latency (no trim-munmap pairs) and VMA-count stability.
 Accept: `tight-small`/`mixed-small` flat or better, `spawn-churn` unmaps
 stay ~0, suite green.
 
-## 3. Arena follow-ups (only if measured demand appears)
+## 3. Arena follow-ups (measured 2026-09-23 — no coalescing; slots resized)
 
-* **Hole coalescing.** Current holes never merge: sustained size variance
-  fragments the store into unusable slivers while `abandoned` climbs.
-  Trigger: `ARENA abandoned` counter growing >1k/s in any steady bench.
-  Design: address-ordered free structure or boundary tags; keep exact
-  stacks as the fast path, coalesce on pop-miss only.
-* **`set_arena_enabled(bool)`.** Deferred per decision (kill-switch only
-  if field issues demand it). Hook point is designed in: one
-  `AtomicBool` checked on the commit path, default on. Do not add env-var
-  probing (allocation-free constraint makes env awkward).
-* **Reservation sizing validation.** Log arena high-water (bump max) in
-  benches; confirm 16 GiB headroom is ≥4x worst measured (else grow the
-  const). 32-bit 512 MiB path gets its coverage from forced-fallback
-  tests, not from winning benches.
-* **32-bit CI.** Build + unit tests on `i686-unknown-linux-gnu`; arena
-  tests must pass with the 512 MiB const (exhaustion test already covers
+New observability: `__debug_arena_detail()` → `(abandoned, bump_bytes)`,
+bench `arena` column (`abnd+rate/s totN hiMiB`).
+
+* **Hole coalescing: NOT triggered, no work done.** Steady-state
+  abandoned rate is 0/s on all 11 workloads with stock caps, so the
+  literal trigger never fires. Caveat found while measuring: the
+  trigger is blind to transient burn — large-only variance abandons
+  ~22k during warmup, exhausts the reservation, then reads 0/s forever
+  (fallback takes over). The 8T case is slot-pressure burst overflow,
+  not fragment slivers (best-fit + no-split strands little under these
+  mixes), so coalescing is the wrong tool for it anyway.
+* **Hole slots 1024 → 4096 (the actual §3 change).** large-only 1T:
+  1024 → 22665 abandoned + 16 GiB exhaustion; 2048 → 21200 + exhaustion;
+  4096 → 0 abandoned, hi ~3.1 GiB, unmaps 50k/s → 0/s. 4096 × 16 B =
+  64 KiB static. Exact-size early-exit in `holes_take`
+  (behavior-preserving: exact always wins best-fit) recovered the scan
+  cost: large-only 1T 185k → 235k (1.10x talc), reuses 61k → 74.5k/s.
+* **Byte cap stays 4 GiB.** Experiment E4 (16 GiB cap) reverted: it
+  removed the throttle and worsened abandonment (59k → 74k, 4.3k/s
+  even steady) — confirming slot-pressure, not byte-bound.
+* **Reservation sizing: PASS except large-only 8T.** 16 GiB vs worst
+  non-8T high-water (large-only 1T hi4301MiB → 3.7x; mixed ≤1495MiB →
+  10x+). large-only 8T still exhausts + abandons ~59k transient
+  (0/s steady, graceful legacy fallback, still beats system/talc
+  1.6–3.6x). Accepted as documented degradation — that gap is §4
+  hit-rate work, not mapping cost; no blind cap-raising per §4's rule.
+* **`set_arena_enabled(bool)`.** Still deferred per decision (no field
+  demand). Hook point unchanged: one `AtomicBool` on the commit path.
+* **32-bit CI.** Added `bit32` job to `ci.yml` (build + test on
+  `i686-unknown-linux-gnu`; runs in CI — this box has no i686 std and
+  no rustup). 512 MiB const keeps its coverage from the `with_size`
+  fallback unit tests.
   the fallback shape).
 
 ## 4. large-only hit rate (structural; arena only made misses cheaper)
