@@ -370,20 +370,20 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
  // ---------------------------------------------------------------------------
 
 /// Blocks moved from spans into a thread cache per slow-path take.
-/// 64 (was 16): mixed-all PMU showed medium refill/flush ~48% of samples
-/// and ~847 SPAN_MAP_CALLS/s vs mimalloc's 0 — the global medium heap is
-/// starved by thread-cache retention + cross-thread steal, so each
-/// take_blocks that does hit the shared list should pull a full small-style
-/// batch (fewer lock trips, fewer "empty → map" episodes).
-pub(crate) const MEDIUM_REFILL_BATCH: u32 = 64;
+/// 16 (64 measured & rejected 2026-09-23: mixed-all 13.6M → 10.6M —
+/// huge medium batches hoard cache budget and thrash trim/flush).
+pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
 
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
 /// are large (up to ~16 pages); the cap is byte-scaled in release_blocks
 /// (see MAX_EMPTY_SPAN_BYTES) so small-medium classes keep several spans
 /// while 60 KiB-class spans don't blow RSS.
-const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 8;
+/// 32 (was 8): mixed-all probe showed ~1000 SPAN_MAP_CALLS/s vs mimalloc's
+/// 0 — the count cap bound long before the 2 MiB byte cap, so nearly-empty
+/// spans were discarded instead of reused on the next take_blocks.
+const EMPTY_SPAN_CACHE_PER_CLASS: u32 = 32;
 /// Cap on retained empty-span bytes per medium class.
-const MAX_EMPTY_SPAN_BYTES_PER_CLASS: usize = 2 * 1024 * 1024;
+const MAX_EMPTY_SPAN_BYTES_PER_CLASS: usize = 8 * 1024 * 1024;
 /// Cap on cold (discarded-physical, retained-virtual) span bytes per class.
 /// Sized to swallow harness drain bursts (~96 MiB live freed at once across
 /// ~13 classes) so steady-state churn re-carves instead of mmap/munmap.
