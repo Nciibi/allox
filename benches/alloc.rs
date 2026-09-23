@@ -92,6 +92,20 @@ enum Kind {
     /// the exit hook) — identical for every comparator, calibrates how
     /// much of spawn-churn is spawn vs allocator work.
     SpawnEmpty,
+    /// JSON-ish: per-document burst of many tiny short-lived buffers
+    /// (strings/numbers) plus a few growing Vec-like buffers (realloc
+    /// doubling), everything freed at document end. Models serde-style
+    /// parse churn: alloc-heavy, arena-lifetime frees, realloc growth.
+    Json,
+    /// Request-handler: per-request batch of tiny allocs (headers/strings)
+    /// plus a couple of body buffers, ALL freed together at request end
+    /// (pool lifetime). Models server request handling: bulk-free
+    /// efficiency, short lifetimes, multithreaded.
+    Request,
+    /// ECS-archetype: a few large component buffers repeatedly
+    /// realloc-grown (doubling) plus steady small component churn. Models
+    /// game-engine storage: realloc growth path + mixed lifetimes.
+    Ecs,
 }
 
 struct Workload {
