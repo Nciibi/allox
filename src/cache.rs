@@ -1101,7 +1101,8 @@ impl ThreadCache {
             }
         }
         self.cached_bytes = 0;
-        self.tid = 0;
+        // Keep `tid` stable across flushes: it identifies this OS thread for
+        // the drift-cap owner heuristic, not a cache generation.
         self.virgin = [0; NUM_CLASSES];
         self.mvirgin = [0; NUM_MEDIUM];
         #[cfg(all(unix, feature = "std"))]
