@@ -224,11 +224,15 @@ const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB tota
 const LARGE_COLD_CAP_BYTES: usize = 64 * 1024 * 1024; // 8 x 64 MiB virtual
 #[cfg(not(target_pointer_width = "64"))]
 const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
+/// Cold (discarded, virtually retained) slots per shard. Deep (512) because
+/// cold is virtual-only after discard — RSS stays bounded by live demand,
+/// not the cap — while 64 slots x ~150 KiB capped retention far below the
+/// 64 MiB/shard byte cap, starving exact reuse and flooding the arena holes
+/// under large-only variance (measured §4: 64 -> ~74k abandonments/run;
+/// 512 -> unmaps 30-50k/s collapse toward 0, +28% median, variance
+/// collapse). 8 shards x 512 x 16 B = 64 KiB static. Hot stays shallow
+/// (hot retention is mapped RSS, not virtual).
 const LARGE_COLD_SLOTS: usize = 512;
-// TEMPORARY EXPERIMENT S10 (revert after measurement): deep cold alone
-// (hot untouched at 64) to test whether cold-slot pressure feeds the hole
-// flood on large-only 8T. Cold is virtual-only (discarded), so depth is
-// nearly free: 8 shards x 512 x 16 B = 64 KiB static.
 
 struct LargeRegionCache {
     len: usize,
