@@ -2,7 +2,10 @@
 
 State at fork-off: 7–8/11 bench workloads win-or-tie vs the best comparator
 on Linux x86-64; full suite + telemetry + no_std + release green and
-warning-free. Contra remaining gaps below, each-capable of closing
+warning-free. App-shaped workloads added 2026-09-23 (json-ish, request,
+ecs — serde/server/game-engine patterns): 14 total, 8–9/14 win-or-tie
+(json 1.46x mimalloc, request 1.10x snmalloc, ecs beats everyone except
+system 0.06x via mremap — see §4 mremap note). Contra remaining gaps below, each-capable of closing
 independently, ordered by ROI. Methodology everywhere: ≥2 s × 3 reps,
 `__debug_map_split` + `peakRSS` probe columns, sensitivity-checked tests
 (disable-the-feature must fail), one point measured before the next starts.
@@ -76,7 +79,7 @@ New observability: `__debug_arena_detail()` → `(abandoned, bump_bytes)`,
 bench `arena` column (`abnd+rate/s totN hiMiB`).
 
 * **Hole coalescing: NOT triggered, no work done.** Steady-state
-  abandoned rate is 0/s on all 11 workloads with stock caps, so the
+  abandoned rate is 0/s on all 14 workloads with stock caps, so the
   literal trigger never fires. Caveat found while measuring: the
   trigger is blind to transient burn — large-only variance abandons
   ~22k during warmup, exhausts the reservation, then reads 0/s forever
@@ -252,7 +255,7 @@ suspicion. No blind experiments (the count-cap regression taught this).
   Windows CI running `thread_exit` + stress + benches before any release
   claims cover it.
 * **jemalloc comparator** needs `make`/autoconf (absent here) — CI-only,
-  then re-score all 11 workloads against it.
+  then re-score all 14 workloads against it.
 
 ## 8. Cross-platform + release 0.2 checklist
 
