@@ -335,10 +335,40 @@ vs baseline 13.57M (no gain; mimalloc 19.3–19.9M, ratio still ~0.7×);
 prodcons 30.2/33.2/29.9M vs baseline 32.7M (mean 31.1M, within run
 noise). Zeroing was real in the profile but not the wall-clock lever —
 same lesson as the owner-load PMU share. Kept for code health (no
-zeroing tax, tests green); not counted as a §6 win. Next: re-profile
-post-drift-cap+MaybeUninit to re-rank remaining hotspots
-(`alloc_impl` 16.6%, `mrefill` 12.7%, residual `dealloc_medium`), then
-one lever from the fresh annotate.
+zeroing tax, tests green); not counted as a §6 win.
+
+**Post-MaybeUninit re-profile (flat `-F 4999`, mixed-all 8T):**
+`dealloc_medium` 22.4%, `alloc_impl` 17.3%, `mrefill` 14.1%,
+`flush_mbin` 12.3% (was 16.0), harness 12.7%, `flush_bin` 2.6%.
+Annotate: medium free still ~73% owner/span probe when gate open;
+`mrefill` ~54% on span free-head splice; `flush_mbin` ~38% on bin-head
+store + ~7% span magic. **Smoking gun in bench output:** allox does
+~847–1001 `SPAN_MAP_CALLS/s` on mixed-all steady state vs mimalloc's
+**0** (prodcons also 0) — global medium heap starved while thread
+caches hoard, so `take_blocks` maps fresh spans.
+
+**Lever measured & REJECTED (2026-09-23): `MEDIUM_REFILL_BATCH`
+16→64.** Quiet-box: mixed-all 10.55/10.62/10.62M vs 13.57M baseline
+(**~0.55× mimalloc, −22%**); prodcons 33.4/31.1M (flat-ish). Huge
+medium batches overfill the thread-cache budget and thrash
+trim/flush — larger batch ≠ fewer maps when the cache immediately
+sheds. Reverted to 16.
+
+**Lever measured & KEPT (2026-09-23): empty-span retention
+8→32 spans/class + 2→8 MiB byte cap** (count cap was binding long
+before bytes, so empty spans were discarded instead of reused).
+Quiet-box sequential: **mixed-all 15.87/15.97/15.63M vs 13.57M
+baseline (~+16%, ~0.81× mimalloc 19.3–19.6M)**; span maps 687–808/s
+(was ~850–1000); prodcons 28.7/30.6M (slightly under the 32.7M
+baseline — re-check on quiet box before treating as regression; hi
+arena 235–248 MiB vs prior ~300–400, RSS still healthy, abnd 0).
+First clear §6 wall-clock win this session.
+
+Next from the same profile: (1) re-confirm prodcons with more reps,
+(2) residual free-path (`dealloc_medium` owner probe — sample every
+Nth free under gate, or count foreign only on `should_shed` path),
+(3) `mrefill` span free-head splice locality (owner-affinity refill
+so the span header stays hot).
 
 ## 7. Correctness backlog (must clear before 0.2)
 
