@@ -18,18 +18,28 @@ use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
 use crate::heap::{MEDIUM_HEAP, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
-#[cfg(all(unix, feature = "std"))]
 use crate::heap::BIG_HEAP;
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
 use core::ptr;
+use core::sync::atomic::{AtomicU32, Ordering};
+
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
-/// Total bytes one thread's cache may retain before trimming starts.
 /// Overridable at startup via `allox::set_thread_cache_budget` (atomic read;
 /// never from the environment, since environment access can allocate).
 const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
+
+/// High-water cap on foreign-page bytes one thread will retain (drift cap,
+/// ROADMAP P1 step 4). Past this, frees of blocks claimed by another thread
+/// return straight to the heap via `release_blocks` instead of growing the
+/// freeer's cache. Sized as a fraction of the thread-cache budget so it
+/// scales with `set_thread_cache_budget`.
+const FOREIGN_CAP_DIV: usize = 4;
+
+/// Monotonic thread ids for ownership heuristics (1-based; 0 = unassigned).
+static NEXT_TID: AtomicU32 = AtomicU32::new(1);
 
 #[cfg(feature = "std")]
 static CACHE_BUDGET: core::sync::atomic::AtomicUsize =
@@ -43,6 +53,12 @@ fn thread_cache_budget() -> usize {
     }
     #[cfg(not(feature = "std"))]
     DEFAULT_THREAD_CACHE_BUDGET
+}
+
+/// Cap on retained foreign-page bytes for this thread (see [`FOREIGN_CAP_DIV`]).
+#[inline]
+fn foreign_cap() -> usize {
+    thread_cache_budget() / FOREIGN_CAP_DIV
 }
 
 #[cfg(feature = "std")]
@@ -129,6 +145,13 @@ struct Bin {
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
+    /// High-water of foreign-page bytes this thread has retained in its bins
+    /// (drift cap; see [`foreign_cap`]). Monotonic until `flush_all` — a
+    /// conservative bound, not a live census (pops don't decrement).
+    foreign_bytes: usize,
+    /// This thread's ownership id (0 = not yet assigned). Used only for the
+    /// remote-free drift-cap heuristic; never for correctness.
+    tid: u32,
     /// Per class: number of guaranteed-OS-zero blocks currently at the
     /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
     /// iff the remaining length drops below this count.
@@ -194,6 +217,8 @@ impl ThreadCache {
                 len: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
+            foreign_bytes: 0,
+            tid: 0,
             virgin: [0; NUM_CLASSES],
             mbins: [Bin {
                 head: ptr::null_mut(),
