@@ -318,9 +318,10 @@ impl GlobalHeap {
         };
         match fate {
             PageFate::Keep => {}
-            PageFate::Cold => {
-                sys::discard(page.cast::<u8>(), PAGE_SIZE);
-            }
+            // Cold pages were already discarded under the class lock in
+            // `release_inner` (discarding here, after unlock, would race a
+            // concurrent cold reuse and zero live blocks). Nothing to do.
+            PageFate::Cold => {}
             PageFate::Unmap => {
                 // Arena-owned pages park in holes (no syscall, counters stay
                 // balanced); legacy mappings need the true unmap +
