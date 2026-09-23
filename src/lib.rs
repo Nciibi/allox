@@ -948,6 +948,25 @@ pub fn __debug_map_split() -> (u64, u64, u64, u64, u64, u64) {
     )
 }
 
+/// Arena internals for tuning (see REMAINING_PLAN §3). Returns
+/// `(abandoned, bump_high_water_bytes)`: cumulative hole-store overflow
+/// parks (virtual retained, never reused — the hole-coalescing trigger is
+/// its steady-state rate) and the monotonic reservation frontier (the
+/// reservation-sizing validation input).
+/// Hidden: not semver-covered, may change or vanish.
+#[doc(hidden)]
+pub fn __debug_arena_detail() -> (u64, u64) {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        let (_, _, abandoned) = crate::arena::stats();
+        (abandoned, crate::arena::high_water())
+    }
+    #[cfg(not(all(unix, feature = "std")))]
+    {
+        (0, 0)
+    }
+}
+
 /// Built-in allocation telemetry.
 ///
 /// Enable with the `telemetry` feature (zero cost when disabled). Counters
