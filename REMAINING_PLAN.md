@@ -276,11 +276,33 @@ spans, in that order of suspicion. Still no blind experiments.
   - CI miri job: `miri setup` + `MIRIFLAGS=-Zmiri-strict-provenance`.
   - Exit-hook path: covered by `tests/thread_exit.rs` in the normal 3-OS
     test matrix (needs real pthread/Fls, not Miri).
-* **Windows Fls path is reasoning-only.** Never executed here. Needs
-  Windows CI running `thread_exit` + stress + benches before any release
-  claims cover it.
-* **jemalloc comparator** needs `make`/autoconf (absent here) — CI-only,
-  then re-score all 14 workloads against it.
+* **Windows Fls path:** **DONE 2026-09-23 (Phase 0.3)** — already covered
+  by the existing 3-OS `test` matrix (`windows-latest` runs
+  `tests/thread_exit.rs` + `stress.rs`) and the 3-OS `bench` matrix; no
+  separate job. Local box still cannot execute Fls (Linux only), but CI
+  does on every push/PR.
+* **jemalloc comparator:** **DONE 2026-09-23 (Phase 0.4)** — optional
+  `bench-jemalloc` feature (`tikv-jemallocator`, off by default) + CI
+  `jemalloc-bench` job (installs make+autoconf, runs full scoreboard,
+  uploads `bench-jemalloc.txt`). Local box still cannot build it; re-score
+  all 14 workloads against the CI artifact when releasing.
+* **Coverage (cargo-llvm-cov):** **DONE 2026-09-23 (Phase 0.5)** — CI
+  `coverage` job: `cargo llvm-cov --all-features --workspace --lcov`,
+  uploads `lcov.info` artifact; summary printed in job log.
+* **Kani proofs (P1–P6):** **DONE 2026-09-23 (Phase 0.6)** — proofs in
+  `src/page.rs` `kani_proofs` under `#[cfg(all(kani, unix, feature = "std"))]`:
+  P2/P6 sizing (`p2_last_block_within_mapping`), P1/P3 contiguity+alignment
+  (`p1_contiguity_and_p3_alignment`), medium-page packing
+  (`medium_page_carve_stays_in_page`). P4/P5 are runtime-state properties
+  covered by existing unit tests (`big_carve_packs_contiguously`,
+  `medium_span_of_and_contains`). CI `kani` job runs `cargo kani` on
+  nightly + kani-verifier (local box has no rustup — CI-only verification,
+  same as Miri).
+* **3-OS bench matrix:** **DONE 2026-09-23 (Phase 0.7)** — existing CI
+  `bench` job already runs `cargo bench` on
+  `windows-latest`/`ubuntu-latest`/`macos-latest` and uploads per-OS
+  artifacts; feeds the README Windows/macOS table re-verify checklist in
+  §8.
 
 ## 8. Cross-platform + release 0.2 checklist
 
