@@ -154,6 +154,20 @@ Options in order:
    Do NOT pursue: bigger global slots (8192+ — unbounded tuning, scan
    cost grows, §4 bullet 3), looser byte caps (E4 proved it worsens
    abandonment 59k → 74k by removing the throttle).
+   TRIALED 2026-09-23, REVERTED (no effect): 16 size-shards × 1024
+   slots + global CAS-claimed byte cap (exact-size home shard, first-fit
+   fallback across shards, never nested locks). Result on large-only 8T
+   ×3 runs: 1.21M / 2.01M / 1.80M, reuse 15–22%, unmaps 36–42k/s,
+   abandonment ~73k — indistinguishable from unsharded within regime
+   noise. Lesson: segregation doesn't create capacity; the transient
+   parks ~74k entries against any slot budget in this range, and takes
+   miss on phase-mismatch (correlated drain-then-flood bursts), not on
+   lock waiting. Refined next hypothesis (NOT trialed): deepen LARGE
+   COLD slots alone (64 → 512; cold is virtual-only so nearly free, and
+   64 slots × ~150K ≈ 9.6 MB currently binds far below the 64 MB/shard
+   byte cap) to absorb the flood before it reaches holes — validate
+   with 8T ×5 runs per config (medians + reuse/unmaps), since single
+   comparisons drown in regime noise.
 2. Spans-for-big-sizes: extend span machinery past the 65472 block cap.
    Requires sub-header redesign (blocks bigger than a 64 KiB chunk can't
    dodge per-page headers — chunk-group headers or whole-span carve with
