@@ -8,11 +8,15 @@
 //! blocks. No code path ever holds two class locks at once.
 
 use crate::classes::{span_pages_for, NUM_CLASSES, NUM_MEDIUM};
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{big_span_pages_for, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::page::{
     pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE,
 };
+#[cfg(all(unix, feature = "std"))]
+use crate::page::BigMaster;
 use crate::sys::{self, Mutex};
 #[cfg(debug_assertions)]
 use crate::sys::MutexGuard;
@@ -48,6 +52,12 @@ pub(crate) static SPAN_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static SPAN_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static SMALL_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static SMALL_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Diagnostic split for big-span takes/disposals (see `__debug_map_split`
+/// extension). Arena targets only (big spans don't exist elsewhere).
+#[cfg(all(unix, feature = "std"))]
+pub(crate) static BIG_MAP_CALLS: AtomicU64 = AtomicU64::new(0);
+#[cfg(all(unix, feature = "std"))]
+pub(crate) static BIG_UNMAP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// Global telemetry counters, written in batches from thread-local
 /// accumulators (see `cache.rs`) so the hot path stays contention-free.
