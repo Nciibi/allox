@@ -42,7 +42,11 @@ fn big_boundary_routing() {
 
         let b1 = malloc(262144);
         assert!(!b1.is_null());
+        // Arena targets back this with the explicit 262144 top class;
+        // elsewhere it rides the large path (usable >= request either way).
+        #[cfg(all(unix, feature = "std"))]
         assert_eq!(allox::usable_size(b1), 262144);
+        assert!(allox::usable_size(b1) >= 262144);
         free(b1);
 
         let l = malloc(262145);
@@ -107,14 +111,25 @@ fn big_realloc_grows_and_shrinks() {
         check_pattern(sp, 70000);
         free(sp);
 
-        // Same-class realloc is identity (spans never move).
+        // Same-class realloc is identity (spans never move) on arena
+        // targets; elsewhere these sizes ride the large path and may move —
+        // either way the result is usable.
         let q = malloc(100000);
         assert!(!q.is_null());
         let q2 = realloc(q, 110000);
+        assert!(!q2.is_null());
+        #[cfg(all(unix, feature = "std"))]
         if q2 == q {
             free(q2);
         } else {
-            // Crossed a class boundary: moved legally, still usable.
+            // Crossed a class boundary (or non-arena large path): moved
+            // legally, still usable.
+            fill_pattern(q2, 110000);
+            check_pattern(q2, 110000);
+            free(q2);
+        }
+        #[cfg(not(all(unix, feature = "std")))]
+        {
             fill_pattern(q2, 110000);
             check_pattern(q2, 110000);
             free(q2);
