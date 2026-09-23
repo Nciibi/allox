@@ -450,6 +450,17 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        // Claim every page in the batch for this thread (drift-cap owner).
+        {
+            let mut b = chain;
+            for _ in 0..count {
+                if b.is_null() {
+                    break;
+                }
+                self.claim_page(PageHeader::of(b));
+                b = *b.cast::<*mut u8>();
+            }
+        }
         // Split one block off to return; the rest stay in the bin.
         let first = chain;
         let rest = *first.cast::<*mut u8>();
@@ -469,6 +480,22 @@ impl ThreadCache {
     pub(crate) unsafe fn dealloc(&mut self, p: *mut u8, class: usize) {
         #[cfg(debug_assertions)]
         debug_validate_free(p);
+
+        // Drift cap (ROADMAP P1 step 4): under cache pressure, a free of a
+        // block whose page was claimed by another thread goes straight home
+        // instead of growing this bin. The ownership load only runs when the
+        // gate is already open — same-thread frees below the gate stay
+        // header-free (the Phase-0 free-path win).
+        if self.drift_gate_open() {
+            let page = PageHeader::of(p);
+            let owner = (*page).owner;
+            if owner != 0 && owner != self.tid() {
+                HEAP.release_blocks(page, p, 1);
+                #[cfg(feature = "telemetry")]
+                self.note_free(class);
+                return;
+            }
+        }
 
         let bin = &mut self.bins[class];
         push_block(&mut bin.head, p);
