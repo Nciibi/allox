@@ -108,12 +108,12 @@ fn large_realloc_grows_without_copy_loss() {
             p = np;
             size = nsize;
         }
-        // Shrink path keeps the prefix and stays usable.
+        // Shrink path keeps the prefix and stays usable (prefix is inside
+        // the original 64 KiB, so it still holds the initial pattern).
         let sp = realloc(p, 4096);
         assert!(!sp.is_null());
         for i in 0..4096 {
-            let expected = if i < 65536 { (i % 251) as u8 } else { 0x5A };
-            assert_eq!(*sp.add(i), expected, "shrink byte at {}", i);
+            assert_eq!(*sp.add(i), (i % 251) as u8, "shrink byte at {}", i);
         }
         free(sp);
     }
