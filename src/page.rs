@@ -34,8 +34,8 @@ pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
 /// block is returned to the page.
 pub(crate) const FLAG_VIRGIN: u16 = 2;
 
-// magic + prev + next + free_head + free_count/used/class/flags = 40 bytes,
-// padded by align(16) to 48.
+// magic + prev + next + free_head + free_count/used/class/flags + owner = 44
+// bytes, padded by align(16) to 48 (HEADER_SIZE unchanged).
 #[repr(C, align(16))]
 pub(crate) struct PageHeader {
     pub(crate) magic: u64,
@@ -47,6 +47,10 @@ pub(crate) struct PageHeader {
     pub(crate) used: u16,
     pub(crate) class: u16,
     pub(crate) flags: u16,
+    /// Heuristic owner thread-id (0 = unowned). Set when a thread refills
+    /// from this page; used only to detect remote frees under cache pressure
+    /// (drift cap) — never for correctness. Races are benign (last writer).
+    pub(crate) owner: u32,
 }
 
 pub(crate) const HEADER_SIZE: usize = core::mem::size_of::<PageHeader>();
@@ -81,6 +85,7 @@ impl PageHeader {
         self.used = 0;
         self.class = class as u16;
         self.flags = FLAG_VIRGIN;
+        self.owner = 0;
     }
 }
 
@@ -99,7 +104,7 @@ impl PageHeader {
 pub(crate) const SPAN_SUB_SIZE: usize = 16;
 
 // magic + prev + next + free_head + free_count/used + mclass/flags +
-// npages/pad = 56 bytes, padded by align(16) to 64.
+// npages/owner = 56 bytes, padded by align(16) to 64.
 #[repr(C, align(16))]
 pub(crate) struct SpanMaster {
     pub(crate) magic: u64,
@@ -113,7 +118,9 @@ pub(crate) struct SpanMaster {
     pub(crate) flags: u16,
     /// Span length in 64 KiB pages (master page included).
     pub(crate) npages: u32,
-    pub(crate) _pad: u32,
+    /// Heuristic owner thread-id (0 = unowned); drift-cap only, see
+    /// [`PageHeader::owner`].
+    pub(crate) owner: u32,
 }
 
 pub(crate) const SPAN_MASTER_SIZE: usize = core::mem::size_of::<SpanMaster>();
@@ -179,7 +186,7 @@ impl SpanMaster {
         self.mclass = mclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self._pad = 0;
+        self.owner = 0;
     }
 
     /// Byte size of the whole span mapping (for unmap).
@@ -214,7 +221,7 @@ impl SpanMaster {
 // ---------------------------------------------------------------------------
 
 // magic + prev + next + free_head + free_count/used + bclass/flags +
-// npages/pad = 56 bytes, padded by align(16) to 64 (same as SpanMaster).
+// npages/owner = 56 bytes, padded by align(16) to 64 (same as SpanMaster).
 #[cfg(all(unix, feature = "std"))]
 #[repr(C, align(16))]
 pub(crate) struct BigMaster {
@@ -229,7 +236,9 @@ pub(crate) struct BigMaster {
     pub(crate) flags: u16,
     /// Span length in 64 KiB pages (meta chunk included).
     pub(crate) npages: u32,
-    pub(crate) _pad: u32,
+    /// Heuristic owner thread-id (0 = unowned); drift-cap only, see
+    /// [`PageHeader::owner`].
+    pub(crate) owner: u32,
 }
 
 #[cfg(all(unix, feature = "std"))]
@@ -265,7 +274,7 @@ impl BigMaster {
         self.bclass = bclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self._pad = 0;
+        self.owner = 0;
     }
 
     /// Byte size of the whole span mapping (for unmap).
