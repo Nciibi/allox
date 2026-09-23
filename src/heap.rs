@@ -209,10 +209,21 @@ unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut 
         {
             // Cold: drop physical, keep virtual. Array-stored base so the
             // discard can't destroy the linkage. Re-carved on reuse.
+            //
+            // The discard runs UNDER the lock: the page is exclusively
+            // ours (used==0 observed above, unlinked from every list, and
+            // the cold entry is not visible until unlock), so no concurrent
+            // pop can hand out blocks mid-discard and lose user writes.
+            // Discarding after unlock raced exactly so: a taker could pop,
+            // re-carve, and hand out the page before our discard landed,
+            // zeroing live blocks and headers (use-after-discard leading to
+            // short free lists, magic mismatches, and wild splices).
+            // Same discipline as medium spans and large regions.
             let idx = list.cold_len as usize;
             list.cold[idx] = page;
             list.cold_len += 1;
             list.cold_bytes += PAGE_SIZE;
+            sys::discard(page.cast::<u8>(), PAGE_SIZE);
             PageFate::Cold
         } else {
             PageFate::Unmap
