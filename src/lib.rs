@@ -835,10 +835,9 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     }
     // Large-offset check first (fault-safe for every live pointer; masked
     // reads can dangle outside unaligned large regions — see dealloc_impl).
-    // Large resizes try in-place kernel growth first (no copy), then
-    // alloc-copy-free below via usable_size.
-    let old_large = large_header_of(p);
-    if old_large.is_none() {
+    // Large resizes always go alloc-copy-free below via usable_size.
+    let old_large_ok = large_header_of(p).is_some();
+    if !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
             magic == page::PAGE_MAGIC
@@ -851,7 +850,7 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             }
         }
     }
-    let old_span_ok = if old_large.is_some() {
+    let old_span_ok = if old_large_ok {
         // Large pointers never reach the span check: SpanMaster::of masks,
         // which can dangle outside unaligned large regions (see dealloc_impl).
         false
@@ -867,15 +866,6 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             && medium_class_for_size(size) == old_mclass
         {
             return p;
-        }
-    }
-    // Large growth without copying (align 16 effective, matching malloc;
-    // in-place growth preserves the original alignment, relocation matches
-    // today's fresh-mapping behavior — never worse).
-    if let Some((base, mapped)) = old_large {
-        let q = try_grow_large_in_place(base, mapped, size, MIN_ALIGN);
-        if !q.is_null() {
-            return q;
         }
     }
     let new_p = malloc(size);
