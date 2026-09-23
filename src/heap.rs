@@ -639,11 +639,13 @@ impl MediumHeap {
 
         if count == 0 {
             let pages = span_pages_for(crate::classes::MEDIUM_CLASSES[mclass]);
-            let raw = map_heap_pages(pages);
+            let (raw, fresh) = map_heap_pages(pages);
             if !raw.is_null() {
                 let span = raw.cast::<SpanMaster>();
                 (*span).init(mclass, pages as u32);
-                MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                if fresh {
+                    MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
+                }
                 MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();
