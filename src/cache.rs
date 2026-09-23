@@ -895,7 +895,10 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
 
         while bin.len > floor_blocks {
-            let mut groups = [Group::EMPTY; MAX_FLUSH_GROUPS];
+            // Only slots 0..ng are ever written; a full [Group::EMPTY; N]
+            // zeroed ~65 KiB of stack per call (PMU: ~35% of flush_bin).
+            let mut groups: [MaybeUninit<Group>; MAX_FLUSH_GROUPS] =
+                unsafe { MaybeUninit::uninit().assume_init() };
             let mut ng = 0usize;
             let mut popped = 0u32;
 
@@ -915,7 +918,8 @@ impl ThreadCache {
                 let page = PageHeader::of(b);
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for g in groups.iter_mut().take(ng) {
+                for i in 0..ng {
+                    let g = unsafe { groups[i].assume_init_mut() };
                     if g.page == page {
                         slot = Some(g);
                         break;
@@ -928,18 +932,19 @@ impl ThreadCache {
                         g.n += 1;
                     }
                     None => {
-                        groups[ng] = Group {
+                        groups[ng] = MaybeUninit::new(Group {
                             page,
                             head: b,
                             tail: b,
                             n: 1,
-                        };
+                        });
                         ng += 1;
                     }
                 }
             }
 
-            for g in groups.iter_mut().take(ng) {
+            for i in 0..ng {
+                let g = unsafe { groups[i].assume_init() };
                 crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
             }
             if popped == 0 {
