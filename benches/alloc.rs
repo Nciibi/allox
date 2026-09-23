@@ -545,7 +545,9 @@ fn main() {
         let _arena_commits = d1ac.saturating_sub(d0ac);
         // Abandoned delta over the 1 s probe IS the per-second rate (§3
         // hole-coalescing trigger: >1k/s sustained). Bump high-water is
-        // monotonic process-wide (MiB) for reservation sizing.
+        // monotonic process-wide (MiB) for reservation sizing; the absolute
+        // abandoned total distinguishes slot/cap overflow (abandonment)
+        // from best-fit mismatch (stranding: hi grows, abandoned flat).
         let abnd_rate = d1abnd.saturating_sub(d0abnd);
         let hi_mib = d1hi / (1024 * 1024);
         let rss = peak_rss_kib();
@@ -564,7 +566,7 @@ fn main() {
             format!("{}/{}/{}/{}/a{}", map_delta, span_maps, small_maps, mapped_delta, arena_reuses),
             format!("{}/{}", unmap_delta, span_unmaps),
             rss,
-            format!("abnd+{}/s hi{}MiB", abnd_rate, hi_mib),
+            format!("abnd+{}/s tot{} hi{}MiB", abnd_rate, d1abnd, hi_mib),
         );
     }
 
