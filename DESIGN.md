@@ -83,10 +83,19 @@ and `examples/wasm_smoke.rs`; it is no longer a non-goal.)
 
 ### 4.1 Memory layout
 
+Allocation tiers (dispatch order in `lib.rs::alloc_impl`):
+
+| Tier | Sizes (approx) | Backing | Header |
+|---|---|---|---|
+| Small | ≤ 16 KiB, align ≤ 16 | 64 KiB pages, one class each | `PageHeader` (page-mask) |
+| Medium | 16 KiB ..= 65472 B | multi-page spans, class each | `SpanMaster` (containment) |
+| Big | 65473 ..= 262144 B | whole spans (arena-backed, unix+std) | side table + `BigMaster` |
+| Large | > 262144 B, or align > 16, or no arena | directly-mapped regions | `LargeHeader` (offset probe) |
+
 Small allocations (size <= MAX_SMALL = 16 KiB, align <= 16):
 
 ```
-64 KiB PAGE (OS-mapped, 64 KiB-aligned)
+64 KiB PAGE (OS-mapped or arena-committed, 64 KiB-aligned)
 +--------------+-------------------------------+
 | PageHeader   | b0 | b1 | ... blocks class k  |
 | magic,class  |                               |
@@ -101,7 +110,14 @@ Small allocations (size <= MAX_SMALL = 16 KiB, align <= 16):
   unmapped only when `used == 0`, so no page is ever unmapped while any thread
   still caches one of its blocks.
 
-Large / over-aligned allocations (>16 KiB or align > 16):
+Medium allocations (MAX_SMALL < size <= 65472): multi-page spans carved into
+one medium class; per-thread refill batches (`MEDIUM_REFILL_BATCH = 16`);
+cold retention drops physical pages via `madvise(MADV_DONTNEED)` while keeping
+virtual. Big allocations (<= 262144, arena on unix+std) mirror medium with
+`BIG_REFILL_BATCH = 4` and a 2 MiB static side table for O(1) pointer ->
+span lookup (see `DESIGN_SPANS_BIG.md` for carving proofs).
+
+Large / over-aligned allocations (>262144, or align > 16, or no arena):
 
 ```
 mapped region (multiple of 64 KiB)
@@ -113,9 +129,12 @@ mapped region (multiple of 64 KiB)
 user_ptr = align_up(base + HDR_SIZE, align)   // recomputed on free
 ```
 
-`dealloc(p)` reads the magic at `p & !PAGE_MASK` and dispatches:
-`PAGE_MAGIC` -> small path, `LARGE_MAGIC` -> unmap, else -> corrupt-pointer
-abort. Debug builds additionally walk the page freelist to catch double frees.
+Region cache: per-thread stash (8 slots / 8 MiB) → 8 sharded hot caches
+(64 slots / 8 MiB each) → cold tier (512 slots / 64 MiB each, physical
+discarded, virtual retained) → arena hole park or `munmap`. Exact-fit first.
+`dealloc` probes the large header offset first (fault-safety), then page-mask
+magic, then span containment; corrupt pointers abort. Debug builds also walk
+the page freelist to catch double frees.
 
 ### 4.2 Size classes
 Generated at compile time: start 16 B, grow ~12.5% rounded up to 16 B, cap
@@ -155,7 +174,8 @@ never depends on ownership, only performance.
 likely to be re-allocated by the same thread; round-tripping them through the
 global heap costs ~5x on mixed workloads (lock + list surgery + re-carve).
 Therefore thread caches grow without per-bin limits and are trimmed only when
-the thread's aggregate cached bytes exceed THREAD_CACHE_BUDGET (64 MiB),
+the thread's aggregate cached bytes exceed THREAD_CACHE_BUDGET (32 MiB,
+`DEFAULT_THREAD_CACHE_BUDGET` in `cache.rs`, runtime-overridable),
 halving the largest bin first. Worst-case overhead: budget bytes per thread.
 Trim passes are chunked (2048 blocks) to bound stack use for huge bins.
 
@@ -241,8 +261,9 @@ pub extern "C" fn allox_aligned_alloc(align, size) -> *mut c_void;
    allocations, random sizes 1..=200_000, checksum verification, multi-thread.
 4. Miri: `cargo +nightly miri test` on the non-OS-touching core (sys mocked).
 5. Fuzzing (cargo-fuzz) around alloc/dealloc sequences in debug validation mode.
-6. Benchmarks (criterion, dev-dep only): vs System, talc, jemallocator on
-   xmalloc-like threaded workload; tracked in CI artifacts.
+6. Benchmarks (custom harness, C comparators are dev-deps only): vs System,
+   talc, dlmalloc, mimalloc, snmalloc on xmalloc-like threaded workloads;
+   tracked in CI artifacts.
 7. Self-hosting smoke: build/test real crates with Allox as global allocator.
 
 ## 7. Milestones
@@ -264,19 +285,23 @@ pub extern "C" fn allox_aligned_alloc(align, size) -> *mut c_void;
 
 ```
 src/
-  lib.rs        public API, GlobalAlloc impl, docs
+  lib.rs        public API, GlobalAlloc impl, dispatch, large caches, docs
   ffi.rs        C ABI exports
-  classes.rs    size class table + lookup
-  page.rs       PageHeader/LargeHeader, carving, list ops
-  cache.rs      ThreadCache (bins, refill, flush)
-  heap.rs       GlobalHeap: partial lists, acquire/release, stats atomics
-  sys/mod.rs    map/unmap/mutex abstraction
+  classes.rs    size-class tables (small/medium/big) + direct-mapped LUT
+  page.rs       PageHeader/SpanMaster/LargeHeader, carving, list ops
+  cache.rs      ThreadCache (bins, refill, flush, large stash)
+  heap.rs       GlobalHeap + MediumHeap + BigHeap, stats atomics
+  arena.rs      unix+std VM arena: reserve/commit split, hole reuse
+  thread_exit.rs  pthread_key / FlsAlloc flush hook (no TLS dtors)
+  sys/mod.rs    map/unmap/discard/mutex abstraction
   sys/windows.rs  VirtualAlloc/VirtualFree/SRWLock
-  sys/unix.rs     mmap/munmap/pthread_mutex
+  sys/unix.rs     mmap/munmap/madvise/pthread_mutex
+  sys/wasm.rs     memory.grow
 tests/
-  basic.rs  global_alloc.rs  stress.rs  ffi.rs
-benches/  alloc.rs (criterion)
-fuzz/     alloc_seq.cc
+  basic.rs  global_alloc.rs  stress.rs  ffi.rs  randomized.rs
+  zero_init.rs  thread_exit.rs  telemetry.rs
+benches/  alloc.rs (custom median-of-N harness, not criterion)
+fuzz/     alloc_seq  zero_init_seq
 ```
 
 ## 9. Risks and mitigations
@@ -300,11 +325,15 @@ fuzz/     alloc_seq.cc
   blocks clears just that word; otherwise it memsets the full block.
   The flag is cleared whenever any block is returned to the page.
 - Large-region recycling: freed large regions (64 KiB-multiples, the
-  16 KiB..64+ MiB class of allocations) are parked in a fixed 64-slot,
-  64 MiB-capped cache and reused best-fit on the next large allocation.
-  Without this, block-heavy workloads pay one map + one unmap syscall per
-  allocation (~10 us/op ceiling). Reused regions are not OS-zero, so
-  `alloc_zeroed` memsets them; `malloc` does not care.
+  >262 KiB / over-aligned class of allocations) are parked in a three-tier
+  cache — per-thread stash (8 slots / 8 MiB), 8 sharded hot caches
+  (64 slots / 8 MiB each), and a cold tier (512 slots / 64 MiB each with
+  physical discarded via `madvise`, virtual retained) — and reused
+  exact-fit-first on the next large allocation. Without this, block-heavy
+  workloads pay one map + one unmap syscall per allocation (~10 us/op
+  ceiling). Reused regions are not OS-zero, so `alloc_zeroed` memsets them;
+  `malloc` does not care. On arena-backed unix, evicted regions park as
+  arena holes instead of `munmap`.
 
 Rejected optimization, recorded deliberately: in-place realloc growth into
 the adjacent free block requires taking the class lock to inspect the page

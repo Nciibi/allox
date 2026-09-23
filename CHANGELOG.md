@@ -12,8 +12,9 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 - Large/over-aligned: sharded exact-fit-first region caches with cold
   tier, per-thread stash, virtual-memory arena backing (unix) with hole
   reuse and graceful legacy fallback.
-- Thread-exit flush (pthread key / FlsAlloc) with remote-free drift caps;
-  contention-parking mutexes (SRWLock on Windows, pthread on unix).
+- Thread-exit flush (pthread key / FlsAlloc); contention-parking mutexes
+  (SRWLock on Windows, pthread on unix). (Remote-free drift caps are
+  *not* in this release — see ROADMAP_TO_BEST.md P1 step 4.)
 - C ABI (`malloc`/`calloc`/`realloc`/`free`/`aligned_alloc`, zero sizes
   return null), `GlobalAlloc` impl with layout-routed free, `usable_size`,
   debug double-free/corrupt-pointer validation.
