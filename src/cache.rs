@@ -11,11 +11,17 @@
 //! biggest classes first.
 
 use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
 use crate::heap::{MEDIUM_HEAP, REFILL_BATCH};
+#[cfg(all(unix, feature = "std"))]
+use crate::heap::{BIG_HEAP, BIG_REFILL_BATCH};
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
+#[cfg(all(unix, feature = "std"))]
+use crate::page::BigMaster;
 use core::ptr;
 /// Total bytes one thread's cache may retain before trimming starts.
 /// Worst-case overhead is this many bytes per thread.
@@ -109,6 +115,12 @@ pub(crate) struct ThreadCache {
     /// Medium bins (multi-page spans), same discipline as small bins.
     mbins: [Bin; NUM_MEDIUM],
     mvirgin: [u32; NUM_MEDIUM],
+    /// Big bins (whole spans past the chunk cap), same discipline. Arena
+    /// targets only (big spans don't exist elsewhere).
+    #[cfg(all(unix, feature = "std"))]
+    bigbins: [Bin; NUM_BIG],
+    #[cfg(all(unix, feature = "std"))]
+    bvirgin: [u32; NUM_BIG],
     /// Whether this thread armed the OS thread-exit flush. Set once on the
     /// first slow path; fast paths never touch it (nor the hook machinery).
     exit_armed: bool,
@@ -167,6 +179,13 @@ impl ThreadCache {
                 len: 0,
             }; NUM_MEDIUM],
             mvirgin: [0; NUM_MEDIUM],
+            #[cfg(all(unix, feature = "std"))]
+            bigbins: [Bin {
+                head: ptr::null_mut(),
+                len: 0,
+            }; NUM_BIG],
+            #[cfg(all(unix, feature = "std"))]
+            bvirgin: [0; NUM_BIG],
             exit_armed: false,
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
