@@ -469,6 +469,216 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
     threads as f64 / seconds as f64
 }
 
+/// JSON-ish: per document, allocate ~200 tiny buffers (strings/numbers,
+/// 16–256 B, freed at 90% rate interleaved) plus 3 Vec-like buffers grown
+/// by realloc doubling (64 B → 8 KiB). Frees everything still live at
+/// document end. Models serde-style parse churn through GlobalAlloc
+/// (realloc exercises the same-class identity + grow paths).
+fn run_json<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> f64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let handles: Vec<_> = (0..wl.threads)
+        .map(|t| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    let mut rng =
+                        Rng(0x1SONJA ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut ops = 0u64;
+                    while Instant::now() < stop {
+                        // One document: tiny values + growing buffers.
+                        let mut live: Vec<(*mut u8, Layout)> = Vec::with_capacity(256);
+                        for _ in 0..200 {
+                            let size = 16 + (rng.next() as usize) % 240;
+                            let l = layout_for(size);
+                            let p = unsafe { alloc.alloc(l) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            unsafe { *p = ops as u8 };
+                            live.push((p, l));
+                            ops += 1;
+                            if rng.next() % 10 < 9 && !live.is_empty() {
+                                let idx = (rng.next() as usize) % live.len();
+                                let (fp, fl) = live.swap_remove(idx);
+                                unsafe { alloc.dealloc(fp, fl) };
+                            }
+                        }
+                        for _ in 0..3 {
+                            let mut bl = layout_for(64);
+                            let mut bp = unsafe { alloc.alloc(bl) };
+                            if bp.is_null() {
+                                return ops;
+                            }
+                            let mut bsize = 64usize;
+                            while bsize < 8192 {
+                                let nsize = bsize * 2;
+                                let nl = layout_for(nsize);
+                                let np = unsafe { alloc.realloc(bp, bl, nsize) };
+                                let _ = nl;
+                                if np.is_null() {
+                                    break;
+                                }
+                                bp = np;
+                                bl = Layout::from_size_align(nsize, 16).expect("layout");
+                                bsize = nsize;
+                                ops += 1;
+                            }
+                            unsafe { alloc.dealloc(bp, bl) };
+                        }
+                        for (fp, fl) in live.drain(..) {
+                            unsafe { alloc.dealloc(fp, fl) };
+                        }
+                    }
+                    ops
+                })
+                .unwrap()
+        })
+        .collect();
+
+    let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    total as f64 / seconds as f64
+}
+
+/// Request-handler: per request, ~100 tiny allocs (8–128 B headers/strings)
+/// plus 2 body buffers (2–8 KiB), ALL freed together at request end (pool
+/// lifetime — no interleaved frees). Models server request handling.
+fn run_request<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> f64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let handles: Vec<_> = (0..wl.threads)
+        .map(|t| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    let mut rng =
+                        Rng(0xBEACE ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut ops = 0u64;
+                    while Instant::now() < stop {
+                        let mut live: Vec<(*mut u8, Layout)> = Vec::with_capacity(128);
+                        for _ in 0..100 {
+                            let size = 8 + (rng.next() as usize) % 120;
+                            let l = layout_for(size);
+                            let p = unsafe { alloc.alloc(l) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            unsafe { *p = ops as u8 };
+                            live.push((p, l));
+                            ops += 1;
+                        }
+                        for _ in 0..2 {
+                            let size = 2048 + (rng.next() as usize) % 6144;
+                            let l = layout_for(size);
+                            let p = unsafe { alloc.alloc(l) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            unsafe { *p = ops as u8 };
+                            live.push((p, l));
+                            ops += 1;
+                        }
+                        // Pool free: everything at request end.
+                        for (fp, fl) in live.drain(..) {
+                            unsafe { alloc.dealloc(fp, fl) };
+                        }
+                    }
+                    ops
+                })
+                .unwrap()
+        })
+        .collect();
+
+    let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    total as f64 / seconds as f64
+}
+
+/// ECS-archetype: 4 large component buffers (64 KiB–1 MiB) repeatedly
+/// realloc-grown (doubling, then freed), plus steady small component churn
+/// (16–256 B, 50% frees). Models game-engine storage: realloc growth path
+/// with big regions plus background small churn.
+fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> f64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let handles: Vec<_> = (0..wl.threads)
+        .map(|t| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    let mut rng =
+                        Rng(0xEC5 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut ops = 0u64;
+                    let mut small_live: Vec<(*mut u8, Layout)> = Vec::with_capacity(512);
+                    while Instant::now() < stop {
+                        // Grow 4 archetype buffers then drop them.
+                        for _ in 0..4 {
+                            let mut bsize = 65536usize;
+                            let mut bl = layout_for(bsize);
+                            let mut bp = unsafe { alloc.alloc(bl) };
+                            if bp.is_null() {
+                                return ops;
+                            }
+                            while bsize < 1048576 {
+                                let nsize = (bsize * 2).min(1048576);
+                                let np = unsafe { alloc.realloc(bp, bl, nsize) };
+                                if np.is_null() {
+                                    break;
+                                }
+                                bp = np;
+                                bl = Layout::from_size_align(nsize, 16).expect("layout");
+                                bsize = nsize;
+                                ops += 1;
+                            }
+                            unsafe { alloc.dealloc(bp, bl) };
+                        }
+                        // Background small-component churn.
+                        for _ in 0..200 {
+                            let size = 16 + (rng.next() as usize) % 240;
+                            let l = layout_for(size);
+                            let p = unsafe { alloc.alloc(l) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            unsafe { *p = ops as u8 };
+                            small_live.push((p, l));
+                            ops += 1;
+                            if rng.next() % 2 == 0 && !small_live.is_empty() {
+                                let idx = (rng.next() as usize) % small_live.len();
+                                let (fp, fl) = small_live.swap_remove(idx);
+                                unsafe { alloc.dealloc(fp, fl) };
+                            }
+                        }
+                        if small_live.len() > 4096 {
+                            for (fp, fl) in small_live.drain(..) {
+                                unsafe { alloc.dealloc(fp, fl) };
+                            }
+                        }
+                    }
+                    for (fp, fl) in small_live {
+                        unsafe { alloc.dealloc(fp, fl) };
+                    }
+                    ops
+                })
+                .unwrap()
+        })
+        .collect();
+
+    let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    total as f64 / seconds as f64
+}
+
 fn median(v: &mut [f64]) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
