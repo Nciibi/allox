@@ -150,3 +150,65 @@ jobs:
       - run: cargo +nightly miri test --lib
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance"
+
+  # Phase 0.3: Windows Fls path is exercised by the 3-OS `test` matrix
+  # (windows-latest runs tests/thread_exit.rs + stress.rs) and the 3-OS
+  # `bench` matrix — no separate job needed; kept as a comment so the
+  # coverage is visible when reviewing CI.
+  #
+  # Phase 0.7: 3-OS bench matrix is the existing `bench` job above.
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate LCOV report
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Summary
+        run: cargo llvm-cov report --summary-only
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+  # Phase 0.4: jemalloc comparator — CI box has make+autoconf (dev box does
+  # not). Runs the full 14-workload scoreboard with the extra column; upload
+  # for re-scoring against the other OS bench artifacts.
+  jemalloc-bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Install make + autoconf (jemalloc build)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq make autoconf
+      - name: Bench with jemalloc column
+        run: cargo bench --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-jemalloc
+          path: bench-jemalloc.txt
+
+  # Phase 0.6: Kani proofs for DESIGN_SPANS_BIG §6 P1–P6 (arithmetic bounds)
+  # + medium-page packing. Nightly + kani-verifier; proofs live in
+  # src/page.rs `kani_proofs` under `#[cfg(all(kani, unix, feature = "std"))]`.
+  kani:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier
+          cargo kani setup
+      - name: Run carving proofs
+        run: cargo kani
