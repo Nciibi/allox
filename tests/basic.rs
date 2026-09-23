@@ -1,4 +1,51 @@
 use allox::{aligned_alloc, calloc, free, malloc, realloc, usable_size};
+use std::alloc::{GlobalAlloc, Layout};
+
+#[test]
+fn zero_size_family_is_sound() {
+    unsafe {
+        // C-flavored free fns return null for zero size (conforming), so
+        // every downstream entry point (free/realloc/usable_size) stays on
+        // its null contract instead of probing headers of dangling pointers.
+        assert!(malloc(0).is_null());
+        assert!(calloc(0, 16).is_null());
+        assert!(calloc(16, 0).is_null());
+        assert!(aligned_alloc(16, 0).is_null());
+        free(core::ptr::null_mut()); // noop, always sound
+        assert_eq!(usable_size(core::ptr::null_mut()), 0);
+        // realloc(null, n) == malloc(n).
+        let p = realloc(core::ptr::null_mut(), 8);
+        assert!(!p.is_null());
+        core::ptr::write_bytes(p, 0xAB, 8);
+        free(p);
+        // realloc(live, 0) frees and returns null (C semantics).
+        let q = malloc(64);
+        assert!(!q.is_null());
+        assert!(realloc(q, 0).is_null());
+    }
+}
+
+#[test]
+fn global_realloc_zero_layout_grows_fresh() {
+    unsafe {
+        let a = allox::Allox;
+        // Zero-size allocs are dangling by Rust convention; growing one to a
+        // nonzero size must hand out fresh memory, never the dangling
+        // pointer back (same-class identity must not fire on size 0).
+        let l0 = Layout::from_size_align(0, 16).unwrap();
+        let p = a.alloc(l0);
+        let q = a.realloc(p, l0, 8);
+        assert_ne!(q, p, "realloc must not return the zero-size dangling pointer");
+        assert!(!q.is_null());
+        core::ptr::write_bytes(q, 0xAB, 8);
+        a.dealloc(q, Layout::from_size_align(8, 16).unwrap());
+        // Shrinking to zero still frees and yields a (dangling) pointer.
+        let r = a.alloc(Layout::from_size_align(32, 8).unwrap());
+        assert!(!r.is_null());
+        let z = a.realloc(r, Layout::from_size_align(32, 8).unwrap(), 0);
+        assert!(!z.is_null());
+    }
+}
 
 #[test]
 fn malloc_free_all_sizes_roundtrip() {
