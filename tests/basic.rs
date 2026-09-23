@@ -26,7 +26,40 @@ fn zero_size_family_is_sound() {
 }
 
 #[test]
-fn global_realloc_zero_layout_grows_fresh() {
+fn tiny_budget_churn_never_underflows() {
+    // Guards the trim accounting invariant (cached_bytes == retained bytes).
+    // Restores the default budget on drop so parallel tests are unaffected.
+    struct RestoreBudget;
+    impl Drop for RestoreBudget {
+        fn drop(&mut self) {
+            allox::set_thread_cache_budget(32 * 1024 * 1024);
+        }
+    }
+    let _guard = RestoreBudget;
+    unsafe {
+        // Zero budget: every dealloc trips trim, usually with no single bin
+        // over the 64-block trim threshold. The old code lied
+        // `cached_bytes = target` on those epochs, lagging actual retention
+        // until a later pop drove the counter below zero (debug panic in
+        // `alloc`, silent wrap + over-trim storm in release).
+        allox::set_thread_cache_budget(0);
+        let mut live = Vec::with_capacity(256);
+        for i in 0..5000usize {
+            let size = 16 + (i * 37) % 4096;
+            let p = allox::malloc(size);
+            assert!(!p.is_null());
+            core::ptr::write_bytes(p, 0xAB, size.min(4096));
+            live.push(p);
+            if live.len() > 64 {
+                allox::free(live.remove(0));
+            }
+        }
+        for p in live {
+            allox::free(p);
+        }
+        allox::flush_current_thread();
+    }
+}
     unsafe {
         let a = allox::Allox;
         // Zero-size allocs are dangling by Rust convention; growing one to a
