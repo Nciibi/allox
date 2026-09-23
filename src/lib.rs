@@ -934,8 +934,11 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
 /// Snapshot current statistics.
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
-    /// Pages (64 KiB units) currently mapped from the OS, including large
-    /// allocations' regions.
+    /// Live virtual mappings from the OS: one per fresh take, regardless of
+    /// mapping size (a 16-page span counts the same as a 1-page small page),
+    /// including large allocations' regions. Arena hole reuses recommit
+    /// already-counted virtual and don't move it; only genuinely new address
+    /// space increments, true unmaps decrement.
     pub mapped_pages: u64,
     /// Total successful OS mappings so far.
     pub map_calls: u64,
@@ -1024,7 +1027,8 @@ pub mod telemetry {
         pub peak_live_bytes: u64,
         /// Allocations served by direct OS mappings (large/over-aligned).
         pub large_allocs: u64,
-        /// Current OS mappings (pages of 64 KiB), including large regions.
+        /// Live virtual mappings from the OS (one per fresh take, any size;
+        /// see [`Stats::mapped_pages`] for the exact counting rule).
         pub mapped_pages: u64,
         /// Total OS map calls.
         pub map_calls: u64,
