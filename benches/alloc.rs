@@ -197,6 +197,27 @@ const WORKLOADS: &[Workload] = &[
         free_pct: 50,
         kind: Kind::SpawnEmpty,
     },
+    Workload {
+        name: "json-ish 8T",
+        threads: 8,
+        size_range: (16, 8192),
+        free_pct: 50,
+        kind: Kind::Json,
+    },
+    Workload {
+        name: "request 8T",
+        threads: 8,
+        size_range: (8, 8192),
+        free_pct: 50,
+        kind: Kind::Request,
+    },
+    Workload {
+        name: "ecs 8T",
+        threads: 8,
+        size_range: (16, 1048576),
+        free_pct: 50,
+        kind: Kind::Ecs,
+    },
 ];
 
 fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
@@ -205,6 +226,9 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
         Kind::SpawnEmpty => run_spawn_empty(wl, seconds),
+        Kind::Json => run_json(alloc, wl, seconds),
+        Kind::Request => run_request(alloc, wl, seconds),
+        Kind::Ecs => run_ecs(alloc, wl, seconds),
     }
 }
 
