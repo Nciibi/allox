@@ -56,8 +56,10 @@ const ARENA_SIZE: usize = 512 * 1024 * 1024;
 /// MAP_FIXED), so scan cost stays well under the syscall it replaces.
 const HOLE_SLOTS: usize = 4096;
 /// Byte cap on parked holes. Bounds dark virtual on churn.
+/// TEMPORARY EXPERIMENT E4: 16 GiB cap to test whether large-only 8T
+/// abandonment is byte-cap-bound (vs slot/fragmentation-bound).
 #[cfg(target_pointer_width = "64")]
-const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
+const HOLE_CAP_BYTES: usize = 16 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
 const HOLE_CAP_BYTES: usize = 256 * 1024 * 1024;
 
