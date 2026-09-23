@@ -54,8 +54,7 @@ const ARENA_SIZE: usize = 512 * 1024 * 1024;
 /// abandonment (measured §3 E0-E2). 4096 x 16 B entries = 64 KiB static;
 /// scans run only on fresh takes (already past a mutex + before a
 /// MAP_FIXED), so scan cost stays well under the syscall it replaces.
-const HOLE_SLOTS: usize = 4096;
-/// Byte cap on parked holes. Bounds dark virtual on churn.
+const HOLE_SLOTS: usize = 4096;/// Byte cap on parked holes. Bounds dark virtual on churn.
 #[cfg(target_pointer_width = "64")]
 const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
