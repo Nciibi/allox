@@ -1057,7 +1057,8 @@ impl ThreadCache {
         let bin = &mut self.bigbins[bclass];
 
         while bin.len > floor_blocks {
-            let mut groups = [BGroup::EMPTY; MAX_BFLUSH_GROUPS];
+            let mut groups: [MaybeUninit<BGroup>; MAX_BFLUSH_GROUPS] =
+                unsafe { MaybeUninit::uninit().assume_init() };
             let mut ng = 0usize;
             let mut popped = 0u32;
 
@@ -1078,7 +1079,8 @@ impl ThreadCache {
                 debug_assert!(!master.is_null() && (*master).contains(b));
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for g in groups.iter_mut().take(ng) {
+                for i in 0..ng {
+                    let g = unsafe { groups[i].assume_init_mut() };
                     if g.master == master {
                         slot = Some(g);
                         break;
@@ -1099,18 +1101,19 @@ impl ThreadCache {
                             crate::heap::BIG_HEAP.release_blocks(master, b, 1);
                             continue;
                         }
-                        groups[ng] = BGroup {
+                        groups[ng] = MaybeUninit::new(BGroup {
                             master,
                             head: b,
                             tail: b,
                             n: 1,
-                        };
+                        });
                         ng += 1;
                     }
                 }
             }
 
-            for g in groups.iter_mut().take(ng) {
+            for i in 0..ng {
+                let g = unsafe { groups[i].assume_init() };
                 crate::heap::BIG_HEAP.release_blocks(g.master, g.head, g.n);
             }
             if popped == 0 {
