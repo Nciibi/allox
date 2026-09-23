@@ -13,15 +13,15 @@ pub(crate) mod windows;
 use core::cell::UnsafeCell;
 
 #[cfg(all(unix, feature = "std"))]
-pub(crate) use unix::{discard, map, map_any, unmap, RawMutex};
+pub(crate) use unix::{discard, map, map_any, remap_grow, unmap, RawMutex};
 #[cfg(all(unix, not(feature = "std")))]
-pub(crate) use unix::{discard, map, map_any, unmap};
+pub(crate) use unix::{discard, map, map_any, remap_grow, unmap};
 #[cfg(all(not(windows), not(unix)))]
-pub(crate) use wasm::{discard, map, unmap};
+pub(crate) use wasm::{discard, map, remap_grow, unmap};
 #[cfg(all(not(windows), not(unix)))]
 pub(crate) use wasm::map as map_any;
 #[cfg(windows)]
-pub(crate) use windows::{discard, map, unmap, RawMutex};
+pub(crate) use windows::{discard, map, remap_grow, unmap, RawMutex};
 /// Windows VirtualAlloc is already single-syscall and 64 KiB-aligned.
 #[cfg(windows)]
 pub(crate) use windows::map as map_any;
