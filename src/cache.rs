@@ -18,7 +18,8 @@ use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
 use crate::heap::{MEDIUM_HEAP, REFILL_BATCH};
 #[cfg(all(unix, feature = "std"))]
-use crate::heap::{BIG_HEAP, MEDIUM_HEAP, REFILL_BATCH};
+#[cfg(all(unix, feature = "std"))]
+use crate::heap::BIG_HEAP;
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
