@@ -820,6 +820,21 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
+        // Large growth without copying: the kernel moves page tables when it
+        // can (ecs-style doubling). Small/medium traffic skips the header
+        // probe entirely (zero added cost there); arena regions, shrinks,
+        // and kernel refusals fall through to alloc-copy-free below.
+        if layout.align() > MIN_ALIGN
+            || layout.size() > MAX_SMALL_SIZE
+            || new_size > MAX_SMALL_SIZE
+        {
+            if let Some((base, mapped)) = large_header_of(p) {
+                let q = try_grow_large_in_place(base, mapped, new_size, layout.align());
+                if !q.is_null() {
+                    return q;
+                }
+            }
+        }
         let new_p = self.alloc(core::alloc::Layout::from_size_align_unchecked(
             new_size,
             layout.align(),
