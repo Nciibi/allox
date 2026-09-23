@@ -104,7 +104,6 @@ bench `arena` column (`abnd+rate/s totN hiMiB`).
   `i686-unknown-linux-gnu`; runs in CI — this box has no i686 std and
   no rustup). 512 MiB const keeps its coverage from the `with_size`
   fallback unit tests.
-  the fallback shape).
 
 ## 4. large-only hit rate (structural; arena only made misses cheaper)
 
