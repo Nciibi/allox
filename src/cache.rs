@@ -22,6 +22,7 @@ use crate::heap::BIG_HEAP;
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
+use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
