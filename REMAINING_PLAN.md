@@ -7,8 +7,8 @@ mimalloc). Full 14-workload matrix: ~9–10/14 win-or-tie vs the best
 comparator on Linux x86-64 (json/request beat mimalloc; ecs beats every
 comparator except system's mremap growth — allox ~7.9M vs system ~113M
 isolated, same 0.06× story as the mremap note in §4). Full suite +
-telemetry + no_std +
-release green and warning-free. Contra remaining gaps below, each
+telemetry + no_std + release green and warning-free. Contra remaining
+gaps below, each
 capable of closing independently, ordered by ROI. Methodology everywhere:
 ≥2 s × 3 reps, `__debug_map_split` + `peakRSS` probe columns,
 sensitivity-checked tests (disable-the-feature must fail), one point
