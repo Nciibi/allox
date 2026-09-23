@@ -387,6 +387,62 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// Try to grow a LEGACY (non-arena) large region in place: `base`/`mapped`
+/// come from the region's validated header, `size`/`align` are the new
+/// request (same size formulas as `alloc_large_ex`). Returns the (possibly
+/// relocated) user pointer on success, null when unavailable — non-Linux,
+/// arena-owned region, shrink/same-size request, or the kernel refused —
+/// in which case the caller falls back to alloc-copy-free.
+///
+/// On success the header is rewritten for the new extent and no unmap is
+/// needed (the kernel consumed the old mapping, moving page tables without
+/// a userspace copy); extension bytes are fresh anonymous zeros. The user
+/// pointer is unchanged when growth happens in place, recomputed with the
+/// fresh-path formula on relocation. Arena regions are excluded: remap
+/// could relocate the VMA out of the reservation and break hole
+/// accounting; they keep the fallback (already cheap: 1 commit + memcpy +
+/// hole park). Counter note: neither `MAPPED_PAGES` (still one mapping)
+/// nor `MAP_CALLS` (fresh takes only) moves; telemetry stays approximate
+/// by design (saturating math, no wrap).
+unsafe fn try_grow_large_in_place(
+    base: *mut u8,
+    mapped: usize,
+    size: usize,
+    align: usize,
+) -> *mut u8 {
+    debug_assert!(align.is_power_of_two());
+    let total = match size
+        .checked_add(align)
+        .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
+    {
+        Some(t) => t,
+        None => return ptr::null_mut(),
+    };
+    let new_mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
+    if new_mapped <= mapped {
+        return ptr::null_mut(); // shrink or same size: other paths own it
+    }
+    #[cfg(all(unix, feature = "std"))]
+    {
+        if crate::arena::contains(base, mapped) {
+            return ptr::null_mut();
+        }
+    }
+    let grown = sys::remap_grow(base, mapped, new_mapped);
+    if grown.is_null() {
+        return ptr::null_mut();
+    }
+    // Fit always holds by the fresh-path arithmetic (new_mapped covers
+    // size + align + header with room to spare for any align).
+    let ret = align_up(grown as usize + LARGE_HEADER_SIZE, align);
+    debug_assert!(ret + size <= grown as usize + new_mapped);
+    let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
+    (*hdr).magic = LARGE_MAGIC;
+    (*hdr).mapped_size = new_mapped;
+    (*hdr).base = grown;
+    ret as *mut u8
+}
+
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
 /// OS-zero (a brand-new mapping rather than a recycled one).
 unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
