@@ -184,7 +184,52 @@ enum PageFate {
 }
 
 /// Splice `chain` (n blocks of `page`) back onto the page. Lock-only core;
-/// syscalls happen in the caller, outside the lock.
+// syscalls happen in the caller, outside the lock.
+#[cfg(debug_assertions)]
+unsafe fn audit_chain_len(chain: *mut u8, n: u32, what: &str) {
+    let mut c = 0u32;
+    let mut cur = chain;
+    let mut guard = 0u32;
+    while !cur.is_null() {
+        cur = *cur.cast::<*mut u8>();
+        c += 1;
+        guard += 1;
+        if guard > 100_000 {
+            panic!("{}: chain cycle detected (n={})", what, n);
+        }
+    }
+    assert!(
+        c == n,
+        "{}: chain length {} != n {} (short/foreign chain!)",
+        what,
+        c,
+        n
+    );
+}
+
+#[cfg(debug_assertions)]
+unsafe fn audit_page_list(page: *mut PageHeader, what: &str) {
+    let mut c = 0u32;
+    let mut cur = (*page).free_head;
+    let mut guard = 0u32;
+    while !cur.is_null() {
+        cur = *cur.cast::<*mut u8>();
+        c += 1;
+        guard += 1;
+        if guard > 100_000 {
+            panic!("{}: page list cycle detected", what);
+        }
+    }
+    assert!(
+        c == (*page).free_count as u32,
+        "{}: page list {} != free_count {} (used={})",
+        what,
+        c,
+        (*page).free_count,
+        (*page).used
+    );
+}
+
 unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> PageFate {
     // Freed blocks are dirty by definition.
     (*page).flags &= !FLAG_VIRGIN;
@@ -298,10 +343,17 @@ impl GlobalHeap {
 
     /// Return a chain of `n` blocks, all belonging to `page`, to that page.
     pub(crate) unsafe fn release_blocks(&self, page: *mut PageHeader, chain: *mut u8, n: u16) {
+        #[cfg(debug_assertions)]
+        audit_chain_len(chain, n as u32, "small release_blocks");
         let class = (*page).class as usize;
         let fate = {
             let mut list = self.classes[class].lock();
-            release_inner(&mut list, page, chain, n)
+            #[cfg(debug_assertions)]
+            audit_page_list(page, "small pre-release");
+            let f = release_inner(&mut list, page, chain, n);
+            #[cfg(debug_assertions)]
+            audit_page_list(page, "small post-release");
+            f
         };
         match fate {
             PageFate::Keep => {}
