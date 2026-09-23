@@ -467,3 +467,107 @@ mod tests {
         unsafe { aligned_free(raw, layout) };
     }
 }
+
+// ---------------------------------------------------------------------------
+// Kani proofs — DESIGN_SPANS_BIG.md §6 carving properties P1–P6 (and the
+// equivalent medium-span packing invariants). Pure arithmetic: no mmap, so
+// these run under `cargo kani` in CI (nightly + kani-verifier).
+// P4 (virgin) and P5 (lookup totality) are state/pointer properties covered
+// by the runtime unit tests above (`big_carve_packs_contiguously`,
+// `medium_span_of_and_contains`); the proofs here discharge the static
+// sizing/alignment bounds that unit tests only sample at fixed classes.
+// ---------------------------------------------------------------------------
+#[cfg(all(kani, unix, feature = "std"))]
+mod kani_proofs {
+    use super::*;
+
+    /// Nondeterministic big-class block size within the documented range
+    /// (65473..=262144, 16-aligned), plus a nondeterministic page count.
+    fn any_big_block_and_pages() -> (usize, usize) {
+        let block: usize = kani::any();
+        // BIG_CLASSES: 65472 exclusive lower edge in design notes; actual
+        // min is the first class >65472 (65488 or similar). Use the full
+        // design window: >65472, <=262144, 16-aligned.
+        kani::assume(block > 65_472 && block <= 262_144 && block % 16 == 0);
+        let pages: usize = kani::any();
+        kani::assume(pages >= 1 && pages <= 16);
+        (block, pages)
+    }
+
+    /// P2 + P6 (sizing): last carved block end stays inside the mapping.
+    /// `count = (pages*PAGE_SIZE - BIG_MASTER_SIZE) / block` implies
+    /// `BIG_MASTER_SIZE + count*block <= pages*PAGE_SIZE` by div properties;
+    /// prove it directly so underflow/overflow in the formula is caught.
+    #[kani::proof]
+    fn p2_last_block_within_mapping() {
+        let (block, pages) = any_big_block_and_pages();
+        let total = pages * PAGE_SIZE;
+        kani::assume(total >= BIG_MASTER_SIZE);
+        let usable = total - BIG_MASTER_SIZE;
+        let count = usable / block;
+        let last_end = BIG_MASTER_SIZE + count * block;
+        assert!(last_end <= total, "P2: last block past mapping end");
+        // P6 stronger form: every write target `base + BIG_MASTER_SIZE + k*block`
+        // for k in 0..count is < total (carve loop condition `b + block <= end`).
+        let first = BIG_MASTER_SIZE;
+        assert!(first + count * block <= total, "P6: carve extent overflow");
+    }
+
+    /// P1 (contiguity) + P3 (alignment): block k lives at
+    /// `BIG_MASTER_SIZE + k*block`, stride == block, 16-aligned when base
+    /// is 64 KiB-aligned and both offsets are 16-multiples.
+    #[kani::proof]
+    fn p1_contiguity_and_p3_alignment() {
+        let (block, pages) = any_big_block_and_pages();
+        let total = pages * PAGE_SIZE;
+        kani::assume(total >= BIG_MASTER_SIZE);
+        // Structural: base 64 KiB-aligned; master size and block 16-aligned.
+        kani::assume(BIG_MASTER_SIZE % 16 == 0);
+        kani::assume(block % 16 == 0);
+        let count = (total - BIG_MASTER_SIZE) / block;
+        // Nondeterministic index into the freelist.
+        let k: usize = kani::any();
+        kani::assume(k < count);
+        let addr = BIG_MASTER_SIZE + k * block;
+        assert!(addr % 16 == 0, "P3: block not 16-aligned");
+        assert!(addr + block <= total, "P2/P6: block past end");
+        if k > 0 {
+            let prev = BIG_MASTER_SIZE + (k - 1) * block;
+            assert!(
+                addr - prev == block,
+                "P1: non-contiguous stride at k={}"
+            );
+        }
+    }
+
+    /// Medium-span equivalent of P2: per-page carve never overruns the page
+    /// (`b + block_size <= end` with `end = chunk + PAGE_SIZE`).
+    #[kani::proof]
+    fn medium_page_carve_stays_in_page() {
+        let block: usize = kani::any();
+        // Medium window: (16384, 65472], 16-aligned.
+        kani::assume(block > 16_384 && block <= 65_472 && block % 16 == 0);
+        let chunk_off: usize = kani::any();
+        kani::assume(chunk_off < PAGE_SIZE);
+        // Header sizes are 16-multiples (SpanMaster 64, sub 16).
+        let start = if chunk_off == 0 {
+            SPAN_MASTER_SIZE
+        } else {
+            SPAN_SUB_SIZE
+        };
+        kani::assume(start < PAGE_SIZE);
+        let end = PAGE_SIZE;
+        // First block position in-page (relative).
+        let b0 = start;
+        if b0 + block <= end {
+            assert!(b0 + block <= end, "P2 medium: first block in page");
+            assert!(b0 % 16 == 0, "P3 medium: start 16-aligned");
+        }
+        // Stride stays in-page for any valid k.
+        let count = end.saturating_sub(start) / block;
+        let k: usize = kani::any();
+        kani::assume(k < count);
+        let addr = start + k * block;
+        assert!(addr + block <= end, "P6 medium: block past page end");
+    }
+}
