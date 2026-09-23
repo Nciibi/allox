@@ -104,7 +104,10 @@ struct Workload {
     kind: Kind,
 }
 
-const WORKLOADS: &[Workload] = &[
+// TEMPORARY S8 SCALING EXPERIMENT (revert after): workloads from a fn so
+// the large-only 8T thread count can come from S8_THREADS env.
+fn workloads() -> Vec<Workload> {
+    vec![
     Workload {
         name: "tight-small 1T",
         threads: 1,
@@ -513,7 +516,7 @@ fn main() {
     println!("{}", "-".repeat(155));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
-    for wl in WORKLOADS {
+    for wl in workloads() {
         if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
         }
