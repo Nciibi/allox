@@ -50,7 +50,12 @@ fn churn(mode: &str) {
 
 #[test]
 fn zz_minimize() {
-    let mode = std::env::var("MODE").unwrap();
+    let mode: &'static str = match std::env::var("MODE").unwrap().as_str() {
+        "small" => "small",
+        "medium" => "medium",
+        "large" => "large",
+        _ => panic!("MODE=small|medium|large"),
+    };
     allox::flush_current_thread();
     for _ in 0..5 {
         let handles: Vec<_> = (0..4)
