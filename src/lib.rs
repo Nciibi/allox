@@ -182,6 +182,7 @@ unsafe fn dealloc_small(p: *mut u8) {
     with_cache(
         |c| c.dealloc(p, class),
         || {
+            *p.cast::<*mut u8>() = ptr::null_mut();
             HEAP.release_blocks(page, p, 1);
         },
     );
@@ -201,6 +202,7 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
     with_cache(
         |c| c.dealloc_medium(p, mclass),
         || {
+            *p.cast::<*mut u8>() = ptr::null_mut();
             MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
         },
     );
@@ -225,6 +227,7 @@ unsafe fn dealloc_big(p: *mut u8, span: *mut BigMaster) {
     with_cache(
         |c| c.dealloc_big(p, span),
         || {
+            *p.cast::<*mut u8>() = ptr::null_mut();
             BIG_HEAP.release_blocks(span, p, 1);
         },
     );
@@ -857,6 +860,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
             |c| c.dealloc_medium(p, mclass),
             || {
                 let span = SpanMaster::of(p);
+                *p.cast::<*mut u8>() = ptr::null_mut();
                 MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
             },
         );
@@ -875,6 +879,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
         |c| c.dealloc(p, class),
         || {
             let page = page::PageHeader::of(p);
+            *p.cast::<*mut u8>() = ptr::null_mut();
             HEAP.release_blocks(page, p, 1);
         },
     );

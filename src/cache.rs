@@ -490,6 +490,9 @@ impl ThreadCache {
             let page = PageHeader::of(p);
             let owner = (*page).owner;
             if owner != 0 && owner != self.tid() {
+                // Terminates the freelist walk in `release_inner` — a live
+                // block still holds user data in its first word.
+                *p.cast::<*mut u8>() = ptr::null_mut();
                 crate::heap::HEAP.release_blocks(page, p, 1);
                 #[cfg(feature = "telemetry")]
                 self.note_free(class);
@@ -607,6 +610,7 @@ impl ThreadCache {
             if !span.is_null() {
                 let owner = (*span).owner;
                 if owner != 0 && owner != self.tid() {
+                    *p.cast::<*mut u8>() = ptr::null_mut();
                     MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
                     #[cfg(feature = "telemetry")]
                     self.note_free_medium(mclass);
@@ -723,6 +727,7 @@ impl ThreadCache {
         if self.drift_gate_open() {
             let owner = (*span).owner;
             if owner != 0 && owner != self.tid() {
+                *p.cast::<*mut u8>() = ptr::null_mut();
                 BIG_HEAP.release_blocks(span, p, 1);
                 #[cfg(all(feature = "telemetry", unix, feature = "std"))]
                 self.note_free_big(bclass);
