@@ -20,15 +20,16 @@ testing culture, Windows treated as first-class.
 Goals:
 - G1 Correctness first: sound for every `GlobalAlloc` contract; Miri-clean;
   randomized stress tests in CI.
-- G2 Zero dependencies, zero `cc`. Stable Rust, MSRV 1.70.
+- G2 Zero dependencies, zero `cc`. Stable Rust, MSRV 1.79.
 - G3 Fast single-thread fast path: TLS read + pop + a couple of branches.
 - G4 Multi-core scaling: thread-local caches; locks only on slow paths.
-- G5 Cross-platform: Windows, Linux, macOS out of the box.
+- G5 Cross-platform: Windows, Linux, macOS, wasm32 out of the box; `no_std`.
 - G6 Observable: live stats API at near-zero cost.
 - G7 `#[global_allocator]` + C ABI (`allox_malloc/free/calloc/realloc/aligned_alloc`).
 
 Non-goals (v1): NUMA awareness, huge pages, `Allocator` trait impl,
-wasm32 (later), OOM policy beyond returning null.
+OOM policy beyond returning null. (wasm32 is implemented — see `sys/wasm.rs`
+and `examples/wasm_smoke.rs`; it is no longer a non-goal.)
 
 ## 3. Research summary
 
@@ -64,13 +65,19 @@ wasm32 (later), OOM policy beyond returning null.
 +----------------------------------------------------------+
 | Public API: Allox (GlobalAlloc) . C ABI . stats          |
 +----------------------------------------------------------+
-| cache: ThreadCache - per-thread bins, intrusive freelist |
+| cache: ThreadCache - per-thread bins (small/medium/big), |
+|         byte-budgeted, grouped flush, large stash        |
 +----------------------------------------------------------+
-| heap: GlobalHeap - partial-page lists, mutex             |
+| heap: GlobalHeap (small) + MediumHeap + BigHeap          |
+|         sharded per-class mutexes, span/page lifecycle   |
 +----------------------------------------------------------+
-| page: PageHeader (64 KiB pages, one size class each)     |
+| page/span: PageHeader (64 KiB) | SpanMaster (multi-page) |
+|            LargeHeader (direct-mapped regions)           |
 +----------------------------------------------------------+
-| sys: map/unmap - VirtualAlloc | mmap                     |
+| arena (unix+std): 16 GiB PROT_NONE reserve, MAP_FIXED    |
+|         commit, hole stack; fallback: sys::map           |
++----------------------------------------------------------+
+| sys: map/unmap/discard - VirtualAlloc | mmap | memory.grow|
 +----------------------------------------------------------+
 ```
 
