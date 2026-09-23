@@ -1016,6 +1016,21 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             return p;
         }
     }
+    // Big same-class resize is identity too (arena targets only): locate by
+    // side table (data chunks have no headers to mask), validate, compare.
+    #[cfg(all(unix, feature = "std"))]
+    if size != 0 {
+        let big = crate::arena::big_table_get(p);
+        if !big.is_null() && (*big).contains(p) {
+            let old_bclass = (*big).bclass as usize;
+            if size > classes::MAX_MEDIUM_BLOCK
+                && size <= classes::MAX_BIG_BLOCK
+                && big_class_for_size(size) == old_bclass
+            {
+                return p;
+            }
+        }
+    }
     let new_p = malloc(size);
     if !new_p.is_null() && size != 0 {
         let old_size = usable_size(p);
