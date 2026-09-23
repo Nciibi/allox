@@ -7,7 +7,13 @@ independently, ordered by ROI. Methodology everywhere: ≥2 s × 3 reps,
 `__debug_map_split` + `peakRSS` probe columns, sensitivity-checked tests
 (disable-the-feature must fail), one point measured before the next starts.
 
-## 1. Arena: wire spans (next point)
+## 1. Arena: wire spans (DONE 2026-09-23)
+
+Measured (2 s × 3 reps, same box): `mixed-all 8T` 13.06M → 15.36M
+(+18%), probe unmaps 1023 → 12/s (trim-munmap pairs gone), span fresh
+takes 1017 → 717/s; `mixed-all 1T` 2.54M → 2.64M (noise), steady-state
+syscall-free either way. Full suite green. Revert point was two call
+sites + one fate arm in `src/heap.rs`.
 
 Spans are the biggest remaining syscall source on mixed workloads
 (~16k span maps/s on mixed-all 1T; each = mmap + 2 trim unmaps today).
@@ -31,7 +37,31 @@ Spans are the biggest remaining syscall source on mixed workloads
 * Accept: `mixed-all 1T/8T` span-maps drop ≥50% with RSS flat; full suite
   green. Revert point: two call sites + one fate arm.
 
-## 2. Arena: wire small pages (only after 1 validates)
+## 2. Arena: wire small pages (DONE 2026-09-23)
+
+Measured (2 s × 3 reps): `tight-small 1T/8T` 54.1M/229.6M → 51.3M/225.4M
+(noise-flat), `mixed-small 1T/8T` 31.8M/157.8M → 32.9M/153.5M
+(noise-flat), `spawn-churn` 2.99M → 2.91M with unmaps 0/0 before and
+after; `mixed-small 8T` probe unmaps 14 → 0/s. Suite green.
+
+Two fixes landed with it (both required, both in `src/heap.rs` unless noted):
+* `MAPPED_PAGES` is live-virtual again: `arena::commit` now returns
+  `(base, fresh)` (bump = new virtual, hole reuse = already counted);
+  callers count `MAPPED_PAGES` only when `fresh`, `MAP_CALLS` on every
+  success. Without this, `tests/thread_exit.rs` convergence fails
+  (+~400 mappings/generation drift). `tests/stress.rs::stats_are_sane`
+  now asserts `map_calls` (robust to hole reuse).
+* Pre-existing heap corruption, found by §2 validation (not caused by
+  it — reproduces 12/12 on v0.0.413): small-cold `sys::discard` ran
+  OUTSIDE the class lock, so a concurrent cold pop could re-carve and
+  hand out the page before the stale discard landed, zeroing live
+  blocks/headers (short free lists, wild splices, ~30% crash rate in
+  `thread_exit` churn). Medium spans and large regions already
+  discarded under their locks ("found the hard way" per their
+  comments); small never got the fix. Fix: discard under the lock in
+  `release_inner`, caller Cold arm is now a no-op. Verified: cold-only
+  config went ~100% crash → 12/12 clean, `thread_exit` 15/15, full
+  suite green.
 
 Same swap in `GlobalHeap::take_blocks` / `release_inner` unmap arm
 (`src/heap.rs`). Small pages churn less through fresh maps (bins absorb),
