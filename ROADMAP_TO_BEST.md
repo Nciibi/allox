@@ -11,23 +11,22 @@ Constraints (assumed, plain language):
 * Only `benches/`, `tests/`, `fuzz/` may add C crates for fair comparison.
 * No breaking `Allox` / `malloc` / `free` / C ABI change unless explicitly noted.
 
-## Why we lose today (Linux evidence, Ryzen 5 1600)
+## Why we lost historically (Linux evidence, Ryzen 5 1600 — mostly fixed)
 
-* `mixed-all 8T (16-65536B)`: now **12.1M vs system 14.1M (0.86x),
+* `mixed-all 8T (16-65536B)`: **now 12.1M vs system 14.1M (0.86x),
   vs mimalloc 18.6M (0.65x)** — per-op gap remains (REMAINING_PLAN §6);
   hit-rate/syscall gap closed by spans + arena (was 0.04x system).
-* `large-only 8T (32K-256K)`: **9.06M vs mimalloc 13.5M (0.67x)** after
-  big spans (was 0.05x); unmaps 0 in probe. 1T tail >262144 stays large.
-* Historical (pre-arena/span) evidence for why the original plan existed:
-  mixed-all 8T was 0.68M vs system 15.7M (0.04x) with a single global
-  LARGE_CACHE spinlock + per-page mmap tax — all fixed by P0–P1.
-* `stress` leaves 4214 pages (~270 MiB) mapped after free — dead-thread
-  caches are never reclaimed (`DESIGN.md §4.5`, `src/lib.rs:666`).
-* `src/sys/unix.rs:43-70` pays 1x `mmap` + up to 2x `munmap` per page to
-  force 64 KiB alignment. Amortized fine for 64B-thread-cached pages
-  (~1000 blocks/page), fatal for per-alloc large `mmap`.
-* `src/lib.rs:190,210`: single global `LARGE_CACHE` spinlock + O(N=64)
-  best-fit scan on every large alloc/free. 8 threads serialize here.
+* `large-only 8T (32K-256K)`: **now 9.06M vs mimalloc 13.5M (0.67x)**
+  after big spans (was 0.05x); unmaps 0 in probe. 1T tail >262144 stays
+  large-path by design.
+* `ecs 8T` still loses to system (≈0.07×) because glibc grows via
+  `mremap` (zero-copy); allox realloc copies — mremap trial was flat for
+  allox (arena-backed traffic never hit the legacy path) and reverted.
+* Historical bullets that motivated the original plan (all fixed by
+  P0–P1): single global LARGE_CACHE spinlock + O(N) best-fit; per-page
+  mmap+trim tax; 4214-page dead-thread leak; 0.04× mixed-all.
+* `stress` dead-thread page accumulation: fixed by exit-flush (P1e) —
+  `tests/thread_exit.rs` now asserts convergence.
 * `src/classes.rs:11`: `MAX_SMALL_SIZE=16 KiB` with fixed 64 KiB pages.
   Can't just bump to 64 KiB — `(65536-48)/32768 = 1` block/page = 50%
   page waste. Needs multi-page spans (like mimalloc segments).
