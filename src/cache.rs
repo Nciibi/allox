@@ -96,15 +96,6 @@ struct Group {
     n: u16,
 }
 
-impl Group {
-    const EMPTY: Group = Group {
-        page: ptr::null_mut(),
-        head: ptr::null_mut(),
-        tail: ptr::null_mut(),
-        n: 0,
-    };
-}
-
 /// One span's share of a medium flush chunk (mirrors [`Group`]).
 #[derive(Clone, Copy)]
 struct MGroup {
@@ -112,15 +103,6 @@ struct MGroup {
     head: *mut u8,
     tail: *mut u8,
     n: u32,
-}
-
-impl MGroup {
-    const EMPTY: MGroup = MGroup {
-        master: ptr::null_mut(),
-        head: ptr::null_mut(),
-        tail: ptr::null_mut(),
-        n: 0,
-    };
 }
 
 /// One span's share of a big flush chunk (mirrors [`MGroup`]).
@@ -131,16 +113,6 @@ struct BGroup {
     head: *mut u8,
     tail: *mut u8,
     n: u32,
-}
-
-#[cfg(all(unix, feature = "std"))]
-impl BGroup {
-    const EMPTY: BGroup = BGroup {
-        master: ptr::null_mut(),
-        head: ptr::null_mut(),
-        tail: ptr::null_mut(),
-        n: 0,
-    };
 }
 
 #[derive(Clone, Copy)]
