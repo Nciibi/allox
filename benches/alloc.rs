@@ -517,7 +517,7 @@ fn main() {
     println!("{}", "-".repeat(155));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
-    for wl in workloads() {
+    for wl in workloads().iter() {
         if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
         }
