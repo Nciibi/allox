@@ -530,7 +530,7 @@ mod tests {
                 bclass: 0,
                 flags: 0,
                 npages: 4,
-                _pad: 0,
+                owner: 0,
             };
             let mptr = &mut master as *mut BigMaster;
             big_table_set(raw, 4, mptr);
