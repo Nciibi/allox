@@ -305,17 +305,45 @@ impl Arena {
     /// Overflow discards nothing (caller already did) and abandons the entry:
     /// virtual stays reserved, physical dropped, nothing ever reuses or
     /// unmaps it. Bounded by overflow rate; counted for observability.
+    ///
+    /// The byte budget is claimed lock-free (CAS) before taking the shard
+    /// lock and refunded on slot overflow, so the global cap stays exact
+    /// without a global lock; per-shard slots bound scan length.
     fn holes_give(&self, base: *mut u8, pages: usize) {
         let start = self.start.load(Ordering::Relaxed);
         let off = (base as usize).wrapping_sub(start);
         let bytes = pages * ARENA_ALIGN;
-        let mut holes = self.holes.lock();
-        if holes.len < HOLE_SLOTS && holes.bytes + bytes <= HOLE_CAP_BYTES {
+        // Claim byte budget first (exact cap, no global lock).
+        loop {
+            let cur = self.hole_bytes.load(Ordering::Relaxed);
+            match cur.checked_add(bytes) {
+                Some(next) if next <= HOLE_CAP_BYTES => {
+                    match self.hole_bytes.compare_exchange(
+                        cur,
+                        next,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break,
+                        Err(_) => core::hint::spin_loop(),
+                    }
+                }
+                _ => {
+                    self.abandoned.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
+        let shard = Self::shard_for(pages);
+        let mut holes = self.holes[shard].lock();
+        if holes.len < HOLE_SLOTS_PER_SHARD {
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
-            holes.bytes += bytes;
         } else {
+            // Slot overflow: refund the byte claim, then abandon (same
+            // accounting as before — virtual retained, never reused).
+            self.hole_bytes.fetch_sub(bytes, Ordering::Relaxed);
             self.abandoned.fetch_add(1, Ordering::Relaxed);
         }
     }
