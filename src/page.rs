@@ -4,6 +4,8 @@
 
 use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::CLASSES;
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{BIG_CLASSES, NUM_BIG};
 use core::ptr;
 
 pub(crate) const PAGE_SHIFT: u32 = 16;
