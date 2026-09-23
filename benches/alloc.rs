@@ -171,9 +171,7 @@ const WORKLOADS: &[Workload] = &[
     },
     Workload {
         name: "spawn-churn",
-        // TEMPORARY EXPERIMENT S5.1 (revert after): 1 thread to separate
-        // contention from per-op cost.
-        threads: 1,
+        threads: 4,
         size_range: (16, 4096),
         free_pct: 50,
         kind: Kind::SpawnChurn,
