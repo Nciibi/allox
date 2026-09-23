@@ -634,18 +634,58 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     alloc_small(class_for_size(size))
 }
 
-/// Like `alloc_impl` but zeroes the allocation. Virgin small/medium blocks
-/// only need their freelist-link word cleared; recycled large regions are
-/// memset.
+/// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
+/// blocks only need their freelist-link word cleared; recycled large
+/// regions are memset.
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
         return align.max(1) as *mut u8;
     }
     if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
-        let (p, fresh) = alloc_large_ex(size, align);
-        if !p.is_null() && !fresh {
-            // Recycled region: dirtied by its previous life.
+        // Big-span range on arena targets is handled below; everywhere else
+        // (and for true large sizes) this is the large path. The big branch
+        // below falls back here on arena-unavailable via alloc_large_ex.
+        #[cfg(not(all(unix, feature = "std")))]
+        {
+            let (p, fresh) = alloc_large_ex(size, align);
+            if !p.is_null() && !fresh {
+                // Recycled region: dirtied by its previous life.
+                ptr::write_bytes(p, 0, size);
+            }
+            return p;
+        }
+        #[cfg(all(unix, feature = "std"))]
+        if size > MAX_BIG_BLOCK {
+            let (p, fresh) = alloc_large_ex(size, align);
+            if !p.is_null() && !fresh {
+                ptr::write_bytes(p, 0, size);
+            }
+            return p;
+        }
+    }
+    #[cfg(all(unix, feature = "std"))]
+    if size > MAX_MEDIUM_BLOCK {
+        let bclass = big_class_for_size(size);
+        let (p, virgin) = with_cache(
+            |c| c.alloc_big_zeroed(bclass),
+            || {
+                let (chain, _, virgin) = BIG_HEAP.take_blocks(bclass);
+                (chain, virgin)
+            },
+        );
+        if p.is_null() {
+            // Arena unavailable: legacy large path (fresh flag drives the
+            // memset, mirroring the large branch above).
+            let (lp, fresh) = alloc_large_ex(size, align);
+            if !lp.is_null() && !fresh {
+                ptr::write_bytes(lp, 0, size);
+            }
+            return lp;
+        }
+        if virgin {
+            p.cast::<u64>().write(0);
+        } else {
             ptr::write_bytes(p, 0, size);
         }
         return p;
