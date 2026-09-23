@@ -88,6 +88,32 @@ structural: every allox fast path is lock-free per thread (sharded class
 locks are touched only by batched slow paths), while single-heap
 allocators serialize on one mutex. Reproduce with `cargo bench`.
 
+Linux x86-64 (Ryzen 5 1600), median of 3 interleaved 2 s runs,
+`cargo bench` (ops/s, higher is better). Same harness and workloads as
+above, plus medium/large/producer-consumer/spawn-churn coverage and
+mimalloc + snmalloc comparators (dev-only; the library stays zero-C).
+dlmalloc omitted: 10×+ run-to-run variance on this box.
+
+| Workload | allox | talc | system | mimalloc | vs talc | vs mim | vs sys |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| tight-small 1T (64 B) | 54.3 M/s | 26.2 M/s | 44.9 M/s | 46.5 M/s | **2.07×** | **1.17×** | **1.21×** |
+| mixed-small 1T (16–4096 B) | 29.1 M/s | 9.0 M/s | 6.7 M/s | 13.0 M/s | **3.23×** | **2.24×** | **4.33×** |
+| tight-small 8T (64 B) | 231.3 M/s | 2.1 M/s | 227.5 M/s | 219.6 M/s | **112×** | **1.05×** | **1.02×** |
+| mixed-small 8T (16–4096 B) | 151.6 M/s | 1.7 M/s | 31.7 M/s | 37.5 M/s | **86.9×** | **4.04×** | **4.78×** |
+| mixed-all 1T (16–65536 B) | 2.25 M/s | 0.47 M/s | 3.14 M/s | 4.19 M/s | **4.83×** | 0.54× | 0.71× |
+| mixed-all 8T (16–65536 B) | 12.4 M/s | 0.96 M/s | 13.7 M/s | 18.7 M/s | **13.0×** | 0.66× | 0.91× |
+| large-only 1T (32K–1M) | 220 K/s | 205 K/s | 245 K/s | 690 K/s | **1.07×** | 0.32× | 0.90× |
+| large-only 8T (32K–256K) | 750 K/s | 410 K/s | 730 K/s | 13.7 M/s | **1.83×** | 0.05× | **1.03×** |
+| prodcons 8T (remote free) | 32.4 M/s | 1.0 M/s | 8.9 M/s | 26.6 M/s | **31.4×** | **1.22×** | **3.63×** |
+| spawn-churn | 11.9 M/s | 2.4 M/s | 11.5 M/s | 12.9 M/s | **5.05×** | 0.92× | **1.04×** |
+
+Small + remote-free paths win or tie everywhere; medium/large variance
+(mixed-all 8T per-op, large-only hit rate) and short-thread churn are the
+known gaps — see REMAINING_PLAN.md. Two context notes: spawn-churn is
+pool-state sensitive (0.23x mimalloc isolated, 0.92x in full-suite
+order); large-only 8T varies run to run (lock-regime dynamics, same
+reference). Full six-allocator output (incl. snmalloc) in harness runs.
+
 ## Design
 
 mimalloc-inspired, adapted for Rust's world:
