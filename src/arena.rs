@@ -47,10 +47,14 @@ const ARENA_SIZE: usize = 16 * 1024 * 1024 * 1024;
 const ARENA_SIZE: usize = 512 * 1024 * 1024;
 
 /// Hole-stack slots. Best-fit scans stay L1-resident; overflow discards and
-/// abandons (virtual retained, never reused).
-/// TEMPORARY EXPERIMENT E2 (revert after measurement): 2048 slots.
-/// E1 (4096) took abandonment 22665 -> 0 but may cost scan time.
-const HOLE_SLOTS: usize = 2048;
+/// abandons (virtual retained, never reused). Sized so large-only variance
+/// bursts (32K-1M uniform churn parks thousands of mixed-size holes) fit:
+/// 1024 overflowed ~22k/run into abandonment + 16 GiB reservation
+/// exhaustion, 2048 still overflowed ~21k, 4096 absorbs with zero
+/// abandonment (measured §3 E0-E2). 4096 x 16 B entries = 64 KiB static;
+/// scans run only on fresh takes (already past a mutex + before a
+/// MAP_FIXED), so scan cost stays well under the syscall it replaces.
+const HOLE_SLOTS: usize = 4096;
 /// Byte cap on parked holes. Bounds dark virtual on churn.
 #[cfg(target_pointer_width = "64")]
 const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
