@@ -122,6 +122,17 @@ suspicion. No blind experiments (the count-cap regression taught this).
 
 ## 7. Correctness backlog (must clear before 0.2)
 
+* **`cached_bytes` underflow via the trim-lie (found 2026-09-23, still
+  open):** `trim()` sets `cached_bytes = target` when nothing is
+  trimmable while blocks remain binned, so the counter persistently
+  lags actual retention; later pops can drive it below zero → debug
+  panic at `cache.rs:alloc` (`cached_bytes -=`, plain `-=`), release
+  wrap → over-trim storm. Deterministic with tiny budgets
+  (`set_thread_cache_budget(0)` fails 12/12 on the main thread);
+  rare with the default 32 MiB (needs >16 MiB cached with no bin over
+  64 blocks). Counter is trim-heuristic-only (no heap corruption from
+  it), but the accounting should be fixed (saturating ops and/or no
+  lying reset) with a regression test.
 * **Realloc zero-size dangling bug (flagged, pre-existing):**
   `GlobalAlloc::realloc` same-class identity with `layout.size() == 0`
   can return the dangling pointer for nonzero `new_size`. Fix + targeted
