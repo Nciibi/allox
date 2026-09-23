@@ -202,6 +202,91 @@ impl SpanMaster {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Big spans: contiguous runs of 64 KiB pages carved into blocks of one big
+// class (65472 B, 262144 B]. Layout is one meta chunk (BigMaster, 64 B)
+// plus pure data chunks: blocks are carved contiguously from base + 64 and
+// freely cross chunk boundaries, because data chunks carry no headers.
+// Lookup therefore cannot mask (a masked base inside a data chunk is user
+// data); it goes through the arena page-indexed side table instead.
+// Pointer -> master: table[(p - arena_start) >> 16], validated by
+// contains() below. See DESIGN_SPANS_BIG.md.
+// ---------------------------------------------------------------------------
+
+// magic + prev + next + free_head + free_count/used + bclass/flags +
+// npages/pad = 56 bytes, padded by align(16) to 64 (same as SpanMaster).
+#[cfg(all(unix, feature = "std"))]
+#[repr(C, align(16))]
+pub(crate) struct BigMaster {
+    pub(crate) magic: u64,
+    pub(crate) prev: *mut BigMaster,
+    pub(crate) next: *mut BigMaster,
+    pub(crate) free_head: *mut u8,
+    pub(crate) free_count: u32,
+    /// Blocks held outside this span's own free list (live or thread-cached).
+    pub(crate) used: u32,
+    pub(crate) bclass: u16,
+    pub(crate) flags: u16,
+    /// Span length in 64 KiB pages (meta chunk included).
+    pub(crate) npages: u32,
+    pub(crate) _pad: u32,
+}
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const BIG_MASTER_SIZE: usize = core::mem::size_of::<BigMaster>();
+
+#[cfg(all(unix, feature = "std"))]
+impl BigMaster {
+    /// Carve freshly mapped `npages` pages (base 64 KiB-aligned) into a full
+    /// free list of big-`bclass` blocks, packed contiguously from just past
+    /// the master header — including across chunk boundaries, which hold no
+    /// headers. The span is born with no users.
+    pub(crate) unsafe fn init(&mut self, bclass: usize, npages: u32) {
+        debug_assert!(bclass < NUM_BIG);
+        let block_size = BIG_CLASSES[bclass];
+        let base = self as *mut _ as usize;
+        let end = base + npages as usize * PAGE_SIZE;
+        let mut head: *mut u8 = ptr::null_mut();
+        let mut count = 0u32;
+        let mut b = base + BIG_MASTER_SIZE;
+        while b + block_size <= end {
+            *(b as *mut *mut u8) = head;
+            head = b as *mut u8;
+            count += 1;
+            b += block_size;
+        }
+        debug_assert!(count > 0);
+        self.magic = BIGMAGIC;
+        self.prev = ptr::null_mut();
+        self.next = ptr::null_mut();
+        self.free_head = head;
+        self.free_count = count;
+        self.used = 0;
+        self.bclass = bclass as u16;
+        self.flags = FLAG_VIRGIN;
+        self.npages = npages;
+        self._pad = 0;
+    }
+
+    /// Byte size of the whole span mapping (for unmap).
+    #[inline]
+    pub(crate) unsafe fn mapped_bytes(&self) -> usize {
+        self.npages as usize * PAGE_SIZE
+    }
+
+    /// Ownership check: master magic intact, class in range, and `p` inside
+    /// the span extent. Same fail-closed role as `SpanMaster::contains` for
+    /// stale side-table reads and magic collisions with user data.
+    #[inline]
+    pub(crate) unsafe fn contains(&self, p: *mut u8) -> bool {
+        self.magic == BIGMAGIC
+            && (self.bclass as usize) < NUM_BIG
+            && self.npages > 0
+            && (p as usize) > (self as *const _ as usize)
+            && (p as usize) < (self as *const _ as usize) + self.mapped_bytes()
+    }
+}
+
 #[repr(C, align(16))]
 pub(crate) struct LargeHeader {    pub(crate) magic: u64,
     pub(crate) mapped_size: usize,
