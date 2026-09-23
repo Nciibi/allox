@@ -1045,6 +1045,48 @@ unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
     }
 }
 
+/// Debug-build validation for big frees: `p` must sit block-aligned inside
+/// the span's single contiguous carved area (past the 64 B master — data
+/// chunks reserve nothing, so unlike medium spans there are no per-chunk
+/// bounds, only the whole-span extent) and must not already be on the span
+/// free list. Runs under the big-heap lock.
+#[cfg(all(debug_assertions, unix, feature = "std"))]
+unsafe fn debug_validate_free_big(p: *mut u8, span: *mut BigMaster) {
+    use crate::page::BIG_MASTER_SIZE;
+    if p.is_null() || span.is_null() {
+        invalid("allox: big dealloc of null");
+    }
+    let bclass = (*span).bclass as usize;
+    let block_size = BIG_CLASSES[bclass];
+    let base = span as usize;
+    let npages = (*span).npages as usize;
+    if p as usize <= base || p as usize >= base + npages * crate::page::PAGE_SIZE {
+        invalid("allox: big dealloc outside owning span");
+    }
+    // Contiguous carve: everything past the master header is blocks.
+    let start = base + BIG_MASTER_SIZE;
+    let end = base + npages * crate::page::PAGE_SIZE;
+    if (p as usize) < start || (p as usize) + block_size > end {
+        invalid("allox: big dealloc of misaligned interior pointer");
+    }
+    if (p as usize - start) % block_size != 0 {
+        invalid("allox: big dealloc of misaligned interior pointer");
+    }
+    let _guard = crate::heap::BIG_HEAP.debug_lock_big(bclass);
+    let mut cur = (*span).free_head;
+    let mut steps = (*span).free_count;
+    while steps > 0 {
+        if cur == p {
+            invalid("allox: double free detected");
+        }
+        if cur.is_null() {
+            break;
+        }
+        cur = *cur.cast::<*mut u8>();
+        steps -= 1;
+    }
+}
+
 #[cfg(all(debug_assertions, feature = "std"))]
 fn invalid(msg: &'static str) -> ! {
     eprintln!("{}", msg);
