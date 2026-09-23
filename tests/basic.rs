@@ -84,6 +84,70 @@ fn global_realloc_zero_layout_grows_fresh() {
 }
 
 #[test]
+fn large_realloc_grows_without_copy_loss() {
+    // Doubling growth 64 KiB -> 1 MiB: contents must survive every step
+    // whether the kernel grows in place or relocates (or falls back to
+    // alloc-copy-free on non-Linux / arena regions).
+    unsafe {
+        let mut size = 65536usize;
+        let mut p = malloc(size);
+        assert!(!p.is_null());
+        for i in 0..size {
+            *p.add(i) = (i % 251) as u8;
+        }
+        while size < 1048576 {
+            let nsize = size * 2;
+            let np = realloc(p, nsize);
+            assert!(!np.is_null());
+            for i in 0..size {
+                assert_eq!(*np.add(i), (i % 251) as u8, "lost byte at {}", i);
+            }
+            assert!(usable_size(np) >= nsize);
+            // Fresh tail is writable.
+            core::ptr::write_bytes(np.add(size), 0x5A, nsize - size);
+            p = np;
+            size = nsize;
+        }
+        // Shrink path keeps the prefix and stays usable.
+        let sp = realloc(p, 4096);
+        assert!(!sp.is_null());
+        for i in 0..4096 {
+            let expected = if i < 65536 { (i % 251) as u8 } else { 0x5A };
+            assert_eq!(*sp.add(i), expected, "shrink byte at {}", i);
+        }
+        free(sp);
+    }
+}
+
+#[test]
+fn global_realloc_large_grows_without_copy_loss() {
+    use std::alloc::{GlobalAlloc, Layout};
+    unsafe {
+        let a = allox::Allox;
+        let mut size = 70000usize; // large tier, odd size (not class-round)
+        let mut layout = Layout::from_size_align(size, 16).unwrap();
+        let mut p = a.alloc(layout);
+        assert!(!p.is_null());
+        for i in 0..size {
+            *p.add(i) = (i % 251) as u8;
+        }
+        for _ in 0..3 {
+            let nsize = size * 2 + 123;
+            let np = a.realloc(p, layout, nsize);
+            assert!(!np.is_null());
+            for i in 0..size {
+                assert_eq!(*np.add(i), (i % 251) as u8, "lost byte at {}", i);
+            }
+            assert!(np as usize % 16 == 0, "alignment lost");
+            p = np;
+            layout = Layout::from_size_align(nsize, 16).unwrap();
+            size = nsize;
+        }
+        a.dealloc(p, layout);
+    }
+}
+
+#[test]
 fn malloc_free_all_sizes_roundtrip() {
     unsafe {
         let mut ptrs = Vec::new();
