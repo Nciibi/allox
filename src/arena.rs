@@ -269,34 +269,39 @@ impl Arena {
         }
     }
 
-    /// Commit `pages` (64 KiB units, nonzero) and return the fresh-zeroed
-    /// base, or null when unavailable — reservation failed, bump exhausted,
+    /// Commit `pages` (64 KiB units, nonzero) and return `(base, fresh)`:
+    /// `base` is null when unavailable — reservation failed, bump exhausted,
     /// or the commit itself failed. Null is never OOM-by-itself: callers
-    /// fall back to legacy mapping paths.
+    /// fall back to legacy mapping paths. Fresh zeros guaranteed on success.
     ///
-    /// Counter ownership: NONE here. The caller counts exactly one fresh OS
-    /// mapping per non-null return (in `MAP_CALLS`/`MAPPED_PAGES`), whether
-    /// the slice came from a hole re-commit or a bump commit — both are one
-    /// kernel mapping op. Hole pops, parks, and abandonments change no
-    /// counters (still mapped either way).
-    pub(crate) unsafe fn commit(&self, pages: usize) -> *mut u8 {
+    /// `fresh` is true only for bump commits (genuinely new virtual address
+    /// space). Hole reuses recommit already-live virtual, so `fresh` is
+    /// false for them. Counter contract for callers: count one mapping op
+    /// (`MAP_CALLS` + class split) per non-null return — every success is
+    /// one kernel mapping either way — but count live virtual
+    /// (`MAPPED_PAGES`) only when `fresh` is set. Hole pops, parks, and
+    /// abandonments change no counters (virtual stays reserved either way),
+    /// which keeps `MAPPED_PAGES` equal to live virtual instead of drifting
+    /// as a cumulative-takes counter under churn.
+    pub(crate) unsafe fn commit(&self, pages: usize) -> (*mut u8, bool) {
         let len = match pages.checked_mul(ARENA_ALIGN) {
             Some(l) if l > 0 => l,
-            _ => return ptr::null_mut(),
+            _ => return (ptr::null_mut(), false),
         };
         if !self.ensure_init() {
-            return ptr::null_mut();
+            return (ptr::null_mut(), false);
         }
-        // Best-fit hole first: zero syscalls beyond the commit itself.
+        // Best-fit hole first: virtual already live and counted; the commit
+        // only restores fresh zeros, so this is NOT new virtual.
         let reuse = self.holes_take(pages);
         if !reuse.is_null() {
             if self.commit_range(reuse as usize, len) {
                 self.reuses.fetch_add(1, Ordering::Relaxed);
                 self.commits.fetch_add(1, Ordering::Relaxed);
-                return reuse;
+                return (reuse, false);
             }
             self.holes_give(reuse, pages);
-            return ptr::null_mut();
+            return (ptr::null_mut(), false);
         }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
         let start = self.start.load(Ordering::Relaxed);
@@ -304,7 +309,7 @@ impl Arena {
             let off = self.bump.load(Ordering::Relaxed);
             let end = match off.checked_add(len) {
                 Some(e) if e <= self.size => e,
-                _ => return ptr::null_mut(), // exhausted: legacy fallback
+                _ => return (ptr::null_mut(), false), // exhausted: legacy fallback
             };
             match self
                 .bump
@@ -314,10 +319,10 @@ impl Arena {
                     let base = start + off;
                     if self.commit_range(base, len) {
                         self.commits.fetch_add(1, Ordering::Relaxed);
-                        return base as *mut u8;
+                        return (base as *mut u8, true);
                     }
                     self.holes_give(base as *mut u8, pages);
-                    return ptr::null_mut();
+                    return (ptr::null_mut(), false);
                 }
                 Err(_) => core::hint::spin_loop(),
             }
@@ -367,9 +372,9 @@ impl Arena {
 
 static ARENA: Arena = Arena::new();
 
-/// Commit `pages` from the process arena; null on unavailable (see
-/// [`Arena::commit`]). Fresh zeros guaranteed on success.
-pub(crate) unsafe fn commit(pages: usize) -> *mut u8 {
+/// Commit `pages` from the process arena: `(base, fresh)` — null base on
+/// unavailable (see [`Arena::commit`]). Fresh zeros guaranteed on success.
+pub(crate) unsafe fn commit(pages: usize) -> (*mut u8, bool) {
     ARENA.commit(pages)
 }
 
