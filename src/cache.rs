@@ -687,6 +687,21 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        // Claim every span in the batch for this thread (drift-cap owner).
+        {
+            let mut b = chain;
+            for _ in 0..count {
+                if b.is_null() {
+                    break;
+                }
+                let span = crate::arena::big_table_get(b);
+                if !span.is_null() {
+                    let id = self.tid();
+                    (*span).owner = id;
+                }
+                b = *b.cast::<*mut u8>();
+            }
+        }
         let first = chain;
         let rest = *first.cast::<*mut u8>();
         let bin = &mut self.bigbins[bclass];
@@ -703,6 +718,18 @@ impl ThreadCache {
         debug_validate_free_big(p, span);
 
         let bclass = (*span).bclass as usize;
+
+        // Drift cap: same pressure gate as small frees (see `dealloc`).
+        if self.drift_gate_open() {
+            let owner = (*span).owner;
+            if owner != 0 && owner != self.tid() {
+                BIG_HEAP.release_blocks(span, p, 1);
+                #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+                self.note_free_big(bclass);
+                return;
+            }
+        }
+
         let bin = &mut self.bigbins[bclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
@@ -1074,6 +1101,7 @@ impl ThreadCache {
             }
         }
         self.cached_bytes = 0;
+        self.tid = 0;
         self.virgin = [0; NUM_CLASSES];
         self.mvirgin = [0; NUM_MEDIUM];
         #[cfg(all(unix, feature = "std"))]
