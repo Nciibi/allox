@@ -964,7 +964,10 @@ impl ThreadCache {
         let bin = &mut self.mbins[mclass];
 
         while bin.len > floor_blocks {
-            let mut groups = [MGroup::EMPTY; MAX_MFLUSH_GROUPS];
+            // Uninit: only 0..ng written (the old EMPTY array zeroed ~8 KiB
+            // of stack per call; same pattern as flush_bin).
+            let mut groups: [MaybeUninit<MGroup>; MAX_MFLUSH_GROUPS] =
+                unsafe { MaybeUninit::uninit().assume_init() };
             let mut ng = 0usize;
             let mut popped = 0u32;
 
@@ -985,7 +988,8 @@ impl ThreadCache {
                 debug_assert!(!master.is_null());
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for g in groups.iter_mut().take(ng) {
+                for i in 0..ng {
+                    let g = unsafe { groups[i].assume_init_mut() };
                     if g.master == master {
                         slot = Some(g);
                         break;
@@ -1006,12 +1010,12 @@ impl ThreadCache {
                             crate::heap::MEDIUM_HEAP.release_blocks(mclass, master, b, b, 1);
                             continue;
                         }
-                        groups[ng] = MGroup {
+                        groups[ng] = MaybeUninit::new(MGroup {
                             master,
                             head: b,
                             tail: b,
                             n: 1,
-                        };
+                        });
                         ng += 1;
                     }
                 }
@@ -1019,22 +1023,22 @@ impl ThreadCache {
 
             // One class lock for the whole chunk (not one per group); tails
             // are already tracked so release never re-walks the chains.
-            let mut chunks = [ReleaseChunk {
-                span: ptr::null_mut(),
-                head: ptr::null_mut(),
-                tail: ptr::null_mut(),
-                n: 0,
-            }; MAX_MFLUSH_GROUPS];
+            let mut chunks: [MaybeUninit<ReleaseChunk>; MAX_MFLUSH_GROUPS] =
+                unsafe { MaybeUninit::uninit().assume_init() };
             let nch = ng.min(MAX_MFLUSH_GROUPS);
-            for (i, g) in groups.iter().take(nch).enumerate() {
-                chunks[i] = ReleaseChunk {
+            for i in 0..nch {
+                let g = unsafe { groups[i].assume_init() };
+                chunks[i] = MaybeUninit::new(ReleaseChunk {
                     span: g.master,
                     head: g.head,
                     tail: g.tail,
                     n: g.n,
-                };
+                });
             }
-            crate::heap::MEDIUM_HEAP.release_many(mclass, &chunks[..nch]);
+            let chunks_slice = unsafe {
+                core::slice::from_raw_parts(chunks.as_ptr() as *const ReleaseChunk, nch)
+            };
+            crate::heap::MEDIUM_HEAP.release_many(mclass, chunks_slice);
             if popped == 0 {
                 break;
             }
