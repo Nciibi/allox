@@ -247,13 +247,48 @@ itself is ~18x spawn per thread) — it needs restating before reuse.
 
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
-Was blocked on profiling, not ideas: no `perf`/PMU on the dev box.
-Unblocked 2026-09-23: CI `profile` job added (best-effort `perf stat`
-on mixed-all 8T + spawn-churn, software + hardware counters,
-`continue-on-error`, artifacts uploaded). NEXT: read the first CI
-artifacts, then work the profile — candidates are refill batching,
-free-path load chains (`of`+`contains`), and TLB behavior on scattered
-spans, in that order of suspicion. Still no blind experiments.
+**Local profiling unblocked 2026-09-23** (dev box has `perf` via nix
+`linuxPackages.perf`; CI `profile` job artifacts were empty headers —
+runner `perf` writes a stub and dies, so local PMU is the source of
+truth until CI is fixed). Baseline flat profile (`perf record -F 4999
+--no-call-graph`, BENCH_ALLOC=allox, mixed-all 8T):
+
+| self% | symbol |
+|------:|--------|
+| 43.2 | `GlobalAlloc::dealloc` |
+| 11.4 | `alloc_impl` |
+| 9.8 | `MediumHeap::take_blocks` |
+| 9.8 | `ThreadCache::flush_mbin` |
+| 6.0 | `MediumHeap::release_blocks` |
+| 3.5 | `ThreadCache::flush_bin` |
+| 1.3 | `GlobalHeap::take_blocks` |
+| 1.0 | `ThreadCache::trim` |
+
+`perf annotate` inside dealloc: 48% at the `SPAN_MAGIC` load+branch
+(medium free), 34% at the mclass bounds compare, 14% at the small class
+compare — i.e. **header-derived class on free**, not refill batching,
+was the binding free-path cost. dTLB-load-misses ~100M over a 3 s
+allox-only run (LLC events unsupported on this box).
+
+**Fix landed (free-path load chains):** `dealloc_with_layout` now
+derives `class`/`mclass` from layout size (`class_for_size` /
+`medium_class_for_size` LUTs) and never loads a page/span header on the
+hot path; `ThreadCache::dealloc`/`dealloc_medium` take the class as a
+parameter. Headers are loaded only on the cold no-TLS fallback (and in
+`debug_assertions` validation). `free()`-style `dealloc_impl` still
+probes once then passes the class through.
+
+Post-fix flat profile (same conditions): **dealloc 43% → 20%**;
+`alloc_impl` 11→18%, `take_blocks` 10→12%, `flush_mbin` 10→11%,
+`release_blocks` 6→11% — free path no longer dominates; medium
+refill/flush now leads. Full suite green (debug + release), warning-free.
+Absolute mixed-all scores during this session were polluted by desktop
+load (loadavg 15–40 from parallel opencode/firefox); re-measure the
+score on a quiet box before declaring the ops/s delta — the *profile
+shift* is the reliable result. Next levers in measured order:
+(1) medium refill batching (`MEDIUM_REFILL_BATCH=16`) + flush grouping,
+(2) residual free-path (budget atomic), (3) TLB/spread only if (1)(2)
+flat. CI profile job still needs a fix (empty artifacts).
 
 ## 7. Correctness backlog (must clear before 0.2)
 
