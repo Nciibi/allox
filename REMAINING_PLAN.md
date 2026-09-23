@@ -269,8 +269,12 @@ suspicion. No blind experiments (the count-cap regression taught this).
 * 32-bit build + arena fallback tests in CI — DONE (§3 `bit32` job).
 * CHANGELOG 0.1.0 entry — DONE (rewritten for what 0.1.0 actually
   contains: spans, sharded large/cold tiers, arena, exit flush, zero-size
-  rules). API review: telemetry array covers small + medium and may still
-  grow pre-1.0 — noted in CHANGELOG, acceptable. Version hygiene:
+  rules). API review — DONE 2026-09-23: full public surface audited,
+  rustdoc `-D warnings` clean; fixed `mapped_pages` docs in `Stats` +
+  `Telemetry` (live mappings per fresh take, any size — not 64 KiB
+  pages); completed the C ABI with `allox_malloc_usable_size` + ffi
+  test. Telemetry array covers small + medium and may still grow
+  pre-1.0 — noted in CHANGELOG, acceptable. Version hygiene:
   `cargo publish --dry-run` warning-free; added repository/documentation/
   homepage URLs (was the only manifest warning).
 * External audit scoping for the unsafe core (page/heap/cache/lib
