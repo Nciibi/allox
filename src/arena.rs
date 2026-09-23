@@ -471,8 +471,6 @@ fn big_page_index(p: *mut u8) -> Option<usize> {
 /// (carve path, under the class lock). Out-of-range inputs are ignored
 /// (debug-asserted): callers pass freshly committed arena slices.
 pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMaster) {
-    use crate::page::BigMaster as _BM;
-    let _ = _BM::class_sanity_placeholder();
     for i in 0..pages as usize {
         match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
             Some(idx) => BIG_MAP[idx].store(master as usize, Ordering::Release),
