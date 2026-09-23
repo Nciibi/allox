@@ -46,15 +46,21 @@ const ARENA_SIZE: usize = 16 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
 const ARENA_SIZE: usize = 512 * 1024 * 1024;
 
-/// Hole-stack slots. Best-fit scans stay L1-resident; overflow discards and
-/// abandons (virtual retained, never reused). Sized so large-only variance
-/// bursts (32K-1M uniform churn parks thousands of mixed-size holes) fit:
-/// 1024 overflowed ~22k/run into abandonment + 16 GiB reservation
-/// exhaustion, 2048 still overflowed ~21k, 4096 absorbs with zero
-/// abandonment (measured §3 E0-E2). 4096 x 16 B entries = 64 KiB static;
-/// scans run only on fresh takes (already past a mutex + before a
-/// MAP_FIXED), so scan cost stays well under the syscall it replaces.
-const HOLE_SLOTS: usize = 4096;/// Byte cap on parked holes. Bounds dark virtual on churn.
+/// Hole shards, indexed by hole size: shard `i` nominally holds `(i + 1)`-page
+/// holes; the last shard holds everything `>= HOLE_SHARDS` pages (best-fit
+/// within, as before). Size-sharding keeps exact-size reuse shared across
+/// threads — same-size traffic meets regardless of which thread parked it —
+/// unlike thread-identity sharding, which would strand pools across
+/// short-lived threads and break cross-thread producer-consumer sharing.
+/// Contention and scan length split across shards (one lock each, never
+/// nested: takes hold at most one shard lock at a time, falling back across
+/// shards only after releasing).
+const HOLE_SHARDS: usize = 16;
+/// Slots per shard (16 x 1024 entries = 256 KiB static). Sized so hot sizes
+/// keep at least the old shared capacity: large-only variance concentrates
+/// on ~5 page sizes, each getting a full 1024-slot pool (vs 4096 shared
+/// before). The global byte cap below stays the binding retention bound.
+const HOLE_SLOTS_PER_SHARD: usize = 1024;/// Byte cap on parked holes. Bounds dark virtual on churn.
 #[cfg(target_pointer_width = "64")]
 const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
