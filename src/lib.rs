@@ -224,7 +224,11 @@ const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB tota
 const LARGE_COLD_CAP_BYTES: usize = 64 * 1024 * 1024; // 8 x 64 MiB virtual
 #[cfg(not(target_pointer_width = "64"))]
 const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
-const LARGE_COLD_SLOTS: usize = 64;
+const LARGE_COLD_SLOTS: usize = 512;
+// TEMPORARY EXPERIMENT S10 (revert after measurement): deep cold alone
+// (hot untouched at 64) to test whether cold-slot pressure feeds the hole
+// flood on large-only 8T. Cold is virtual-only (discarded), so depth is
+// nearly free: 8 shards x 512 x 16 B = 64 KiB static.
 
 struct LargeRegionCache {
     len: usize,
