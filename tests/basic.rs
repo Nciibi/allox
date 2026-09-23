@@ -60,6 +60,9 @@ fn tiny_budget_churn_never_underflows() {
         allox::flush_current_thread();
     }
 }
+
+#[test]
+fn global_realloc_zero_layout_grows_fresh() {
     unsafe {
         let a = allox::Allox;
         // Zero-size allocs are dangling by Rust convention; growing one to a
