@@ -67,7 +67,8 @@ jobs:
       - run: cargo build --target i686-unknown-linux-gnu --verbose
       - run: cargo test --target i686-unknown-linux-gnu --verbose
 
-  bench:    strategy:
+  bench:
+    strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
