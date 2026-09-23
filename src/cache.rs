@@ -33,11 +33,16 @@ const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 
 /// Remote-free drift cap (ROADMAP P1 step 4): once a thread's cache exceeds
 /// this fraction of the budget, frees of blocks whose page/span was claimed
-/// by another thread bypass the cache and return straight to the heap via
-/// `release_blocks`. Bounds how much foreign-page junk a freeer can hoard
-/// (producer-consumer / spawn churn) without paying an ownership load on the
-/// common same-thread free path. Local frees keep the full budget.
+/// by another thread are *counted* (`foreign_bytes`) so they can be shed in
+/// batch via `trim` — never one `release_blocks` per free (that serialized
+/// producer-consumer on the class lock and thrashed the arena). Same-thread
+/// frees below the gate stay header-free (the Phase-0 free-path win).
 const DRIFT_GATE_DIV: usize = 2;
+
+/// Once this many foreign bytes are held under the drift gate, shed via
+/// `trim` (chunked, page-grouped: one class lock per FLUSH_CHUNK blocks).
+/// Budget-scaled so `set_thread_cache_budget` moves both gates together.
+const FOREIGN_SHED_DIV: usize = 8;
 
 /// Monotonic thread ids for ownership heuristics (1-based; 0 = unassigned).
 static NEXT_TID: AtomicU32 = AtomicU32::new(1);
@@ -143,6 +148,10 @@ pub(crate) struct ThreadCache {
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
     tid: u32,
+    /// Bytes accepted from foreign-owned pages while the drift gate is open.
+    /// Cleared on every `trim`/`flush_all`; heuristic only (never read for
+    /// correctness). Shed batch via `trim` once ≥ budget/[`FOREIGN_SHED_DIV`].
+    foreign_bytes: usize,
     /// Per class: number of guaranteed-OS-zero blocks currently at the
     /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
     /// iff the remaining length drops below this count.
@@ -209,6 +218,7 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             tid: 0,
+            foreign_bytes: 0,
             virgin: [0; NUM_CLASSES],
             mbins: [Bin {
                 head: ptr::null_mut(),
@@ -385,11 +395,20 @@ impl ThreadCache {
         }
     }
 
-    /// True when this cache is under enough pressure that a foreign free
-    /// should bypass the bin (see [`DRIFT_GATE_DIV`]).
+    /// True when this cache is under enough pressure that foreign frees
+    /// should be counted for a batched shed (see [`DRIFT_GATE_DIV`]).
     #[inline]
     fn drift_gate_open(&self) -> bool {
         self.cached_bytes > thread_cache_budget() / DRIFT_GATE_DIV
+    }
+
+    /// True when either the total budget or the foreign-byte shed limit is
+    /// exceeded — caller should `trim` (batched, page-grouped) and clear
+    /// `foreign_bytes`.
+    #[inline]
+    fn should_shed(&self) -> bool {
+        self.cached_bytes > thread_cache_budget()
+            || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
     }
 
     /// Fast-path allocation. Returns null only when the heap is out of memory.
@@ -482,32 +501,30 @@ impl ThreadCache {
         debug_validate_free(p);
 
         // Drift cap (ROADMAP P1 step 4): under cache pressure, a free of a
-        // block whose page was claimed by another thread goes straight home
-        // instead of growing this bin. The ownership load only runs when the
-        // gate is already open — same-thread frees below the gate stay
-        // header-free (the Phase-0 free-path win).
+        // block whose page/span was claimed by another thread is counted as
+        // foreign. Sheds run through `trim` (chunked + page-grouped) once the
+        // foreign or total budget is hit — never a lock-per-free
+        // `release_blocks`, which serialized prodcons and thrashed the arena.
+        // The ownership load only runs when the gate is already open.
+        let mut foreign = false;
         if self.drift_gate_open() {
             let page = PageHeader::of(p);
             let owner = (*page).owner;
-            if owner != 0 && owner != self.tid() {
-                // Terminates the freelist walk in `release_inner` — a live
-                // block still holds user data in its first word.
-                *p.cast::<*mut u8>() = ptr::null_mut();
-                crate::heap::HEAP.release_blocks(page, p, 1);
-                #[cfg(feature = "telemetry")]
-                self.note_free(class);
-                return;
-            }
+            foreign = owner != 0 && owner != self.tid();
         }
 
         let bin = &mut self.bins[class];
         push_block(&mut bin.head, p);
         bin.len += 1;
         self.cached_bytes += CLASSES[class];
+        if foreign {
+            self.foreign_bytes += CLASSES[class];
+        }
         #[cfg(feature = "telemetry")]
         self.note_free(class);
-        if self.cached_bytes > thread_cache_budget() {
+        if self.should_shed() {
             self.trim();
+            self.foreign_bytes = 0;
         }
     }
 
@@ -604,18 +621,14 @@ impl ThreadCache {
             debug_validate_free_medium(p, span);
         }
 
-        // Drift cap: same pressure gate as small frees (see `dealloc`).
+        // Drift cap: same pressure + batched-shed discipline as small frees
+        // (see `dealloc`).
+        let mut foreign = false;
         if self.drift_gate_open() {
             let span = SpanMaster::of(p);
             if !span.is_null() {
                 let owner = (*span).owner;
-                if owner != 0 && owner != self.tid() {
-                    *p.cast::<*mut u8>() = ptr::null_mut();
-                    MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
-                    #[cfg(feature = "telemetry")]
-                    self.note_free_medium(mclass);
-                    return;
-                }
+                foreign = owner != 0 && owner != self.tid();
             }
         }
 
@@ -623,10 +636,14 @@ impl ThreadCache {
         push_block(&mut bin.head, p);
         bin.len += 1;
         self.cached_bytes += MEDIUM_CLASSES[mclass];
+        if foreign {
+            self.foreign_bytes += MEDIUM_CLASSES[mclass];
+        }
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
-        if self.cached_bytes > thread_cache_budget() {
+        if self.should_shed() {
             self.trim();
+            self.foreign_bytes = 0;
         }
     }
 
@@ -723,26 +740,26 @@ impl ThreadCache {
 
         let bclass = (*span).bclass as usize;
 
-        // Drift cap: same pressure gate as small frees (see `dealloc`).
+        // Drift cap: same pressure + batched-shed discipline as small frees
+        // (see `dealloc`).
+        let mut foreign = false;
         if self.drift_gate_open() {
             let owner = (*span).owner;
-            if owner != 0 && owner != self.tid() {
-                *p.cast::<*mut u8>() = ptr::null_mut();
-                BIG_HEAP.release_blocks(span, p, 1);
-                #[cfg(all(feature = "telemetry", unix, feature = "std"))]
-                self.note_free_big(bclass);
-                return;
-            }
+            foreign = owner != 0 && owner != self.tid();
         }
 
         let bin = &mut self.bigbins[bclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
         self.cached_bytes += BIG_CLASSES[bclass];
+        if foreign {
+            self.foreign_bytes += BIG_CLASSES[bclass];
+        }
         #[cfg(all(feature = "telemetry", unix, feature = "std"))]
         self.note_free_big(bclass);
-        if self.cached_bytes > thread_cache_budget() {
+        if self.should_shed() {
             self.trim();
+            self.foreign_bytes = 0;
         }
     }
 
@@ -1106,6 +1123,7 @@ impl ThreadCache {
             }
         }
         self.cached_bytes = 0;
+        self.foreign_bytes = 0;
         // Keep `tid` stable across flushes: it identifies this OS thread for
         // the drift-cap owner heuristic, not a cache generation.
         self.virgin = [0; NUM_CLASSES];
