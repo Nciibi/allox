@@ -135,14 +135,28 @@ Options in order:
 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
    discipline matters more than the last 10% hit rate here.
 
-## 5. spawn-churn per-op + exit latency (0.22x mimalloc)
+## 5. spawn-churn per-op + exit latency (0.22x mimalloc — DECOMPOSED, no lever pulled)
 
-Decomposed via `spawn-empty` (spawn ≈ 40µs for everyone): the rest is
-refill frequency on fresh-thread bins + exit-flush grouping/locks/
-discards. Levers: refill batch sizing for cold threads, exit-flush chunk
-tuning, cold re-carve cost (init loop per page). Measure each with the
-spawn-empty baseline subtracted; stop when per-thread overhead is within
-2x of spawn cost itself.
+Measured 2026-09-23 (isolated 2 s × 3 reps): allox 2.89M vs mimalloc
+12.64M (0.23x); `spawn-empty` ≈ 29k threads/s (≈34 µs spawn+join) for
+EVERY allocator. Decomposition with a temporary same-churn driver:
+short-lived threads (spawn+exit per 2000-op batch, like the bench)
+2.84M vs long-lived threads (lifecycle amortized) **159M ops/s** —
+56x. Steady-state per-op is excellent (consistent with `mixed-small 8T`
+beating mimalloc 4.3x); probes show ~0 heap syscalls either way, and
+1T→4T scaling (2.70M → 2.89M, 1.07x, vs system 3.4x) implicates
+lifecycle serialization, not fast-path cost. The ~2.7 ms per short
+thread is cold-start page faults on first-touch refills + exit-flush
+grouping/locked releases/discards — structural for shared-page designs
+(mimalloc wins via thread-owned segments freed wholesale, a
+redesign-class difference, out of scope). None of the listed levers
+(refill batch, flush chunk, re-carve init) moves a 2.7 ms lifecycle
+dominated by faults + flush work; pulling them blind risks P2-matrix
+regressions. STOP per the no-blind-experiments rule: next step is lock
++ fault profiling (PMU, see §6), or documenting 0.23x-isolated /
+0.85x-full-process as the short-thread price. Note the 2x-spawn-cost
+stop criterion as written is unreachable for ANY allocator (mimalloc
+itself is ~18x spawn per thread) — it needs restating before reuse.
 
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
