@@ -233,9 +233,6 @@ impl Arena {
     /// Pop a best-fit hole of at least `pages`. Returns the base address with
     /// the entry removed, or null. Lock-scoped; caller commits afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
-        // TEMPORARY S8 MEASUREMENT (revert after).
-        #[cfg(debug_assertions)]
-        let t0 = std::time::Instant::now();
         let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
         for i in 0..holes.len {
