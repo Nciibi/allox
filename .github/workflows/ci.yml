@@ -52,8 +52,22 @@ jobs:
       - run: cargo build --release --target wasm32-unknown-unknown --example wasm_smoke
       - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/examples/wasm_smoke.wasm
 
-  bench:
-    strategy:
+  bit32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: i686-unknown-linux-gnu
+      # 32-bit ALU: 512 MiB arena const + frequent (safe) legacy fallback.
+      # Runs natively on x86_64 runners; arena unit tests use small isolated
+      # instances on any pointer width, so exhaustion/fallback shapes are
+      # covered here too.
+      - run: cargo build --target i686-unknown-linux-gnu --verbose
+      - run: cargo test --target i686-unknown-linux-gnu --verbose
+
+  bench:    strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
