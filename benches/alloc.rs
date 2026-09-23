@@ -743,7 +743,8 @@ fn main() {
     trait SyncGlobalAlloc: GlobalAlloc + Sync {}
     impl<T: GlobalAlloc + Sync> SyncGlobalAlloc for T {}
 
-    let allocators = [
+    // Dynamic list: jemalloc column appears only under `bench-jemalloc`.
+    let mut allocators: Vec<Named> = vec![
         Named("allox", &GLOBAL),
         Named("talc ", &TALC),
         Named("dlmalloc", &DLMALLOC),
@@ -751,23 +752,23 @@ fn main() {
         Named("mimalloc", &MIMALLOC),
         Named("snmalloc", &SNMALLOC),
     ];
+    #[cfg(feature = "bench-jemalloc")]
+    allocators.push(Named("jemalloc", &JEMALLOC));
 
-    println!(
-        "{:<15} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11} {:>9} {:>10} {:>10} {:>10} {:>16}",
-        "workload",
-        "allox",
-        "talc",
-        "dlmalloc",
-        "system",
-        "mimalloc",
-        "snmalloc",
-        "a/talc",
-        "mapcalls",
-        "unmaps",
-        "peakRSS",
-        "arena",
+    // Header: fixed probe columns after one relative column (a/talc).
+    let mut hdr = format!(
+        "{:<15} {:>11}",
+        "workload", "allox"
     );
-    println!("{}", "-".repeat(155));
+    for a in allocators.iter().skip(1) {
+        hdr.push_str(&format!(" {:>11}", a.0));
+    }
+    hdr.push_str(&format!(
+        " {:>9} {:>10} {:>10} {:>10} {:>16}",
+        "a/talc", "mapcalls", "unmaps", "peakRSS", "arena"
+    ));
+    println!("{}", hdr);
+    println!("{}", "-".repeat(hdr.len()));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     for wl in WORKLOADS {
@@ -817,25 +818,31 @@ fn main() {
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
-        println!(
-            "{:<15} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
-            wl.name,
-            medians[0],
-            medians[1],
-            medians[2],
-            medians[3],
-            medians[4],
-            medians[5],
+        let mut row = format!("{:<15} {:>11.0}", wl.name, medians[0]);
+        for m in medians.iter().skip(1) {
+            row.push_str(&format!(" {:>11.0}", m));
+        }
+        row.push_str(&format!(
+            " {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
             allox_s / talc_s.max(1.0),
-            format!("{}/{}/{}/{}/a{}/b{}", map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps),
+            format!(
+                "{}/{}/{}/{}/a{}/b{}",
+                map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps
+            ),
             format!("{}/{}/b{}", unmap_delta, span_unmaps, big_unmaps),
             rss,
-            format!("abnd+{}/s tot{} hi{}MiB", abnd_rate, d1abnd, hi_mib),
-        );
+            format!(
+                "abnd+{}/s tot{} hi{}MiB",
+                abnd_rate, d1abnd, hi_mib
+            ),
+        ));
+        println!("{}", row);
     }
 
-    println!("{}", "-".repeat(155));
+    println!("{}", "-".repeat(60));
     println!("note: harness Vecs allocate through allox (process global); identical for all.");
     println!("mapcalls = allox MAP_CALLS delta / mapped-pages delta during 1s probe; unmaps = UNMAP_CALLS delta; peakRSS = VmHWM KiB (linux).");
     println!("arena = abandoned-delta/s during 1s probe (hole-coalescing trigger >1k/s) + reservation high-water MiB (16 GiB sizing check).");
+    #[cfg(feature = "bench-jemalloc")]
+    println!("jemalloc column present (--features bench-jemalloc); absent when feature off.");
 }
