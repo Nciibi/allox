@@ -84,6 +84,38 @@ jobs:
           name: bench-${{ matrix.os }}
           path: bench-*.txt
 
+  profile:
+    runs-on: ubuntu-latest
+    # Informational only: perf availability varies by runner kernel; this job
+    # must never fail the build. Feeds the profile-guided tuning points
+    # (mixed-all per-op latency, spawn-churn exit work) with counter data
+    # the dev box cannot produce (no PMU there).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: Install perf (best effort)
+        continue-on-error: true
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq linux-tools-common linux-tools-generic
+      - name: Build benches
+        run: cargo bench --no-run
+      - name: perf stat on mixed-all 8T + spawn-churn
+        continue-on-error: true
+        run: |
+          for wl in "mixed-all 8T" "spawn-churn"; do
+            safe=$(echo "$wl" | tr ' ' '-');
+            BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses -o "perf-${safe}.txt" cargo bench --bench alloc -- --nocapture || true;
+          done
+          ls perf-*.txt 2>/dev/null || echo "no perf output captured" > perf-unavailable.txt
+      - name: Upload profiles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-profiles
+          path: perf-*.txt
+
   fuzz:
     runs-on: ubuntu-latest
     steps:
