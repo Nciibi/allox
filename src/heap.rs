@@ -370,7 +370,12 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
  // ---------------------------------------------------------------------------
 
 /// Blocks moved from spans into a thread cache per slow-path take.
-pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
+/// 64 (was 16): mixed-all PMU showed medium refill/flush ~48% of samples
+/// and ~847 SPAN_MAP_CALLS/s vs mimalloc's 0 — the global medium heap is
+/// starved by thread-cache retention + cross-thread steal, so each
+/// take_blocks that does hit the shared list should pull a full small-style
+/// batch (fewer lock trips, fewer "empty → map" episodes).
+pub(crate) const MEDIUM_REFILL_BATCH: u32 = 64;
 
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
 /// are large (up to ~16 pages); the cap is byte-scaled in release_blocks
