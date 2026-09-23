@@ -501,9 +501,20 @@ unsafe fn mfill_from_list(
 
 /// Post-lock fate of a released span: kept (nothing more to do) or over
 /// caps (caller unmaps). Cold parking discards inline (see below).
+#[derive(Clone, Copy)]
 enum SpanFate {
     Keep,
     Unmap(usize),
+}
+
+/// One same-class span group for [`MediumHeap::release_many`]: the span
+/// plus a pre-terminated chain (`head` linked through to `tail`, null at
+/// tail) and its length. Built by `flush_mbin` while grouping.
+pub(crate) struct ReleaseChunk {
+    pub(crate) span: *mut SpanMaster,
+    pub(crate) head: *mut u8,
+    pub(crate) tail: *mut u8,
+    pub(crate) n: u32,
 }
 
 /// Splice `head..=tail` (n blocks of `span`) back onto the span. Tail is
@@ -729,12 +740,7 @@ impl MediumHeap {
             }
         }
         for (c, fate) in chunks.iter().zip(fates.iter()) {
-            // Move fate out (SpanFate is not Copy — rebuild by replace).
-            let f = match fate {
-                SpanFate::Keep => SpanFate::Keep,
-                SpanFate::Unmap(bytes) => SpanFate::Unmap(*bytes),
-            };
-            mact_fate(c.span.cast::<u8>(), f);
+            mact_fate(c.span.cast::<u8>(), *fate);
         }
     }
 

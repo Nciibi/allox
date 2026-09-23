@@ -201,7 +201,7 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
     with_cache(
         |c| c.dealloc_medium(p, mclass),
         || {
-            MEDIUM_HEAP.release_blocks(span, p, 1);
+            MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
         },
     );
 }
@@ -857,7 +857,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
             |c| c.dealloc_medium(p, mclass),
             || {
                 let span = SpanMaster::of(p);
-                MEDIUM_HEAP.release_blocks(span, p, 1);
+                MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
             },
         );
         return;

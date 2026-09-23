@@ -16,7 +16,7 @@ use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
-use crate::heap::{MEDIUM_HEAP, REFILL_BATCH};
+use crate::heap::{MEDIUM_HEAP, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
 #[cfg(all(unix, feature = "std"))]
 use crate::heap::BIG_HEAP;
@@ -829,8 +829,8 @@ impl ThreadCache {
                         // blocks popped per chunk, one group each worst case.
                         debug_assert!(ng < MAX_MFLUSH_GROUPS);
                         if ng >= MAX_MFLUSH_GROUPS {
-                            // No room to group: release solo.
-                            crate::heap::MEDIUM_HEAP.release_blocks(master, b, 1);
+                            // No room to group: release solo (tail == head).
+                            crate::heap::MEDIUM_HEAP.release_blocks(mclass, master, b, b, 1);
                             continue;
                         }
                         groups[ng] = MGroup {
@@ -844,9 +844,24 @@ impl ThreadCache {
                 }
             }
 
-            for g in groups.iter_mut().take(ng) {
-                crate::heap::MEDIUM_HEAP.release_blocks(g.master, g.head, g.n);
+            // One class lock for the whole chunk (not one per group); tails
+            // are already tracked so release never re-walks the chains.
+            let mut chunks = [ReleaseChunk {
+                span: ptr::null_mut(),
+                head: ptr::null_mut(),
+                tail: ptr::null_mut(),
+                n: 0,
+            }; MAX_MFLUSH_GROUPS];
+            let nch = ng.min(MAX_MFLUSH_GROUPS);
+            for (i, g) in groups.iter().take(nch).enumerate() {
+                chunks[i] = ReleaseChunk {
+                    span: g.master,
+                    head: g.head,
+                    tail: g.tail,
+                    n: g.n,
+                };
             }
+            crate::heap::MEDIUM_HEAP.release_many(mclass, &chunks[..nch]);
             if popped == 0 {
                 break;
             }
