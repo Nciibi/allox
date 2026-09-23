@@ -76,6 +76,7 @@ fn zz_minimize() {
             allox::set_thread_cache_budget(mb * 1024 * 1024);
         }
     }
+    let mode: &'static str = match std::env::var("MODE").unwrap().as_str() {
         "small" => "small",
         "medium" => "medium",
         "large" => "large",
