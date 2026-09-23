@@ -192,11 +192,25 @@ Options in order:
    no syscalls) while mapped retention rises (discarded-virtual, RSS
    flat). No regressions: large-only 1T 240k, mixed-all 8T 12.3M /
    1T 2.3M all in-band; full suite green.
-2. Spans-for-big-sizes: extend span machinery past the 65472 block cap.
-   Requires sub-header redesign (blocks bigger than a 64 KiB chunk can't
-   dodge per-page headers — chunk-group headers or whole-span carve with
-   end-header + size-aligned spans). Biggest change on this list; needs
-   its own design doc + carving proofs + debug validators before code.
+2. Spans-for-big-sizes: **DONE 2026-09-23 (Phase 1 / DESIGN_SPANS_BIG).**
+   Extended span machinery past the 65472 block cap via one meta chunk +
+   pure data chunks (blocks cross 64 KiB boundaries freely — contiguous
+   user memory, requirement 4) with arena page-indexed side-table lookup
+   (`BIG_MAP` + `BigMaster::contains`, fail-closed). Shipped:
+   `BigMaster`/`BIG_CLASSES`/`big_span_pages_for` (`page.rs`/`classes.rs`),
+   `BigHeap` per-bclass sharded + empty/cold retention (`heap.rs`),
+   cache `bigbins`/`bvirgin` + `alloc_big`/`dealloc_big`, dispatch
+   `alloc_impl`/`dealloc_impl`/`alloc_zeroed_impl` routing
+   `(65472, 262144]`, `tests/big_spans.rs` (boundary/roundtrip/calloc/
+   realloc/GlobalAlloc/8T-churn), Kani P1–P6 proofs, Miri carve tests,
+   `tier_boundary_seq` fuzz. Measured (2 s × 3, full matrix): large-only
+   8T **9.06M vs mimalloc 13.51M (0.67×, was 0.05×)**, probe
+   `b1308/a1308/unmaps 0`; guards hold (mixed-all 8T 12.1M in-band,
+   tight/mixed-small flat, spawn-churn unmaps 0, thread_exit green, full
+   suite + telemetry + no_std + release). Remaining large-only gap is the
+   1T 32K–1M tail above 262144 (stays large-path by design — §7 open
+   question 1) and lock-regime variance under 8T (see option A notes
+   above; sharded holes already flat-reverted).
 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
    discipline matters more than the last 10% hit rate here.
 

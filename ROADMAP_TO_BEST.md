@@ -134,8 +134,11 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
 3. P1c medium spans (16-64K via multi-page spans) → DONE (see results).
    P1d large cold + exact-fit → DONE (see results).
    P1e exit-flush + cold-array bugfix + small cold → DONE (see below).
+   spans-for-big-sizes (DESIGN_SPANS_BIG) → **DONE 2026-09-23**: big
+   tier `(65472, 262144]` via `BigMaster` + arena `BIG_MAP` + `BigHeap`;
+   large-only 8T 0.05× → **0.67× mimalloc** (9.06M vs 13.51M), unmaps 0.
    NEXT: P2 futex/parking mutex (unix spin convoy hypothesis) + refill
-   tuning, or spans-for-big-sizes (large-only hit rate).
+   tuning, or mixed-all per-op (REMAINING_PLAN §6).
 
 ## P2 results — parking mutex on hosted unix (pthread, lazy init)
 
@@ -152,10 +155,10 @@ locks uncontended, where pthread ≈ spin (one CAS either way). Kept anyway:
 strictly more robust under preemption/oversubscription (spin convoys are
 real, just not the binding constraint here), zero regressions, full suite
 green (12 binaries), all feature combos warning-free. The remaining MT gaps
-(spawn-churn 0.22x, large-only 8T 0.11x vs mimalloc) are per-op/syscall
-volume, not lock parking — next levers are arena mapping and
-spans-for-big-sizes.
-4. P1 exit-flush + drift cap → after spans.
+(spawn-churn 0.22x isolated; large-only 1T tail >262144) are per-op/syscall
+volume and class-cap edges, not lock parking — large-only 8T was fixed by
+spans-for-big-sizes (DONE 2026-09-23, 0.67× mimalloc).
+4. P1 exit-flush + drift cap → after spans. (Exit-flush landed with P1e.)
 5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
 6. Harden + docs + publish 0.2.
 
