@@ -491,7 +491,7 @@ fn main() {
     ];
 
     println!(
-        "{:<15} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11} {:>9} {:>10} {:>10} {:>10}",
+        "{:<15} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11} {:>9} {:>10} {:>10} {:>10} {:>16}",
         "workload",
         "allox",
         "talc",
@@ -503,8 +503,9 @@ fn main() {
         "mapcalls",
         "unmaps",
         "peakRSS",
+        "arena",
     );
-    println!("{}", "-".repeat(137));
+    println!("{}", "-".repeat(155));
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     for wl in WORKLOADS {
@@ -528,9 +529,11 @@ fn main() {
         // allox-only probe run so numbers reflect steady-state behaviour.
         let s0 = allox::stats();
         let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru) = allox::__debug_map_split();
+        let (d0abnd, d0hi) = allox::__debug_arena_detail();
         let _ = run(&GLOBAL, wl, secs.min(1).max(1));
         let s1 = allox::stats();
         let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru) = allox::__debug_map_split();
+        let (d1abnd, d1hi) = allox::__debug_arena_detail();
         let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
         let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
         let mapped_delta = s1.mapped_pages as i64 - s0.mapped_pages as i64;
@@ -540,11 +543,16 @@ fn main() {
         let _small_unmaps = d1smu.saturating_sub(d0smu);
         let arena_reuses = d1aru.saturating_sub(d0aru);
         let _arena_commits = d1ac.saturating_sub(d0ac);
+        // Abandoned delta over the 1 s probe IS the per-second rate (§3
+        // hole-coalescing trigger: >1k/s sustained). Bump high-water is
+        // monotonic process-wide (MiB) for reservation sizing.
+        let abnd_rate = d1abnd.saturating_sub(d0abnd);
+        let hi_mib = d1hi / (1024 * 1024);
         let rss = peak_rss_kib();
         let allox_s = medians[0];
         let talc_s = medians[1];
         println!(
-            "{:<15} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>10} {:>10} {:>10}",
+            "{:<15} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>11.0} {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
             wl.name,
             medians[0],
             medians[1],
@@ -556,10 +564,12 @@ fn main() {
             format!("{}/{}/{}/{}/a{}", map_delta, span_maps, small_maps, mapped_delta, arena_reuses),
             format!("{}/{}", unmap_delta, span_unmaps),
             rss,
+            format!("abnd+{}/s hi{}MiB", abnd_rate, hi_mib),
         );
     }
 
-    println!("{}", "-".repeat(137));
+    println!("{}", "-".repeat(155));
     println!("note: harness Vecs allocate through allox (process global); identical for all.");
     println!("mapcalls = allox MAP_CALLS delta / mapped-pages delta during 1s probe; unmaps = UNMAP_CALLS delta; peakRSS = VmHWM KiB (linux).");
+    println!("arena = abandoned-delta/s during 1s probe (hole-coalescing trigger >1k/s) + reservation high-water MiB (16 GiB sizing check).");
 }
