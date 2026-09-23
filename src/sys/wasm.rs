@@ -26,8 +26,3 @@ pub(crate) unsafe fn unmap(_p: *mut u8, _size: usize) {}
 
 /// No physical/virtual split exists in linear memory; same as unmap.
 pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) {}
-
-/// Linear memory only grows; no remap primitive. Always unavailable.
-pub(crate) unsafe fn remap_grow(_base: *mut u8, _old_size: usize, _new_size: usize) -> *mut u8 {
-    ptr::null_mut()
-}

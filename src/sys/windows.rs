@@ -45,13 +45,6 @@ pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
     );
 }
 
-/// No remap primitive on Windows: always report unavailable so callers fall
-/// back to alloc-copy-free.
-pub(crate) unsafe fn remap_grow(base: *mut u8, old_size: usize, new_size: usize) -> *mut u8 {
-    let _ = (base, old_size, new_size);
-    ptr::null_mut()
-}
-
 // ---------------------------------------------------------------------------
 // SRWLock-backed raw mutex: contended waiters park in the kernel instead of
 // burning CPU. SRWLOCK is a single pointer initialized to zero, so it is

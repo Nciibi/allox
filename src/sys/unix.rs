@@ -105,49 +105,6 @@ pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
     let _ = madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED);
 }
 
-/// Grow a mapping in place when the kernel allows (page-table moves, no
-/// userspace copy) or relocate it the same way. Returns the new base, or
-/// null when unavailable — non-Linux, new size not larger than old, or the
-/// kernel refused. Linux/Android only (`mremap`); every other platform
-/// reports unavailable so callers fall back to alloc-copy-free.
-pub(crate) unsafe fn remap_grow(base: *mut u8, old_size: usize, new_size: usize) -> *mut u8 {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        extern "C" {
-            fn mremap(
-                addr: *mut core::ffi::c_void,
-                old_len: usize,
-                new_len: usize,
-                flags: i32,
-            ) -> *mut core::ffi::c_void;
-        }
-        const MREMAP_MAYMOVE: i32 = 1;
-        if new_size <= old_size {
-            return core::ptr::null_mut();
-        }
-        // SAFETY: base..base+old_size is a live private anonymous mapping
-        // owned by the caller; MAYMOVE lets the kernel relocate instead of
-        // failing when in-place growth is impossible. Either way the old
-        // mapping is consumed — never unmapped by the caller afterwards.
-        let ret = mremap(
-            base as *mut core::ffi::c_void,
-            old_size,
-            new_size,
-            MREMAP_MAYMOVE,
-        );
-        if ret as usize == usize::MAX {
-            core::ptr::null_mut()
-        } else {
-            ret as *mut u8
-        }
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    {
-        let _ = (base, old_size, new_size);
-        core::ptr::null_mut()
-    }
-}
-
 // ---------------------------------------------------------------------------
 // pthread mutex: contended waiters park in the kernel instead of burning CPU
 // (and convoy-collapsing when a lock holder is preempted, which pure
