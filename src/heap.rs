@@ -528,43 +528,12 @@ unsafe fn mact_fate(base: *mut u8, fate: SpanFate) {
     match fate {
         SpanFate::Keep => {}
         SpanFate::Unmap(bytes) => {
-            // Arena-owned slices park in holes (no syscall, counters stay
-            // balanced); legacy mappings need the true unmap + decrements.
-            // Same shape as `crate::unmap_or_return` for large regions, but
-            // with the span counter split.
-            #[cfg(all(unix, feature = "std"))]
-            {
-                if crate::arena::contains(base, bytes) {
-                    crate::arena::release(base, bytes / PAGE_SIZE);
-                    return;
-                }
-            }
             sys::unmap(base, bytes);
             MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
             UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
             SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
         }
     }
-}
-
-/// Map fresh span pages: arena commit first (1 VMA op, 64 KiB-aligned by
-/// construction), legacy over-map-trim fallback when the arena is
-/// unavailable. Fresh zeros either way, so the caller keeps `FLAG_VIRGIN`
-/// set exactly as for legacy maps (carving dirties only freelist-link
-/// words — the virgin invariant). Accounting stays at the caller, once per
-/// non-null return, mirroring `map_large_region`.
-#[inline]
-unsafe fn map_span_pages(pages: usize) -> *mut u8 {
-    #[cfg(all(unix, feature = "std"))]
-    {
-        debug_assert_eq!(PAGE_SIZE, crate::arena::ARENA_ALIGN);
-        let base = crate::arena::commit(pages);
-        if !base.is_null() {
-            debug_assert_eq!(base as usize & (PAGE_SIZE - 1), 0);
-            return base;
-        }
-    }
-    sys::map(pages * PAGE_SIZE)
 }
 
 impl MediumHeap {
@@ -620,7 +589,7 @@ impl MediumHeap {
 
         if count == 0 {
             let pages = span_pages_for(crate::classes::MEDIUM_CLASSES[mclass]);
-            let raw = map_span_pages(pages);
+            let raw = sys::map(pages * PAGE_SIZE);
             if !raw.is_null() {
                 let span = raw.cast::<SpanMaster>();
                 (*span).init(mclass, pages as u32);
