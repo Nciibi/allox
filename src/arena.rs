@@ -433,7 +433,7 @@ pub(crate) fn high_water() -> u64 {
 // touch, bounded by touched regions). Smaller reservations use a prefix;
 // out-of-reservation pointers never index it (bounds-checked first).
 //
-// Lifecycle (allatis under the owning class lock unless noted): set for all
+// Lifecycle (writes under the owning class lock unless noted): set for all
 // span pages at carve; kept across empty/cold parks (virtual retained, base
 // stable, discard never touches this table); cleared for all pages on TRUE
 // UNMAP before unmapping. Hole entries are therefore always table-clean:
