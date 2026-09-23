@@ -48,9 +48,9 @@ const ARENA_SIZE: usize = 512 * 1024 * 1024;
 
 /// Hole-stack slots. Best-fit scans stay L1-resident; overflow discards and
 /// abandons (virtual retained, never reused).
-/// TEMPORARY EXPERIMENT E1 (revert after measurement): 4096 slots to test
-/// whether large-only abandonment is slot pressure vs fragmentation.
-const HOLE_SLOTS: usize = 4096;
+/// TEMPORARY EXPERIMENT E2 (revert after measurement): 2048 slots.
+/// E1 (4096) took abandonment 22665 -> 0 but may cost scan time.
+const HOLE_SLOTS: usize = 2048;
 /// Byte cap on parked holes. Bounds dark virtual on churn.
 #[cfg(target_pointer_width = "64")]
 const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
