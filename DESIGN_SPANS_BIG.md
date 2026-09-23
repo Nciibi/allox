@@ -1,9 +1,20 @@
 # Design: spans for big sizes (past the 65472 block cap)
 
-Status: PROPOSAL (plan §4 option 2). No code until this design is reviewed;
-implementation needs carving proofs + debug validators + bench validation
-per the revert rules in §8 below. Big change; read fully before touching
-`src/page.rs`, `src/classes.rs`, `src/heap.rs`, or `src/lib.rs` dispatch.
+Status: **IMPLEMENTED 2026-09-23** (plan §4 option 2 / REMAINING_PLAN
+large-only option 2). Landed as `BigMaster` + `BigHeap` + arena `BIG_MAP`
+side table + cache `bigbins` + dispatch routing (`alloc_impl` /
+`dealloc_impl`), with `tests/big_spans.rs`, Kani proofs (P1/P2/P3/P6 +
+medium packing in `src/page.rs::kani_proofs`), and CI coverage.
+
+Validation (2026-09-23, Ryzen 5 1600, 2 s × 3 interleaved medians, full
+14-workload matrix): **large-only 8T** 9.06M ops/s vs mimalloc 13.51M
+(**0.67×**, was 0.05× pre-change), probe `big_maps=1308, unmaps=0,
+arena_reuses=1308` — traffic served from arena-backed big spans with zero
+syscalls in steady state. Guards all hold: mixed-all 8T 12.1M (in-band),
+tight/mixed-small flat, spawn-churn unmaps 0, thread_exit converges,
+full suite + telemetry + no_std + release green. Sensitivity: non-arena
+targets (`cfg` gated out) route the same sizes through the large path and
+pass the identical assertions (`tests/big_spans.rs` covers both shapes).
 
 ## 1. Problem
 
