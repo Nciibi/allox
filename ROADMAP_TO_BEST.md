@@ -13,9 +13,14 @@ Constraints (assumed, plain language):
 
 ## Why we lose today (Linux evidence, Ryzen 5 1600)
 
-* `mixed-all 8T (16-65536B)`: `allox 0.68M vs system 15.7M (0.04x),
-  vs talc 1.04M (0.65x)`. ~75% of that workload is `>16 KiB` →
-  `alloc_large_ex` in `src/lib.rs:198-274`.
+* `mixed-all 8T (16-65536B)`: now **12.1M vs system 14.1M (0.86x),
+  vs mimalloc 18.6M (0.65x)** — per-op gap remains (REMAINING_PLAN §6);
+  hit-rate/syscall gap closed by spans + arena (was 0.04x system).
+* `large-only 8T (32K-256K)`: **9.06M vs mimalloc 13.5M (0.67x)** after
+  big spans (was 0.05x); unmaps 0 in probe. 1T tail >262144 stays large.
+* Historical (pre-arena/span) evidence for why the original plan existed:
+  mixed-all 8T was 0.68M vs system 15.7M (0.04x) with a single global
+  LARGE_CACHE spinlock + per-page mmap tax — all fixed by P0–P1.
 * `stress` leaves 4214 pages (~270 MiB) mapped after free — dead-thread
   caches are never reclaimed (`DESIGN.md §4.5`, `src/lib.rs:666`).
 * `src/sys/unix.rs:43-70` pays 1x `mmap` + up to 2x `munmap` per page to
