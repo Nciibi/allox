@@ -144,6 +144,31 @@ impl ActiveMedium {
     }
 }
 
+#[cfg(all(unix, feature = "std"))]
+#[derive(Clone, Copy)]
+struct ActiveBig {
+    span: *mut BigMaster,
+    base: usize,
+    end: usize,
+    head: *mut u8,
+    len: u32,
+    virgin: u32,
+}
+
+#[cfg(all(unix, feature = "std"))]
+impl ActiveBig {
+    const fn empty() -> Self {
+        Self {
+            span: ptr::null_mut(),
+            base: 0,
+            end: 0,
+            head: ptr::null_mut(),
+            len: 0,
+            virgin: 0,
+        }
+    }
+}
+
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
