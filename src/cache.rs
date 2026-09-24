@@ -562,13 +562,15 @@ impl ThreadCache {
         // Claim every span in the batch for this thread (drift-cap owner).
         {
             let mut b = chain;
+            let mut claimed = ptr::null_mut();
             for _ in 0..count {
                 if b.is_null() {
                     break;
                 }
                 let span = SpanMaster::of(b);
-                if !span.is_null() {
+                if !span.is_null() && span != claimed {
                     self.claim_span(span);
+                    claimed = span;
                 }
                 b = *b.cast::<*mut u8>();
             }
