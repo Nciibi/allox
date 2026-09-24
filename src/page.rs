@@ -7,6 +7,7 @@ use crate::classes::CLASSES;
 #[cfg(all(unix, feature = "std"))]
 use crate::classes::{BIG_CLASSES, NUM_BIG};
 use core::ptr;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub(crate) const PAGE_SHIFT: u32 = 16;
 pub(crate) const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
@@ -50,7 +51,7 @@ pub(crate) struct PageHeader {
     /// Heuristic owner thread-id (0 = unowned). Set when a thread refills
     /// from this page; used only to detect remote frees under cache pressure
     /// (drift cap) — never for correctness. Races are benign (last writer).
-    pub(crate) owner: u32,
+    pub(crate) owner: AtomicU32,
 }
 
 pub(crate) const HEADER_SIZE: usize = core::mem::size_of::<PageHeader>();
@@ -85,7 +86,8 @@ impl PageHeader {
         self.used = 0;
         self.class = class as u16;
         self.flags = FLAG_VIRGIN;
-        self.owner = 0;
+        self.owner
+            .store(0, Ordering::Relaxed);
     }
 }
 
@@ -120,7 +122,7 @@ pub(crate) struct SpanMaster {
     pub(crate) npages: u32,
     /// Heuristic owner thread-id (0 = unowned); drift-cap only, see
     /// [`PageHeader::owner`].
-    pub(crate) owner: u32,
+    pub(crate) owner: AtomicU32,
 }
 
 pub(crate) const SPAN_MASTER_SIZE: usize = core::mem::size_of::<SpanMaster>();
@@ -186,7 +188,8 @@ impl SpanMaster {
         self.mclass = mclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self.owner = 0;
+        self.owner
+            .store(0, Ordering::Relaxed);
     }
 
     /// Byte size of the whole span mapping (for unmap).
@@ -238,7 +241,7 @@ pub(crate) struct BigMaster {
     pub(crate) npages: u32,
     /// Heuristic owner thread-id (0 = unowned); drift-cap only, see
     /// [`PageHeader::owner`].
-    pub(crate) owner: u32,
+    pub(crate) owner: AtomicU32,
 }
 
 #[cfg(all(unix, feature = "std"))]
@@ -274,7 +277,8 @@ impl BigMaster {
         self.bclass = bclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self.owner = 0;
+        self.owner
+            .store(0, Ordering::Relaxed);
     }
 
     /// Byte size of the whole span mapping (for unmap).
