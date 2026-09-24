@@ -674,4 +674,4 @@ A controlled comparison was run against the pre-roadmap commit `1c32ee2` using t
 | json-ish 8T | 136.07 M/s | 139.96 M/s | -2.8% | 7.5 | 7.3 | 8,104 / 7,840 |
 | ecs 8T | 7.81 M/s | 7.73 M/s | +1.1% | 128.1 | 129.9 | 12,044 / 11,772 |
 
-The pinned comparison shows the counter-gating fix removes the earlier large/ECS regression signal; large-only and ECS are now neutral-to-positive, while JSON is slightly slower. The mixed result has high baseline variance, so its +60.8% median should not be treated as a stable speedup without more application-shaped runs. RSS remains modestly higher on most workloads. The next step is coalescing only if it preserves these gated results.
+A simple adjacent-hole coalescing prototype was also measured and rejected. It improved ECS 8T by 4.2% and prodcons 8T by 5.5% over the pre-coalescing build, but regressed mixed-all 8T by 5.8% and json-ish 8T by 2.1%; the unconditional neighbor scan cost more than the fragmentation reduction saved. The telemetry-gated counter fix remains; coalescing needs a cheaper boundary index or a workload-specific trigger before retrying.
