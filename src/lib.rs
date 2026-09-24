@@ -1728,6 +1728,88 @@ pub fn flush_current_thread() {
 }
 
 #[cfg(all(test, feature = "std"))]
+mod large_cache_tests {
+    use super::*;
+    use crate::page::PAGE_SIZE;
+
+    fn add_hot(cache: &mut LargeRegionCache, pages: u32) -> *mut u8 {
+        let index = cache.len;
+        let base = (0x1000 + index * PAGE_SIZE) as *mut u8;
+        cache.entries[index] = (base, pages);
+        cache.len += 1;
+        cache.bytes += pages as usize * PAGE_SIZE;
+        cache.index_hot(index, pages as usize);
+        base
+    }
+
+    fn add_cold(cache: &mut LargeRegionCache, pages: u32) -> *mut u8 {
+        let index = cache.cold_len;
+        let base = (0x200000 + index * PAGE_SIZE) as *mut u8;
+        cache.cold[index] = (base, pages);
+        cache.cold_len += 1;
+        cache.cold_bytes += pages as usize * PAGE_SIZE;
+        cache.index_cold(index, pages as usize);
+        base
+    }
+
+    #[test]
+    fn exact_precedence_and_accounting() {
+        let mut cache = LargeRegionCache::new();
+        let hot_four = add_hot(&mut cache, 4);
+        let hot_eight = add_hot(&mut cache, 8);
+        let cold_four = add_cold(&mut cache, 4);
+        let cold_six = add_cold(&mut cache, 6);
+
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4)));
+        let replacement = add_hot(&mut cache, 4);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((replacement, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6)));
+        assert_eq!(cache.len, 0);
+        assert_eq!(cache.bytes, 0);
+        assert_eq!(cache.cold_len, 0);
+        assert_eq!(cache.cold_bytes, 0);
+    }
+
+    #[test]
+    fn swap_removal_repairs_exact_index() {
+        let mut cache = LargeRegionCache::new();
+        let first = add_hot(&mut cache, 4);
+        let second = add_hot(&mut cache, 4);
+        let third = add_hot(&mut cache, 4);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4)));
+        assert_eq!(cache.hot_exact[4], 0);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4)));
+        assert_eq!(cache.hot_exact[4], 0);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4)));
+        assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
+    }
+
+    #[test]
+    fn stale_index_and_page_boundary_fall_back() {
+        let mut cache = LargeRegionCache::new();
+        let five = add_hot(&mut cache, 5);
+        let four = add_hot(&mut cache, 4);
+        cache.hot_exact[4] = 0;
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((four, 4)));
+        assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
+        assert_eq!(cache.take_fit(5 * PAGE_SIZE), Some((five, 5)));
+
+        let mut boundary = LargeRegionCache::new();
+        let large = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32 + 1);
+        assert_eq!(
+            boundary.hot_exact[LARGE_EXACT_MAX_PAGES + 1],
+            EMPTY_LARGE_INDEX
+        );
+        assert_eq!(
+            boundary.take_fit((LARGE_EXACT_MAX_PAGES as u32 + 1) as usize * PAGE_SIZE),
+            Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1))
+        );
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
 mod header_probe_tests {
     use super::*;
     use crate::page::{LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_SIZE};
