@@ -5,7 +5,7 @@
 Allox is not broadly slower. The checked-in results show it winning or tying on small allocations, same-thread churn, and the current `prodcons 8T` workload. Its remaining losses are concentrated in:
 
 1. **Medium allocations:** roughly 16–64 KiB mixed workloads.
-2. **Large allocations and `realloc`:** especially the 256 KiB–1 MiB range.
+2. **Large allocations and `realloc`:** especially the 512 KiB–1 MiB range.
 3. **Thread lifecycle:** short-lived threads and large first-touch/flush costs.
 4. **Memory/tail behavior:** aggressive retention, synchronous purging, and incomplete latency/RSS evidence.
 5. **Benchmark fairness:** the current harness can hide or distort the real gap.
@@ -21,7 +21,7 @@ The first upgrade is **measurement and correctness**, not another cache-size swe
 | Small, same-thread | `README.md:97-105` | Already competitive or winning; protect this path |
 | Small, 8-thread | `README.md:101-102` | Near mimalloc/system; avoid regressions |
 | Mixed 16–64 KiB | `README.md:103-104` reports about `0.44x`/`0.72x` mimalloc | Medium span geometry, refill/flush work, owner probes, global budget loads |
-| Large 32 KiB–1 MiB | `README.md:105-106` reports `0.40x`/`0.67x` mimalloc | Region-cache scans, arena reuse cost, fixed 256 KiB big-tier cap, copy-based growth |
+| Large 32 KiB–1 MiB | `README.md:105-106` reports `0.40x`/`0.67x` mimalloc | Region-cache scans, arena reuse cost, fixed 512 KiB big-tier cap, copy-based growth |
 | Remote frees | `README.md:107` reports `1.20x` mimalloc, but only for one workload | Freed blocks go to the freeing thread's cache instead of an owner/page queue |
 | Thread churn | `REMAINING_PLAN.md:245-266` reports roughly `0.23x` in isolation | Synchronous exit flush, eager free-list initialization, first-touch faults |
 | Memory footprint | `src/heap.rs:387-399`, `src/lib.rs:257-272` | Multi-hundred-MiB/GiB virtual retention and fixed caps |
@@ -320,11 +320,13 @@ Instrument scan length before changing the data structure. The current code has 
 
 ## 2.4 Raise or parameterize the big-tier cap
 
-The current big tier stops at 256 KiB at `src/classes.rs:235-243`. This leaves much of the 32 KiB–1 MiB workload on the slower large path.
+The 512 KiB phase is implemented: `src/classes.rs:258-261` now serves the
+big tier through 524288 bytes. Capped A/B measured `large-only 1T` at
+193K ops/s versus 152K before the extension (+27%), with `mixed-all 1T`
+flat within noise and `large-only 8T` within its noisy guard band.
 
-Prototype:
+Prototype next:
 
-- Big classes through 512 KiB.
 - Big classes through 1 MiB.
 - Optional 2 MiB classes.
 - A second large-page geometry similar to rpmalloc's 64 KiB/1 MiB/4 MiB/16 MiB tiers.
