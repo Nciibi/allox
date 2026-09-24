@@ -1792,6 +1792,13 @@ mod large_cache_tests {
         assert_eq!(cache.hot_exact[4], 0);
         assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4)));
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
+
+        let cold_first = add_cold(&mut cache, 4);
+        let cold_second = add_cold(&mut cache, 4);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_first, 4)));
+        assert_eq!(cache.cold_exact[4], 0);
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_second, 4)));
+        assert_eq!(cache.cold_exact[4], EMPTY_LARGE_INDEX);
     }
 
     #[test]
