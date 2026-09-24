@@ -34,23 +34,21 @@ fn big_boundary_routing() {
         let b0 = malloc(medium_top + 1);
         assert!(!b0.is_null());
         let u0 = allox::usable_size(b0);
-        assert!(u0 >= 65473 && u0 <= 262144, "usable {}", u0);
+        assert!(u0 >= 65473 && u0 <= 524288, "usable {}", u0);
         fill_pattern(b0, 65473);
         check_pattern(b0, 65473);
         free(b0);
 
-        let b1 = malloc(262144);
+        let b1 = malloc(524288);
         assert!(!b1.is_null());
-        // Arena targets back this with the explicit 262144 top class;
-        // elsewhere it rides the large path (usable >= request either way).
         #[cfg(all(unix, feature = "std"))]
-        assert_eq!(allox::usable_size(b1), 262144);
-        assert!(allox::usable_size(b1) >= 262144);
+        assert_eq!(allox::usable_size(b1), 524288);
+        assert!(allox::usable_size(b1) >= 524288);
         free(b1);
 
-        let l = malloc(262145);
+        let l = malloc(524289);
         assert!(!l.is_null());
-        assert!(allox::usable_size(l) >= 262145);
+        assert!(allox::usable_size(l) >= 524289);
         free(l);
     }
 }
@@ -58,7 +56,7 @@ fn big_boundary_routing() {
 #[test]
 fn big_roundtrip_contents() {
     unsafe {
-        for size in [70000usize, 100000, 150000, 200000, 262144] {
+        for size in [70000usize, 100000, 150000, 200000, 262144, 300000, 400000, 524288] {
             let p = malloc(size);
             assert!(!p.is_null(), "size {}", size);
             fill_pattern(p, size);
