@@ -506,26 +506,20 @@ impl LargeRegionCache {
     /// own reuse pool (temporal locality in churn is per-size).
     fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32)> {
         let wanted = (mapped / page::PAGE_SIZE) as u32;
+        if let Some(i) = self.exact_hot(wanted) {
+            return Some(self.remove_hot(i));
+        }
+        if let Some(i) = self.exact_cold(wanted) {
+            return Some(self.remove_cold(i));
+        }
         for i in 0..self.len {
             if self.entries[i].1 == wanted {
-                let last = self.len - 1;
-                let entry = self.entries[i];
-                self.entries[i] = self.entries[last];
-                self.entries[last] = (ptr::null_mut(), 0);
-                self.len = last;
-                self.bytes -= entry.1 as usize * page::PAGE_SIZE;
-                return Some(entry);
+                return Some(self.remove_hot(i));
             }
         }
         for i in 0..self.cold_len {
             if self.cold[i].1 == wanted {
-                let last = self.cold_len - 1;
-                let entry = self.cold[i];
-                self.cold[i] = self.cold[last];
-                self.cold[last] = (ptr::null_mut(), 0);
-                self.cold_len = last;
-                self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
-                return Some(entry);
+                return Some(self.remove_cold(i));
             }
         }
         let mut best: Option<usize> = None;
@@ -538,13 +532,7 @@ impl LargeRegionCache {
             }
         }
         if let Some(i) = best {
-            let last = self.len - 1;
-            let entry = self.entries[i];
-            self.entries[i] = self.entries[last];
-            self.entries[last] = (ptr::null_mut(), 0);
-            self.len = last;
-            self.bytes -= entry.1 as usize * page::PAGE_SIZE;
-            return Some(entry);
+            return Some(self.remove_hot(i));
         }
         let mut cbest: Option<usize> = None;
         for i in 0..self.cold_len {
@@ -555,15 +543,7 @@ impl LargeRegionCache {
                 cbest = Some(i);
             }
         }
-        cbest.map(|i| {
-            let last = self.cold_len - 1;
-            let entry = self.cold[i];
-            self.cold[i] = self.cold[last];
-            self.cold[last] = (ptr::null_mut(), 0);
-            self.cold_len = last;
-            self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
-            entry
-        })
+        cbest.map(|i| self.remove_cold(i))
     }
 }
 
@@ -860,17 +840,19 @@ unsafe fn free_large(p: *mut u8) {
         if c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES {
             let idx = c.len;
             c.entries[idx] = (base, pages);
-            c.len = idx + 1;
-            c.bytes += mapped;
-            Fate::Kept
+             c.len = idx + 1;
+             c.bytes += mapped;
+             c.index_hot(idx, pages as usize);
+             Fate::Kept
         } else if c.cold_len < LARGE_COLD_SLOTS
             && c.cold_bytes + mapped <= LARGE_COLD_CAP_BYTES
         {
             let idx = c.cold_len;
             c.cold[idx] = (base, pages);
-            c.cold_len = idx + 1;
-            c.cold_bytes += mapped;
-            sys::discard(base, mapped);
+             c.cold_len = idx + 1;
+             c.cold_bytes += mapped;
+             c.index_cold(idx, pages as usize);
+             sys::discard(base, mapped);
             Fate::Kept
         } else {
             Fate::Unmap
