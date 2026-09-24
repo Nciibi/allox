@@ -17,8 +17,25 @@
 //! return-from-main keeps today's behavior (process exit reclaims
 //! everything).
 //!
-//! Only active with `std` on unix/Windows. Elsewhere `ensure_hook` is a
-//! no-op and caches behave exactly as before.
+#[cfg(all(feature = "std", any(unix, windows)))]
+static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+fn record_flush() {
+    FLUSH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn flush_count() -> u64 {
+    #[cfg(all(feature = "std", any(unix, windows)))]
+    {
+        FLUSH_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(all(feature = "std", any(unix, windows))))]
+    {
+        0
+    }
+}
 
 #[cfg(all(feature = "std", unix))]
 mod imp {
@@ -56,6 +73,7 @@ mod imp {
         // ~everything when several threads exit at once (thundering herd on
         // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
+        record_flush();
         crate::tls_flush_full();
     }
 
@@ -122,6 +140,7 @@ mod imp {
         // and allocator critical sections never touch it either, so no wait
         // cycle exists even though Fls callbacks run during thread teardown.
         // Panic-free by construction (see above).
+        record_flush();
         crate::tls_flush_full();
     }
 
