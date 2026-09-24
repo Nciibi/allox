@@ -465,27 +465,39 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                     let mut ops = 0u64;
                     let mut local: Vec<(*mut u8, usize)> = Vec::with_capacity(256);
                     let mut i = 0u64;
-                    while Instant::now() < stop_time
-                        && !stop_c.load(std::sync::atomic::Ordering::Relaxed)
-                    {
+                    let mut incoming_done = false;
+                    'produce: while Instant::now() < stop_time {
                         for _ in 0..1000 {
                             let size = min + (rng.next() as usize) % (max - min);
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
-                                return ops;
+                                break 'produce;
                             }
                             unsafe { *p = ops as u8 };
                             ops += 1;
                             i += 1;
                             if i % 2 == 0 {
-                                // hand off to neighbour for remote free
-                                let _ = tx_next.send((p as usize, size));
+                                if tx_next.send(Some((p as usize, size))).is_err() {
+                                    break 'produce;
+                                }
                             } else {
                                 local.push((p, size));
                             }
-                            // drain incoming remote frees + some local frees
-                            while let Ok((rp, rs)) = rx.try_recv() {
-                                unsafe { alloc.dealloc(rp as *mut u8, layout_for(rs)) };
+                            loop {
+                                match rx.try_recv() {
+                                    Ok(Some((rp, rs))) => unsafe {
+                                        alloc.dealloc(rp as *mut u8, layout_for(rs))
+                                    },
+                                    Ok(None) => {
+                                        incoming_done = true;
+                                        break;
+                                    }
+                                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                        incoming_done = true;
+                                        break;
+                                    }
+                                }
                             }
                             if local.len() > 512 {
                                 let (lp, ls) = local.swap_remove(0);
@@ -493,20 +505,25 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                             }
                         }
                     }
-                    // drain remainder
-                    while let Ok((rp, rs)) = rx.try_recv() {
-                        unsafe { alloc.dealloc(rp as *mut u8, layout_for(rs)) };
-                    }
                     for (lp, ls) in local.drain(..) {
                         unsafe { alloc.dealloc(lp, layout_for(ls)) };
+                    }
+                    let _ = tx_next.send(None);
+                    while !incoming_done {
+                        match rx.recv() {
+                            Ok(Some((rp, rs))) => unsafe {
+                                alloc.dealloc(rp as *mut u8, layout_for(rs))
+                            },
+                            Ok(None) | Err(_) => break,
+                        }
                     }
                     ops
                 })
                 .unwrap(),
         );
     }
+    drop(senders);
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
     total
 }
 
