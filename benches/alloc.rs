@@ -457,6 +457,71 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
     total
 }
 
+fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> u64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
+    let threads = wl.threads;
+    let size_range = wl.size_range;
+    let free_pct = wl.free_pct;
+
+    let handles: Vec<_> = (0..threads)
+        .map(|t| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    let mut rng =
+                        Rng(0x9E3779B97F4A7C15 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut live: Vec<(*mut u8, usize)> = Vec::with_capacity(1024);
+                    let mut live_bytes = 0usize;
+                    let mut ops = 0u64;
+                    while Instant::now() < stop {
+                        for _ in 0..10_000 {
+                            let size = if size_range.0 == size_range.1 {
+                                size_range.0
+                            } else {
+                                size_range.0 + (rng.next() as usize) % (size_range.1 - size_range.0)
+                            };
+                            let layout = layout_for(size);
+                            let p = unsafe { alloc.alloc_zeroed(layout) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            unsafe { *p = ops as u8 };
+                            live.push((p, size));
+                            live_bytes += size;
+                            if live.len() > 4096
+                                || (rng.next() % 100 < free_pct && !live.is_empty())
+                            {
+                                let idx = (rng.next() as usize) % live.len();
+                                let (p, s) = live.swap_remove(idx);
+                                live_bytes -= s;
+                                unsafe { alloc.dealloc(p, layout_for(s)) };
+                            }
+                            ops += 1;
+                        }
+                        if live_bytes > 96 * 1024 * 1024 {
+                            for (p, s) in live.drain(..) {
+                                live_bytes -= s;
+                                unsafe { alloc.dealloc(p, layout_for(s)) };
+                            }
+                        }
+                    }
+                    for (p, s) in live {
+                        unsafe { alloc.dealloc(p, layout_for(s)) };
+                    }
+                    ops
+                })
+                .unwrap()
+        })
+        .collect();
+
+    handles.into_iter().map(|h| h.join().unwrap()).sum()
+}
+
 /// Producer-consumer: each thread allocates, then hands every other block to
 /// its ring neighbour for freeing. Same total ops as standard, but frees are
 /// remote — the case snmalloc/mimalloc optimize and bump-pointer thread
