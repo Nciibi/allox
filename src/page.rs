@@ -153,39 +153,54 @@ impl SpanMaster {
         debug_assert!(mclass < NUM_MEDIUM);
         let block_size = MEDIUM_CLASSES[mclass];
         let base = self as *mut _ as usize;
-        // Sub-headers on every non-first page, before carving blocks around
-        // them: a block never covers a page base.
-        let mut i = 1u32;
-        while i < npages {
-            let sub = (base + i as usize * PAGE_SIZE) as *mut u64;
-            *sub = SPAN_SUBMAGIC;
-            *((sub as *mut u8).add(8).cast::<*mut SpanMaster>()) = self;
-            i += 1;
-        }
+        #[cfg(all(unix, feature = "std"))]
+        let arena_owned = crate::arena::contains(base, npages as usize * PAGE_SIZE);
+        #[cfg(not(all(unix, feature = "std")))]
+        let arena_owned = false;
         let mut head: *mut u8 = ptr::null_mut();
         let mut count = 0u32;
-        let mut page = 0u32;
-        while page < npages {
-            let chunk = base + page as usize * PAGE_SIZE;
-            let (start, end) = if page == 0 {
-                (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
-            } else {
-                (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
-            };
-            let mut b = start;
+        if arena_owned {
+            let mut b = base + SPAN_MASTER_SIZE;
+            let end = base + npages as usize * PAGE_SIZE;
             while b + block_size <= end {
                 *(b as *mut *mut u8) = head;
                 head = b as *mut u8;
                 count += 1;
                 b += block_size;
             }
-            page += 1;
+        } else {
+            let mut i = 1u32;
+            while i < npages {
+                let sub = (base + i as usize * PAGE_SIZE) as *mut u64;
+                *sub = SPAN_SUBMAGIC;
+                *((sub as *mut u8).add(8).cast::<*mut SpanMaster>()) = self;
+                i += 1;
+            }
+            let mut page = 0u32;
+            while page < npages {
+                let chunk = base + page as usize * PAGE_SIZE;
+                let (start, end) = if page == 0 {
+                    (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
+                } else {
+                    (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
+                };
+                let mut b = start;
+                while b + block_size <= end {
+                    *(b as *mut *mut u8) = head;
+                    head = b as *mut u8;
+                    count += 1;
+                    b += block_size;
+                }
+                page += 1;
+            }
         }
         debug_assert!(count > 0);
-        debug_assert_eq!(
-            count as usize,
+        let expected = if arena_owned {
             medium_capacity_for(block_size, npages as usize)
-        );
+        } else {
+            medium_capacity_legacy_for(block_size, npages as usize)
+        };
+        debug_assert_eq!(count as usize, expected);
         self.magic = SPAN_MAGIC;
         self.prev = ptr::null_mut();
         self.next = ptr::null_mut();
