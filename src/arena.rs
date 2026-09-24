@@ -739,6 +739,7 @@ mod tests {
         let (remainder, fresh) = unsafe { b.commit(1) };
         assert!(!remainder.is_null() && !fresh);
         unsafe { b.release(remainder, 1) };
+        assert!(b.hole_exact_hits.load(Ordering::Acquire) >= 1);
         let stats = b.hole_stats();
         assert!(stats.0 >= 2);
         assert!(stats.1 >= 2);
