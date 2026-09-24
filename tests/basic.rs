@@ -275,7 +275,7 @@ fn forged_large_header_does_not_steal_medium_free() {
     unsafe {
         let mut blocks = [core::ptr::null_mut(); 16];
         for p in &mut blocks {
-            *p = malloc(30000);
+            *p = malloc(28000);
             assert!(!p.is_null());
         }
         blocks.sort_unstable();
@@ -292,9 +292,9 @@ fn forged_large_header_does_not_steal_medium_free() {
         (*header).magic = 0x00B1_0C5A_6E0F_F1CE;
         (*header).mapped = 65536;
         (*header).base = second.sub(128);
-        (*header).requested = 30000;
+        (*header).requested = 28000;
         (*header).next = core::ptr::null_mut();
-        assert!(usable_size(second) >= 30000);
+        assert!(usable_size(second) >= 28000);
         for p in blocks {
             free(p);
         }

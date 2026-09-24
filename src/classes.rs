@@ -429,9 +429,8 @@ mod tests {
             prev = c;
         }
         // Fragmentation bound + LUT agree with scan on every slot.
-        eprintln!("medium={:?} lut={:?}", MEDIUM_CLASSES, MEDIUM_LUT[850]);
-        assert_eq!(medium_class_for_size(30000), 4);
-        assert_eq!(MEDIUM_CLASSES[medium_class_for_size(30000)], 29552);
+        assert_eq!(medium_class_for_size(28000), 4);
+        assert_eq!(MEDIUM_CLASSES[medium_class_for_size(28000)], 29552);
         let mut size = MAX_SMALL_SIZE + 1;
         while size <= MAX_MEDIUM_BLOCK {
             let cls = MEDIUM_CLASSES[medium_class_for_size(size)];
