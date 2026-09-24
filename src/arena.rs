@@ -481,12 +481,19 @@ impl Arena {
     }
 
     pub(crate) fn hole_stats(&self) -> (u64, u64, u64, u64) {
-        (
-            self.hole_scans.load(Ordering::Relaxed) as u64,
-            self.hole_hits.load(Ordering::Relaxed) as u64,
-            self.hole_splits.load(Ordering::Relaxed) as u64,
-            self.hole_empty_fastpath.load(Ordering::Relaxed) as u64,
-        )
+        #[cfg(feature = "telemetry")]
+        {
+            (
+                self.hole_scans.load(Ordering::Relaxed) as u64,
+                self.hole_hits.load(Ordering::Relaxed) as u64,
+                self.hole_splits.load(Ordering::Relaxed) as u64,
+                self.hole_empty_fastpath.load(Ordering::Relaxed) as u64,
+            )
+        }
+        #[cfg(not(feature = "telemetry"))]
+        {
+            (0, 0, 0, 0)
+        }
     }
 
     /// Monotonic reservation high-water in bytes (the bump frontier only
