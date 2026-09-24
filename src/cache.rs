@@ -923,6 +923,19 @@ impl ThreadCache {
                 self.flush_bin(best, len / 2);
                 continue;
             }
+            let mut abest = usize::MAX;
+            let mut abest_bytes = 0usize;
+            for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
+                let bin_bytes = self.mactive[mclass].len as usize * size;
+                if self.mactive[mclass].len > 0 && bin_bytes > abest_bytes {
+                    abest_bytes = bin_bytes;
+                    abest = mclass;
+                }
+            }
+            if abest != usize::MAX {
+                self.flush_active_medium(abest);
+                continue;
+            }
             // Small bins have nothing worth trimming; shed the largest
             // medium bin instead (medium blocks are huge, so any non-empty
             // medium bin outranks the small-bin threshold logic).
@@ -1217,6 +1230,12 @@ impl ThreadCache {
             }
         }
         for mclass in 0..NUM_MEDIUM {
+            if self.mactive[mclass].head.is_null() {
+                continue;
+            }
+            self.flush_active_medium(mclass);
+        }
+        for mclass in 0..NUM_MEDIUM {
             if !self.mbins[mclass].head.is_null() {
                 self.flush_mbin(mclass, 0);
             }
@@ -1233,6 +1252,7 @@ impl ThreadCache {
         // the drift-cap owner heuristic, not a cache generation.
         self.virgin = [0; NUM_CLASSES];
         self.mvirgin = [0; NUM_MEDIUM];
+        self.mactive = [ActiveMedium::empty(); NUM_MEDIUM];
         #[cfg(all(unix, feature = "std"))]
         {
             self.bvirgin = [0; NUM_BIG];
