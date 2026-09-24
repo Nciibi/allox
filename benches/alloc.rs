@@ -598,11 +598,7 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
 /// by realloc doubling (64 B → 8 KiB). Frees everything still live at
 /// document end. Models serde-style parse churn through GlobalAlloc
 /// (realloc exercises the same-class identity + grow paths).
-fn run_json<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> u64 {
+fn run_json<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -610,8 +606,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0x150A ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0x150A ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         // One document: tiny values + growing buffers.
@@ -681,8 +676,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0xBEACE ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0xBEACE ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         let mut live: Vec<(*mut u8, Layout)> = Vec::with_capacity(128);
@@ -727,11 +721,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
 /// realloc-grown (doubling, then freed), plus steady small component churn
 /// (16–256 B, 50% frees). Models game-engine storage: realloc growth path
 /// with big regions plus background small churn.
-fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> u64 {
+fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -739,8 +729,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0xEC5 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0xEC5 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     let mut small_live: Vec<(*mut u8, Layout)> = Vec::with_capacity(512);
                     while Instant::now() < stop {
@@ -962,10 +951,7 @@ fn print_raw_samples(
         let ops: Vec<u64> = samples.iter().map(|sample| sample.ops).collect();
         let ns_per_op: Vec<f64> = samples.iter().map(RunSample::ns_per_op).collect();
         let rss: Vec<u64> = samples.iter().map(|sample| sample.rss_kib).collect();
-        let peak: Vec<u64> = samples
-            .iter()
-            .map(|sample| sample.peak_rss_kib)
-            .collect();
+        let peak: Vec<u64> = samples.iter().map(|sample| sample.peak_rss_kib).collect();
         let warmup_ops = warmups[index]
             .map(|sample| sample.ops.to_string())
             .unwrap_or_else(|| "-".to_string());
@@ -1199,7 +1185,9 @@ fn main() {
         );
     }
 
-    let mut json = String::from("{\"schema\":\"allox.bench.v1\",\"harness_allocator\":\"system\",\"config\":{");
+    let mut json = String::from(
+        "{\"schema\":\"allox.bench.v1\",\"harness_allocator\":\"system\",\"config\":{",
+    );
     json.push_str(&format!(
         "\"seconds\":{},\"repetitions\":{},\"warmup_seconds\":{},",
         secs, reps, warmup_secs
@@ -1227,8 +1215,7 @@ fn main() {
         let mut runs: Vec<Vec<RunSample>> = (0..allocators.len())
             .map(|_| Vec::with_capacity(reps))
             .collect();
-        let mut warmups: Vec<Option<RunSample>> =
-            (0..allocators.len()).map(|_| None).collect();
+        let mut warmups: Vec<Option<RunSample>> = (0..allocators.len()).map(|_| None).collect();
         if warmup_secs > 0 {
             for &allocator_index in &alloc_idx {
                 let allocator = &allocators[allocator_index];
@@ -1265,13 +1252,11 @@ fn main() {
             allox_index.filter(|index| alloc_idx.contains(index))
         {
             let s0 = allox::stats();
-            let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) =
-                allox::__debug_map_split();
+            let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
             let (d0abnd, _) = allox::__debug_arena_detail();
             let probe = run(allocators[allocator_index].1, workload, 1);
             let s1 = allox::stats();
-            let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) =
-                allox::__debug_map_split();
+            let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
             let (d1abnd, d1hi) = allox::__debug_arena_detail();
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
@@ -1341,11 +1326,7 @@ fn main() {
                     )
                 },
             );
-            let mut row = format!(
-                "{:<15}{}",
-                workload.name,
-                format_optional(medians[0])
-            );
+            let mut row = format!("{:<15}{}", workload.name, format_optional(medians[0]));
             for median in medians.iter().skip(1) {
                 row.push_str(&format_optional(*median));
             }
@@ -1370,10 +1351,7 @@ fn main() {
         json.push_str(&json_string(workload.name));
         json.push_str(&format!(
             ",\"threads\":{},\"size_min\":{},\"size_max\":{},\"free_pct\":{},\"allocators\":[",
-            workload.threads,
-            workload.size_range.0,
-            workload.size_range.1,
-            workload.free_pct
+            workload.threads, workload.size_range.0, workload.size_range.1, workload.free_pct
         ));
         for (index, &allocator_index) in alloc_idx.iter().enumerate() {
             if index != 0 {
