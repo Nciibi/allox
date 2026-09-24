@@ -810,14 +810,14 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
     if ret + size > base as usize + mapped {
         unmap_or_return(base, mapped);
-        return (ptr::null_mut(), false);
+        return (ptr::null_mut(), false, false);
     }
     let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
     init_large_header(hdr, base, mapped, size);
     register_large_region(base, mapped, hdr);
     #[cfg(feature = "telemetry")]
     note_large_alloc(size);
-    (ret as *mut u8, true)
+    (ret as *mut u8, true, true)
 }
 
 unsafe fn free_large(p: *mut u8) {
