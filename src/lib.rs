@@ -1590,6 +1590,24 @@ mod header_probe_tests {
         );
     }
 
+    #[cfg(all(unix, feature = "std"))]
+    #[test]
+    fn layout_dealloc_accepts_legacy_large_region() {
+        unsafe {
+            let mapped = 2 * PAGE_SIZE;
+            let base = crate::sys::map_any(mapped);
+            assert!(!base.is_null());
+            let p = base.add(LARGE_HEADER_SIZE);
+            init_large_header(
+                p.sub(LARGE_HEADER_SIZE).cast::<LargeHeader>(),
+                base,
+                mapped,
+                70_000,
+            );
+            dealloc_with_layout(p, 70_000, MIN_ALIGN);
+        }
+    }
+
     #[test]
     fn no_tls_fallback_refills_return_one_block() {
         unsafe {
