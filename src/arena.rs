@@ -497,21 +497,6 @@ impl Arena {
         }
     }
 
-    pub(crate) fn coalesce_stats(&self) -> (u64, u64, u64) {
-        #[cfg(feature = "telemetry")]
-        {
-            (
-                self.hole_coalesce_checks.load(Ordering::Relaxed) as u64,
-                self.hole_coalesces.load(Ordering::Relaxed) as u64,
-                self.hole_coalesced_pages.load(Ordering::Relaxed) as u64,
-            )
-        }
-        #[cfg(not(feature = "telemetry"))]
-        {
-            (0, 0, 0)
-        }
-    }
-
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
