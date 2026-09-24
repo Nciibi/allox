@@ -840,9 +840,9 @@ fn summarize(samples: &[RunSample]) -> SampleSummary {
     let mut total_ops = 0u64;
     let mut total_elapsed_ns = 0u64;
     let mut min_rate = f64::INFINITY;
-    let mut max_rate = 0.0;
+    let mut max_rate: f64 = 0.0;
     let mut min_run_ns = f64::INFINITY;
-    let mut max_run_ns = 0.0;
+    let mut max_run_ns: f64 = 0.0;
     for sample in samples {
         let rate = sample.ops_per_sec();
         let ns = sample.ns_per_op();
