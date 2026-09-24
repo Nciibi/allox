@@ -652,7 +652,8 @@ Implemented the first arena-reuse and large-cache slices:
 
 - Atomic hole-count gate avoids taking the hole mutex when no reusable holes exist.
 - Bounded exact-page index accelerates common small-hole reuse, with linear best-fit fallback for large holes.
-- Hole scan, hit, split, and empty-fast-path counters are exposed through hidden diagnostics.
+- Hole scan, hit, split, and empty-fast-path counters are feature-gated behind `telemetry` and exposed through hidden diagnostics.
+- Normal builds pay only for the atomic hole-count gate; diagnostic counter atomics compile out when telemetry is disabled.
 - The sharded `LargeRegionCache` now has fixed hot/cold exact-page indexes across the full cacheable page range (1,024 pages on 64-bit, 128 on narrower targets), preserving exact hot/cold precedence and the existing best-fit fallback.
 - Swap-with-last removal repairs both indexes, including stale-index fallback; focused tests cover precedence, accounting, duplicates, removal, and the boundary.
 - The new 5–8 MiB `huge-only 1T` workload measures the extended range; the full index measured about 12.7 K ops/s versus 12.5 K with the old 64-page bound.
