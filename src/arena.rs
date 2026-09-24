@@ -583,7 +583,8 @@ pub(crate) unsafe fn medium_table_get(p: *mut u8) -> *mut crate::page::SpanMaste
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::page::BigMaster;
+    use crate::classes::{medium_capacity_for, span_pages_for, MEDIUM_CLASSES};
+    use crate::page::{BigMaster, SpanMaster, PAGE_SIZE};
 
     const MB: usize = 1024 * 1024;
 
