@@ -129,6 +129,17 @@ fn big_realloc_grows_and_shrinks() {
         check_pattern(sp, 70000);
         free(sp);
 
+        let mut cross = malloc(262145);
+        assert!(!cross.is_null());
+        fill_pattern(cross, 262145);
+        let cross = realloc(cross, 524288);
+        assert!(!cross.is_null());
+        check_pattern(cross, 262145);
+        let cross = realloc(cross, 524289);
+        assert!(!cross.is_null());
+        check_pattern(cross, 524288);
+        free(cross);
+
         // Same-size realloc is identity on arena targets (spans never
         // move) and a legal move elsewhere; either way the result holds
         // the requested size.
@@ -146,7 +157,7 @@ fn big_realloc_grows_and_shrinks() {
 fn big_global_alloc_paths() {
     unsafe {
         let a = allox::Allox;
-        for size in [65500usize, 100000, 262144] {
+        for size in [65500usize, 100000, 262144, 300000, 524288] {
             let l = Layout::from_size_align(size, 16).unwrap();
             let p = a.alloc(l);
             assert!(!p.is_null(), "size {}", size);
@@ -185,11 +196,11 @@ fn big_churn_multithreaded() {
                         // medium/large neighbors to cross the boundaries).
                         let r = (next_rng() % 100) as usize;
                         let size = if r < 70 {
-                            65536 + (next_rng() as usize) % (262144 - 65536)
+                            65536 + (next_rng() as usize) % (524288 - 65536)
                         } else if r < 85 {
                             32768 + (next_rng() as usize) % 32704
                         } else {
-                            262144 + (next_rng() as usize) % 262144
+                            524289 + (next_rng() as usize) % 524288
                         };
                         let p = unsafe { malloc(size) };
                         assert!(!p.is_null(), "size {}", size);
