@@ -1,8 +1,8 @@
 //! Comparative allocator benchmark: allox vs system vs talc vs C allocators.
 //!
 //! All allocators run identical workloads; results are ops/s plus a
-//! relative table. The process-global harness allocator is the system
-//! allocator, while each measured allocator is called directly.
+//! relative table. The harness itself allocates through the process global
+//! (= allox); that overhead is identical for all measured allocators.
 //!
 //! P0 honest scoreboard: mimalloc + snmalloc are dev-only comparators — the
 //! library itself stays zero-deps / no-C. jemalloc is behind the optional
@@ -11,15 +11,12 @@
 //!
 //! Run with: cargo bench
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
-//! Machine-readable output: BENCH_OUTPUT=json cargo bench
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
-static HARNESS: System = System;
-
-static ALLOX: allox::Allox = allox::Allox;
+static GLOBAL: allox::Allox = allox::Allox;
 
 use spinning_top::RawSpinlock;
 use talc::{source::GlobalAllocSource, TalcLock};
@@ -40,18 +37,12 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         dlmalloc::GlobalDlmalloc.dealloc(p, l)
     }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        dlmalloc::GlobalDlmalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        dlmalloc::GlobalDlmalloc.alloc_zeroed(l)
-    }
 }
 
 static DLMALLOC: Dlmalloc = Dlmalloc;
 
-// C comparators (dev-only; lib stays zero-C). Wrappers delegate the native
-// GlobalAlloc operations so every workload below runs equivalently.
+// C comparators (dev-only; lib stays zero-C). Wrappers delegate alloc/dealloc
+// so every workload below runs identically through each allocator.
 struct Mimalloc;
 unsafe impl GlobalAlloc for Mimalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
@@ -59,12 +50,6 @@ unsafe impl GlobalAlloc for Mimalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         mimalloc::MiMalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        mimalloc::MiMalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        mimalloc::MiMalloc.alloc_zeroed(l)
     }
 }
 static MIMALLOC: Mimalloc = Mimalloc;
@@ -76,12 +61,6 @@ unsafe impl GlobalAlloc for Snmalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         snmalloc_rs::SnMalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        snmalloc_rs::SnMalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        snmalloc_rs::SnMalloc.alloc_zeroed(l)
     }
 }
 static SNMALLOC: Snmalloc = Snmalloc;
@@ -96,12 +75,6 @@ unsafe impl GlobalAlloc for Jemalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         tikv_jemallocator::Jemalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        tikv_jemallocator::Jemalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        tikv_jemallocator::Jemalloc.alloc_zeroed(l)
     }
 }
 #[cfg(feature = "bench-jemalloc")]
@@ -263,89 +236,8 @@ const WORKLOADS: &[Workload] = &[
     },
 ];
 
-#[derive(Clone, Copy, Debug)]
-struct RunSample {
-    ops: u64,
-    elapsed: Duration,
-    rss_kib: u64,
-    peak_rss_kib: u64,
-}
-
-impl RunSample {
-    fn from_start(ops: u64, start: Instant) -> Self {
-        let elapsed = start.elapsed();
-        Self {
-            ops,
-            elapsed,
-            rss_kib: current_rss_kib(),
-            peak_rss_kib: peak_rss_kib(),
-        }
-    }
-
-    fn ops_per_sec(&self) -> f64 {
-        self.ops as f64 / self.elapsed.as_secs_f64().max(f64::MIN_POSITIVE)
-    }
-
-    fn elapsed_ns(&self) -> u64 {
-        self.elapsed.as_nanos().min(u64::MAX as u128) as u64
-    }
-
-    fn ns_per_op(&self) -> f64 {
-        if self.ops == 0 {
-            0.0
-        } else {
-            self.elapsed_ns() as f64 / self.ops as f64
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TimingSummary {
-    mean_ns_per_op: f64,
-    min_run_ns_per_op: f64,
-    max_run_ns_per_op: f64,
-    p50_run_ns_per_op: f64,
-    p95_run_ns_per_op: f64,
-    p99_run_ns_per_op: f64,
-    p99_9_run_ns_per_op: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SampleSummary {
-    median_ops_per_sec: f64,
-    mean_ops_per_sec: f64,
-    min_ops_per_sec: f64,
-    max_ops_per_sec: f64,
-    total_ops: u64,
-    total_elapsed_ns: u64,
-    timing: TimingSummary,
-}
-
-struct AlloxDiagnostics {
-    map_delta: u64,
-    unmap_delta: u64,
-    mapped_delta: i64,
-    span_maps: u64,
-    span_unmaps: u64,
-    small_maps: u64,
-    small_unmaps: u64,
-    arena_reuses: u64,
-    arena_commits: u64,
-    big_maps: u64,
-    big_unmaps: u64,
-    abandoned_delta: u64,
-    abandoned_total: u64,
-    arena_high_water: u64,
-    probe: RunSample,
-}
-
-fn run<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> RunSample {
-    let start = Instant::now();
-    let ops = match wl.kind {
+fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
+    match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
@@ -353,15 +245,14 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
         Kind::Json => run_json(alloc, wl, seconds),
         Kind::Request => run_request(alloc, wl, seconds),
         Kind::Ecs => run_ecs(alloc, wl, seconds),
-    };
-    RunSample::from_start(ops, start)
+    }
 }
 
 fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let threads = wl.threads;
@@ -434,7 +325,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     use std::sync::mpsc::{channel, Receiver, Sender};
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
@@ -519,7 +410,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let (min, max) = wl.size_range;
@@ -573,7 +464,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
 /// Spawn-exit with no allocator interaction: isolates pthread spawn/join
 /// latency so spawn-churn numbers can be decomposed. Reported in threads/s
 /// (not alloc ops/s) — expect identical scores for every comparator.
-fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
+fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let mut threads = 0u64;
     while Instant::now() < stop {
@@ -603,7 +494,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -674,7 +565,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -732,7 +623,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
