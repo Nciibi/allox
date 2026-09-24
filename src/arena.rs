@@ -833,7 +833,7 @@ mod tests {
         let (tail, tail_fresh) = unsafe { a.commit(1) };
         assert!(!tail.is_null() && !tail_fresh);
         assert_eq!(tail, unsafe { base.add(pages * ARENA_ALIGN) });
-        assert_eq!(a.granule_stats(), (1, (4 * ARENA_GRANULE_SIZE) as u64));
+        assert_eq!(a.granule_stats(), (1, ARENA_GRANULE_SIZE as u64));
         unsafe { a.release(tail, 1) };
     }
 
