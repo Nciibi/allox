@@ -659,19 +659,19 @@ Implemented the first arena-reuse and large-cache slices:
 - The new 5–8 MiB `huge-only 1T` workload measures the extended range; the full index measured about 12.7 K ops/s versus 12.5 K with the old 64-page bound.
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 
-The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiments are coalescing and extending the exact extent index; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
+The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiment is hole coalescing; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
 
 ### Baseline comparison
 
-A controlled comparison was run against the pre-roadmap commit `1c32ee2` using the same System harness, separate fresh processes, `BENCH_SECS=2`, `BENCH_REPS=5`, and one-second warmups. These are directional allocator-loop results, not process-global application benchmarks.
+A controlled comparison was run against the pre-roadmap commit `1c32ee2` using the same System harness, separate fresh processes, `taskset -c 0-7`, `BENCH_SECS=3`, `BENCH_REPS=5`, and one-second warmups. The current build has telemetry-only hole counters and the full large-cache index. These are directional allocator-loop results, not process-global application benchmarks.
 
 | Workload | Current median | Baseline median | Delta | Current p99 ns/op | Baseline p99 ns/op | Current / baseline RSS KiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| mixed-all 8T | 15.96 M/s | 15.20 M/s | +5.0% | 67.5 | 87.3 | 24,132 / 21,888 |
-| large-only 1T | 265.8 K/s | 255.5 K/s | +4.0% | 3,980.6 | 4,188.9 | 8,364 / 7,972 |
-| large-only 8T | 9.21 M/s | 9.39 M/s | -2.0% | 119.2 | 107.5 | 12,336 / 11,036 |
-| prodcons 8T | 30.51 M/s | 28.60 M/s | +6.7% | 33.8 | 42.3 | 15,092 / 15,012 |
-| json-ish 8T | 141.9 M/s | 135.3 M/s | +4.9% | 7.6 | 7.6 | 8,092 / 7,780 |
-| ecs 8T | 7.21 M/s | 8.77 M/s | -17.9% | 143.6 | 116.6 | 11,708 / 11,272 |
+| mixed-all 8T | 17.06 M/s | 10.61 M/s | +60.8% | 62.7 | 140.2 | 24,096 / 22,064 |
+| large-only 1T | 268.8 K/s | 266.7 K/s | +0.8% | 6,783.6 | 28,681.5 | 10,124 / 9,760 |
+| large-only 8T | 9.08 M/s | 8.74 M/s | +3.9% | 112.4 | 118.7 | 12,408 / 11,056 |
+| prodcons 8T | 27.47 M/s | 25.83 M/s | +6.3% | 38.2 | 43.6 | 15,008 / 14,664 |
+| json-ish 8T | 136.07 M/s | 139.96 M/s | -2.8% | 7.5 | 7.3 | 8,104 / 7,840 |
+| ecs 8T | 7.81 M/s | 7.73 M/s | +1.1% | 128.1 | 129.9 | 12,044 / 11,772 |
 
-The medium/mixed, JSON, and producer-consumer paths improved, but the large-8T and ECS acceptance gates are not met. A separate all-allocator run measured current Allox at 20.98 M/s versus mimalloc 19.42 M/s on mixed-all 8T, but 11.05 M/s versus 14.05 M/s on large-only 8T. The next iteration must isolate and fix the ECS/large regression before adding more allocator complexity.
+The pinned comparison shows the counter-gating fix removes the earlier large/ECS regression signal; large-only and ECS are now neutral-to-positive, while JSON is slightly slower. The mixed result has high baseline variance, so its +60.8% median should not be treated as a stable speedup without more application-shaped runs. RSS remains modestly higher on most workloads. The next step is coalescing only if it preserves these gated results.
