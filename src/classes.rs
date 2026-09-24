@@ -440,8 +440,16 @@ mod tests {
         for &b in MEDIUM_CLASSES.iter() {
             let pages = span_pages_for(b);
             assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
-            let capacity = medium_capacity_for(b, pages);
-            assert!(capacity > 0, "block {} pages {}", b, pages);
+             let capacity = medium_capacity_for(b, pages);
+             assert!(capacity >= TARGET_BLOCKS_PER_SPAN, "block {} pages {}", b, pages);
+             if pages > 1 {
+                 assert!(
+                     medium_capacity_for(b, pages - 1) < TARGET_BLOCKS_PER_SPAN,
+                     "block {} pages {}",
+                     b,
+                     pages
+                 );
+             }
             assert_eq!(capacity, (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / b
                 + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / b));
             assert!(
