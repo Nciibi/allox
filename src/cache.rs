@@ -877,6 +877,32 @@ impl ThreadCache {
         true
     }
 
+    unsafe fn flush_active_medium(&mut self, mclass: usize) {
+        let block_size = MEDIUM_CLASSES[mclass];
+        let (span, head, len) = {
+            let active = &self.mactive[mclass];
+            (active.span, active.head, active.len)
+        };
+        if head.is_null() || len == 0 {
+            return;
+        }
+        let mut tail = head;
+        while !(*tail.cast::<*mut u8>()).is_null() {
+            tail = *tail.cast::<*mut u8>();
+        }
+        self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
+        {
+            let active = &mut self.mactive[mclass];
+            active.span = ptr::null_mut();
+            active.base = 0;
+            active.end = 0;
+            active.head = ptr::null_mut();
+            active.len = 0;
+            active.virgin = 0;
+        }
+        crate::heap::MEDIUM_HEAP.release_blocks(mclass, span, head, tail, len);
+    }
+
     /// Bring total cached bytes under half the budget by repeatedly halving
     /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
