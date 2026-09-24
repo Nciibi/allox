@@ -348,6 +348,9 @@ impl Arena {
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
             holes.bytes += bytes;
+            if pages <= EXACT_BUCKET_MAX {
+                holes.exact[pages] = idx as u16;
+            }
             self.hole_count.store(holes.len, Ordering::Release);
         } else {
             self.abandoned.fetch_add(1, Ordering::Relaxed);
