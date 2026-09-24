@@ -365,24 +365,14 @@ impl Arena {
     fn holes_give(&self, base: *mut u8, pages: usize) {
         let start = self.start.load(Ordering::Relaxed);
         let off = (base as usize).wrapping_sub(start);
-        let incoming_bytes = pages * ARENA_ALIGN;
+        let bytes = pages * ARENA_ALIGN;
         let mut holes = self.holes.lock();
-        if holes.len < HOLE_SLOTS && holes.bytes + incoming_bytes <= HOLE_CAP_BYTES {
-            let (off, pages, coalesced_pages) = holes.coalesce(off, pages);
-            let bytes = pages * ARENA_ALIGN;
+        if holes.len < HOLE_SLOTS && holes.bytes + bytes <= HOLE_CAP_BYTES {
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
             holes.bytes += bytes;
-            if coalesced_pages > 0 {
-                #[cfg(feature = "telemetry")]
-                {
-                    self.hole_coalesces.fetch_add(1, Ordering::Relaxed);
-                    self.hole_coalesced_pages
-                        .fetch_add(coalesced_pages, Ordering::Relaxed);
-                }
-                holes.rebuild_exact();
-            } else if pages <= EXACT_BUCKET_MAX {
+            if pages <= EXACT_BUCKET_MAX {
                 holes.exact[pages] = idx as u16;
             }
             self.hole_count.store(holes.len, Ordering::Release);
