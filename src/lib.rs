@@ -973,7 +973,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
         #[cfg(not(all(unix, feature = "std")))]
         {
             #[cfg(debug_assertions)]
-            if large_header_of(p).is_none() {
+            if !large_region_known(p) {
                 corrupt_pointer();
             }
             free_large(p);
@@ -982,7 +982,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
         #[cfg(all(unix, feature = "std"))]
         if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
             #[cfg(debug_assertions)]
-            if large_header_of(p).is_none() {
+            if !large_region_known(p) {
                 corrupt_pointer();
             }
             free_large(p);
@@ -993,7 +993,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     if size > MAX_MEDIUM_BLOCK {
         if !crate::arena::contains(p, 1) {
             #[cfg(debug_assertions)]
-            if large_header_of(p).is_none() {
+            if !large_region_known(p) {
                 corrupt_pointer();
             }
             free_large(p);
@@ -1191,10 +1191,10 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     let old_large_ok = if old_arena {
         !crate::arena::large_table_get(p).is_null()
     } else {
-        large_header_of(p).is_some()
+        legacy_large_contains(p)
     };
     #[cfg(not(all(unix, feature = "std")))]
-    let old_large_ok = large_header_of(p).is_some();
+    let old_large_ok = legacy_large_contains(p);
     #[cfg(all(unix, feature = "std"))]
     let old_big: Option<*mut u8> = if old_arena {
         let big = crate::arena::big_table_get(p);
