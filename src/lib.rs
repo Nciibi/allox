@@ -480,8 +480,11 @@ impl LargeRegionCache {
     fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool) {
         let last = self.cold_len - 1;
         let entry = self.cold[index];
+        let zeroed = self.cold_zeroed[index];
         self.cold[index] = self.cold[last];
         self.cold[last] = (ptr::null_mut(), 0);
+        self.cold_zeroed[index] = self.cold_zeroed[last];
+        self.cold_zeroed[last] = false;
         self.cold_len = last;
         self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
         if index < self.cold_len {
@@ -507,19 +510,19 @@ impl LargeRegionCache {
                 );
             }
         }
-        entry
+        (entry, zeroed)
     }
 
     /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
-    /// Removes and returns `(base, mapped_pages)`. Caller holds the lock.
-    /// Both tiers need only a header rewrite (fresh=false); cold contents
-    /// were discarded, hot contents are dirty — calloc memsets either way.
+    /// Removes and returns `(base, mapped_pages, known_zeroed)`. Caller holds the lock.
+    /// Both tiers need only a header rewrite (fresh=false); the returned
+    /// zero flag tells calloc whether the recycled bytes are known zero.
     ///
     /// Exact-size matches win over merely-fitting ones: under size variance,
     /// best-fit eats big regions for small requests, fragmenting the cache
     /// so future big requests miss. Exact-first preserves each size class's
     /// own reuse pool (temporal locality in churn is per-size).
-    fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32)> {
+    fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32, bool)> {
         let wanted = (mapped / page::PAGE_SIZE) as u32;
         if let Some(i) = self.exact_hot(wanted) {
             return Some(self.remove_hot(i));
