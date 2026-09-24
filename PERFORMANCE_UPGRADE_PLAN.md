@@ -602,3 +602,28 @@ Do not prioritize these first:
 7. Remote owner queues and batched frees.
 8. Lazy provisioning and asynchronous lifecycle reclamation.
 9. Adaptive retention, decay, metadata locality, and release/platform work.
+
+## Phase 0 implementation status
+
+Implemented in the first implementation pass:
+
+- Neutral System harness allocator for direct comparator calls.
+- Native `realloc` and `alloc_zeroed` forwarding for comparator wrappers.
+- Warmup, raw per-run samples, JSON/JSONL output, current RSS, peak RSS, and per-run aggregate latency percentiles.
+- `BENCH_FRESH=1` fresh-process JSONL mode.
+- Correct Allox diagnostic gating when `BENCH_ALLOC` selects another allocator.
+- Relaxed-atomic owner metadata and focused concurrency coverage.
+- Free-only thread exit-hook registration, retryable hook installation, and one-shot destructor value handling.
+- No-TLS refill-tail return paths.
+- Arena hole remainder preservation with address-specific regression coverage.
+- Aligned free-function `realloc` alignment preservation and regression coverage.
+- Target-width header-reserve constants, bounded all-size roundtrip coverage, and a real WASM global-allocator smoke path.
+- Large allocation/free telemetry on stash and recycle-cache paths.
+- Explicit compile-time failure for unsupported bare-metal targets without a memory backend.
+
+Deferred to the next Phase 0 slice:
+
+- Per-operation p99 sampling without timing overhead in throughput runs.
+- Full lock-wait, purge, and realloc-copy counters.
+- Process-global application benchmark binaries.
+- A real bare-metal memory backend.
