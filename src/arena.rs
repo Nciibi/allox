@@ -1055,10 +1055,10 @@ mod tests {
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn exhaustion_reuses_coalesced_holes() {
-        // 256 KiB arena = 4 pages: exact-supply then graceful nulls.
-        let a = Arena::with_size(4 * ARENA_ALIGN);
+        // 1 MiB arena = 16 pages: exact-supply then graceful nulls.
+        let a = Arena::with_size(16 * ARENA_ALIGN);
         let mut bases = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..16 {
             let b = unsafe { a.commit(1).0 };
             assert!(!b.is_null());
             bases.push(b);
@@ -1070,22 +1070,18 @@ mod tests {
         for b in bases.drain(..) {
             unsafe { a.release(b, 1) };
         }
-        for _ in 0..4 {
+        for _ in 0..16 {
             let b = unsafe { a.commit(1).0 };
             assert!(!b.is_null(), "exact hole reuse");
             unsafe { a.release(b, 1) };
         }
-        {
-            let holes = a.holes.lock();
-            eprintln!("holes before coalesce: {:?}", &holes.entries[..holes.len]);
-        }
-        let (coalesced, fresh) = unsafe { a.commit(4) };
+        let (coalesced, fresh) = unsafe { a.commit(16) };
         assert_eq!(coalesced, first);
         assert!(!fresh);
         assert_eq!(a.hole_count.load(Ordering::Acquire), 0);
         #[cfg(feature = "telemetry")]
-        assert_eq!(a.coalesce_stats(), (1, 1, 3));
-        unsafe { a.release(coalesced, 4) };
+        assert_eq!(a.coalesce_stats(), (1, 1, 15));
+        unsafe { a.release(coalesced, 16) };
     }
 
     // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
