@@ -1298,6 +1298,11 @@ pub fn stats() -> Stats {
     }
 }
 
+#[doc(hidden)]
+pub fn __debug_exit_flush_count() -> u64 {
+    thread_exit::flush_count()
+}
+
 /// Span-vs-large map split for tuning (see ROADMAP P2). Returns
 /// `(span_maps, span_unmaps, small_maps, small_unmaps, arena_commits,
 /// arena_reuses, big_maps, big_unmaps)`; large maps are `map_calls -
