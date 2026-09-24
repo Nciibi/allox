@@ -840,19 +840,19 @@ unsafe fn free_large(p: *mut u8) {
         if c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES {
             let idx = c.len;
             c.entries[idx] = (base, pages);
-             c.len = idx + 1;
-             c.bytes += mapped;
-             c.index_hot(idx, pages as usize);
-             Fate::Kept
+            c.len = idx + 1;
+            c.bytes += mapped;
+            c.index_hot(idx, pages as usize);
+            Fate::Kept
         } else if c.cold_len < LARGE_COLD_SLOTS
             && c.cold_bytes + mapped <= LARGE_COLD_CAP_BYTES
         {
             let idx = c.cold_len;
             c.cold[idx] = (base, pages);
-             c.cold_len = idx + 1;
-             c.cold_bytes += mapped;
-             c.index_cold(idx, pages as usize);
-             sys::discard(base, mapped);
+            c.cold_len = idx + 1;
+            c.cold_bytes += mapped;
+            c.index_cold(idx, pages as usize);
+            sys::discard(base, mapped);
             Fate::Kept
         } else {
             Fate::Unmap
