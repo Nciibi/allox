@@ -493,13 +493,25 @@ fn note_large_alloc(size: usize) {
 }
 
 #[cfg(feature = "telemetry")]
-fn note_large_free(p: *mut u8, base: *mut u8, mapped: usize) {
+fn note_large_free(requested: usize) {
     use core::sync::atomic::Ordering::Relaxed;
     heap::TELEMETRY.total_frees.fetch_add(1, Relaxed);
-    let user = p as usize - base as usize;
     heap::TELEMETRY
         .bytes_out
-        .fetch_add(mapped.saturating_sub(user) as u64, Relaxed);
+        .fetch_add(requested as u64, Relaxed);
+}
+
+#[inline]
+unsafe fn init_large_header(
+    hdr: *mut LargeHeader,
+    base: *mut u8,
+    mapped: usize,
+    requested: usize,
+) {
+    (*hdr).magic = LARGE_MAGIC;
+    (*hdr).mapped_size = mapped;
+    (*hdr).base = base;
+    (*hdr).requested_size = requested;
 }
 
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
@@ -530,9 +542,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
         if ret + size <= base as usize + region_size {
             let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
-            (*hdr).magic = LARGE_MAGIC;
-            (*hdr).mapped_size = region_size;
-            (*hdr).base = base;
+            init_large_header(hdr, base, region_size, size);
             #[cfg(feature = "telemetry")]
             note_large_alloc(size);
             return (ret as *mut u8, false);
@@ -554,9 +564,9 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
             let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
             if ret + size <= base as usize + region_size {
                 let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
-                (*hdr).magic = LARGE_MAGIC;
-                (*hdr).mapped_size = region_size;
-                (*hdr).base = base;
+                init_large_header(hdr, base, region_size, size);
+                #[cfg(feature = "telemetry")]
+                note_large_alloc(size);
                 return (ret as *mut u8, false);
             }
             // Alignment made the cached region unusable; drop it.
@@ -590,9 +600,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         return (ptr::null_mut(), false);
     }
     let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
-    (*hdr).magic = LARGE_MAGIC;
-    (*hdr).mapped_size = mapped;
-    (*hdr).base = base;
+    init_large_header(hdr, base, mapped, size);
     #[cfg(feature = "telemetry")]
     note_large_alloc(size);
     (ret as *mut u8, true)
@@ -602,6 +610,7 @@ unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
     let base = (*hdr).base;
+    let requested = (*hdr).requested_size;
     let pages = (mapped / page::PAGE_SIZE) as u32;
 
     // Tier 1: per-thread stash — the freeing thread usually reallocates next.
@@ -615,7 +624,7 @@ unsafe fn free_large(p: *mut u8) {
     );
     if stashed {
         #[cfg(feature = "telemetry")]
-        note_large_free(p, base, mapped);
+        note_large_free(requested);
         return;
     }
 
