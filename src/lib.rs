@@ -975,7 +975,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             // Arena unavailable: legacy large path (fresh flag drives the
             // memset, mirroring the large branch above).
             let (lp, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !lp.is_null() && !known_zeroed {
+            if !lp.is_null() {
                 ptr::write_bytes(lp, 0, size);
             }
             return lp;
