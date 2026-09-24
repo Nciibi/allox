@@ -935,8 +935,8 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
 }
 
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
-/// blocks only need their freelist-link word cleared; recycled large
-/// regions are memset.
+/// blocks only need their freelist-link word cleared; recycled large regions
+/// are memset unless their cache metadata proves they were discarded.
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
