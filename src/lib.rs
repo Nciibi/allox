@@ -503,6 +503,7 @@ unsafe fn init_large_header(
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
     (*hdr).requested_size = requested;
+    (*hdr).registry_next = ptr::null_mut();
 }
 
 unsafe fn register_large_region(_base: *mut u8, _mapped: usize, _hdr: *mut LargeHeader) {

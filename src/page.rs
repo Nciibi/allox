@@ -307,9 +307,10 @@ pub(crate) struct LargeHeader {
     pub(crate) mapped_size: usize,
     pub(crate) base: *mut u8,
     pub(crate) requested_size: usize,
+    pub(crate) registry_next: *mut LargeHeader,
 }
 
-pub(crate) const LARGE_HEADER_SIZE: usize = 32; // padded to keep user ptr 16-aligned
+pub(crate) const LARGE_HEADER_SIZE: usize = core::mem::size_of::<LargeHeader>();
 
 #[inline]
 pub(crate) fn align_up(v: usize, align: usize) -> usize {
