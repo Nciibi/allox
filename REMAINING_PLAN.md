@@ -421,8 +421,8 @@ so the span header stays hot).
   - `lib.rs`: `header_probe_tests` for `large_header_of` (accept well-formed,
     reject bad magic / bad size / outside range / off==0).
   - `arena.rs`: all raw-mmap unit tests `cfg_attr(miri, ignore)`.
-  - Fuzz: new `tier_boundary_seq` target (exact 16 KiB / 65472 / 262144
-    edges + neighbors, mixed align, realloc/calloc/free); CI smoke-runs it.
+  - Fuzz: new `tier_boundary_seq` target (exact 16 KiB / 65472 / 262144 /
+     524288 edges + neighbors, mixed align, realloc/calloc/free); CI smoke-runs it.
   - CI miri job: `miri setup` + `MIRIFLAGS=-Zmiri-strict-provenance`.
   - Exit-hook path: covered by `tests/thread_exit.rs` in the normal 3-OS
     test matrix (needs real pthread/Fls, not Miri).
