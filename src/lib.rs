@@ -733,7 +733,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
         .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
     {
         Some(t) => t,
-        None => return (ptr::null_mut(), false),
+        None => return (ptr::null_mut(), false, false),
     };
     let mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
     let mapped_pages = (mapped / page::PAGE_SIZE) as u32;
@@ -757,7 +757,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
             register_large_region(base, region_size, hdr);
             #[cfg(feature = "telemetry")]
             note_large_alloc(size);
-            return (ret as *mut u8, false);
+            return (ret as *mut u8, false, false);
         }
         // Alignment made the cached region unusable; drop it (arena-owned
         // slices park in holes, legacy ones truly unmap — counters follow).
@@ -771,7 +771,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
             let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
             c.take_fit(mapped)
         };
-        if let Some((base, pages)) = taken {
+        if let Some((base, pages, zeroed)) = taken {
             let region_size = pages as usize * page::PAGE_SIZE;
             let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
             if ret + size <= base as usize + region_size {
@@ -780,7 +780,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
                 register_large_region(base, region_size, hdr);
                 #[cfg(feature = "telemetry")]
                 note_large_alloc(size);
-                return (ret as *mut u8, false);
+                return (ret as *mut u8, false, zeroed);
             }
             // Alignment made the cached region unusable; drop it.
             unmap_or_return(base, region_size);
