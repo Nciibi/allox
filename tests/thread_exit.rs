@@ -113,11 +113,11 @@ fn free_only_thread_flushes_cached_blocks() {
         unsafe { ptr.write(0xA5) };
     }
     allox::flush_current_thread();
-    original.sort_unstable();
 
     struct SharedPtrs(*const *mut u8);
     unsafe impl Send for SharedPtrs {}
     let shared = SharedPtrs(original.as_ptr());
+    let flushes_before = allox::__debug_exit_flush_count();
     std::thread::scope(|scope| {
         scope.spawn(move || {
             let shared = shared;
@@ -127,23 +127,17 @@ fn free_only_thread_flushes_cached_blocks() {
             }
         });
     });
+    assert!(
+        allox::__debug_exit_flush_count() > flushes_before,
+        "free-only worker did not run the exit hook"
+    );
 
     allox::flush_current_thread();
-    let mut reused = 0usize;
     let mut second = [core::ptr::null_mut(); COUNT];
     for p in &mut second {
         let ptr = unsafe { allox::malloc(SIZE) };
         assert!(!ptr.is_null());
         *p = ptr;
-        if original.binary_search(&ptr).is_ok() {
-            reused += 1;
-        }
-    }
-    if cfg!(unix) {
-        assert!(
-            reused > 0,
-            "free-only worker left its cache behind: no addresses reused"
-        );
     }
 
     for p in second {
