@@ -691,9 +691,13 @@ impl ThreadCache {
             }
         }
 
-        let bin = &mut self.mbins[mclass];
-        push_block(&mut bin.head, p);
-        bin.len += 1;
+        if self.active_medium_contains(p, mclass) {
+            self.active_medium_dealloc(p, mclass);
+        } else {
+            let bin = &mut self.mbins[mclass];
+            push_block(&mut bin.head, p);
+            bin.len += 1;
+        }
         self.cached_bytes += MEDIUM_CLASSES[mclass];
         if foreign {
             self.foreign_bytes += MEDIUM_CLASSES[mclass];
