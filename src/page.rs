@@ -63,30 +63,44 @@ impl PageHeader {
         (p as usize & !PAGE_MASK) as *mut PageHeader
     }
 
-    /// Carve a freshly mapped page into a full free list of `class`-sized
-    /// blocks. The page is born empty of users (`used == 0`).
+    /// Carve a freshly mapped page into the allocator's lazy block area.
+    /// The page is born empty of users (`used == 0`) and materializes blocks
+    /// only when the class lock requests them.
     pub(crate) unsafe fn init(&mut self, class: usize) {
-        let block_size = CLASSES[class];
-        let base = self as *mut _ as usize;
-        let start = base + HEADER_SIZE;
-        let count = (PAGE_SIZE - HEADER_SIZE) / block_size;
-        let mut head: *mut u8 = ptr::null_mut();
-        let mut i = count;
-        while i > 0 {
-            i -= 1;
-            let b = (start + i * block_size) as *mut u8;
-            *(b.cast::<*mut u8>()) = head;
-            head = b;
-        }
         self.magic = PAGE_MAGIC;
         self.prev = ptr::null_mut();
         self.next = ptr::null_mut();
-        self.free_head = head;
-        self.free_count = count as u16;
+        self.free_head = ptr::null_mut();
+        self.free_count = 0;
         self.used = 0;
         self.class = class as u16;
         self.flags = FLAG_VIRGIN;
         self.owner.store(0, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub(crate) fn capacity(&self) -> usize {
+        (PAGE_SIZE - HEADER_SIZE) / CLASSES[self.class as usize]
+    }
+
+    pub(crate) unsafe fn provision(&mut self, max: usize) -> usize {
+        let block_size = CLASSES[self.class as usize];
+        let materialized = self.used as usize + self.free_count as usize;
+        let capacity = self.capacity();
+        let count = capacity.saturating_sub(materialized).min(max);
+        if count == 0 {
+            return 0;
+        }
+        let start = self as *mut _ as usize + HEADER_SIZE + materialized * block_size;
+        let mut head = self.free_head;
+        for index in (0..count).rev() {
+            let block = (start + index * block_size) as *mut u8;
+            *block.cast::<*mut u8>() = head;
+            head = block;
+        }
+        self.free_head = head;
+        self.free_count += count as u16;
+        count
     }
 }
 
