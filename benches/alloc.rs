@@ -1499,13 +1499,10 @@ fn main() {
                 || "-".to_string(),
                 |diagnostics| {
                     format!(
-                        "abnd+{}/s tot{} hi{}MiB co{}/{}/{}pg",
+                        "abnd+{}/s tot{} hi{}MiB",
                         diagnostics.abandoned_delta,
                         diagnostics.abandoned_total,
-                        diagnostics.arena_high_water / (1024 * 1024),
-                        diagnostics.coalesce_checks,
-                        diagnostics.coalesce_merges,
-                        diagnostics.coalesced_pages
+                        diagnostics.arena_high_water / (1024 * 1024)
                     )
                 },
             );
