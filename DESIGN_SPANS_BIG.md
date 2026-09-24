@@ -256,13 +256,12 @@ P6 (no clobber): carving writes stay within `[base, base+npages*64K)`
 
 ## 9. Open questions (resolved during implementation 2026-09-23)
 
-1. Exact class top for phase 1: **262144** (as designed). The 1T bench
-   tail past 256 KiB stays on the large path; measured — tail is a
-   minority of large-only 1T ops and arena hole reuse already absorbs it
-   cheaply (probe `a67298` reuses, 0 unmaps). Revisit only with its own
-   numbers if the 1T large-only gap (0.40× mimalloc) becomes a priority.
+1. Exact class top for phase 2: **524288** (as designed). The 1T tail
+   above 512 KiB remains on the large path; the focused upper-tail probe
+   measured ~95K ops/s, so a future 1 MiB extension needs its own RSS
+   and retention budget rather than an implicit cap increase.
 2. `BIG_REFILL_BATCH`: **4** shipped (measure-don't-assume noted in
-   `heap.rs`; 4 × up to 256 KiB ≈ 1 MiB per refill, budget-sane). Tune
+   `heap.rs`; 4 × up to 512 KiB ≈ 2 MiB per refill, budget-sane). Tune
    2/8 only if large-only 8T refill shows up in a future profile.
 3. Cold/empty byte caps: **shipped at medium-scaled starts**
    (empty 8 MiB/class, cold 256 MiB/class 64-bit / 16 MiB 32-bit, 256
