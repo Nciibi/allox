@@ -140,7 +140,7 @@ mimalloc-inspired, adapted for Rust's world:
 - **Sharded global heap**: each size class' partial-page list has its own
   mutex; slow paths are batched (~64 blocks per lock acquisition).
 - **Large / over-aligned allocations** are served by directly mapped regions
-  tagged with a magic header; invalid frees are detected and abort.
+  tracked in arena/legacy side metadata; invalid frees are detected and abort.
 - **Delayed page reclamation**: fully-freed pages are kept mapped (capped at
   4 per class, ~16 MiB worst case) and recycled on the next refill instead of
   paying unmap/map syscalls on churn.
