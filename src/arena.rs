@@ -473,9 +473,8 @@ fn big_page_index(p: *mut u8) -> Option<usize> {
     Some(idx)
 }
 
-/// Record `master` for all `pages` starting at arena-owned `base`
-/// (carve path, under the class lock). Out-of-range inputs are ignored
-/// (debug-asserted): callers pass freshly committed arena slices.
+const LARGE_TABLE_TAG: usize = 1;
+
 pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMaster) {
     for i in 0..pages as usize {
         match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
@@ -485,8 +484,19 @@ pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMa
     }
 }
 
-/// Forget all `pages` starting at arena-owned `base` (true-unmap path,
-/// under the class lock, before unmapping). Same bounds discipline as set.
+pub(crate) unsafe fn large_table_set(
+    base: *mut u8,
+    pages: u32,
+    header: *mut LargeHeader,
+) {
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(header as usize | LARGE_TABLE_TAG, Ordering::Release),
+            None => debug_assert!(false, "large table set outside reservation"),
+        }
+    }
+}
+
 pub(crate) unsafe fn big_table_clear(base: *mut u8, pages: u32) {
     for i in 0..pages as usize {
         match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
@@ -496,12 +506,39 @@ pub(crate) unsafe fn big_table_clear(base: *mut u8, pages: u32) {
     }
 }
 
-/// Master owning the arena page containing `p`, or null (outside the
-/// reservation, uninitialized arena, or no span parked here). Lock-free;
-/// every hit must be validated with `BigMaster::contains` before use.
+pub(crate) unsafe fn large_table_clear(base: *mut u8, pages: u32) {
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(0, Ordering::Release),
+            None => debug_assert!(false, "large table clear outside reservation"),
+        }
+    }
+}
+
 pub(crate) unsafe fn big_table_get(p: *mut u8) -> *mut BigMaster {
     match big_page_index(p) {
-        Some(idx) => BIG_MAP[idx].load(Ordering::Acquire) as *mut BigMaster,
+        Some(idx) => {
+            let raw = BIG_MAP[idx].load(Ordering::Acquire);
+            if raw & LARGE_TABLE_TAG != 0 {
+                ptr::null_mut()
+            } else {
+                raw as *mut BigMaster
+            }
+        }
+        None => ptr::null_mut(),
+    }
+}
+
+pub(crate) unsafe fn large_table_get(p: *mut u8) -> *mut LargeHeader {
+    match big_page_index(p) {
+        Some(idx) => {
+            let raw = BIG_MAP[idx].load(Ordering::Acquire);
+            if raw & LARGE_TABLE_TAG == 0 {
+                ptr::null_mut()
+            } else {
+                (raw & !LARGE_TABLE_TAG) as *mut LargeHeader
+            }
+        }
         None => ptr::null_mut(),
     }
 }

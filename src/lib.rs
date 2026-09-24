@@ -439,6 +439,14 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
 
 #[inline]
 pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        let (base, fresh) =
+            crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
+        if !base.is_null() {
+            return (base, fresh);
+        }
+    }
     let base = sys::map_any(mapped);
     (base, !base.is_null())
 }
@@ -497,6 +505,17 @@ unsafe fn init_large_header(
     (*hdr).requested_size = requested;
 }
 
+unsafe fn register_large_region(_base: *mut u8, _mapped: usize, _hdr: *mut LargeHeader) {
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(_base, _mapped) {
+        crate::arena::large_table_set(
+            _base,
+            (_mapped / page::PAGE_SIZE) as u32,
+            _hdr,
+        );
+    }
+}
+
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
 /// OS-zero (a brand-new mapping rather than a recycled one).
 unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
@@ -526,6 +545,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
         if ret + size <= base as usize + region_size {
             let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
             init_large_header(hdr, base, region_size, size);
+            register_large_region(base, region_size, hdr);
             #[cfg(feature = "telemetry")]
             note_large_alloc(size);
             return (ret as *mut u8, false);
@@ -548,6 +568,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
             if ret + size <= base as usize + region_size {
                 let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
                 init_large_header(hdr, base, region_size, size);
+                register_large_region(base, region_size, hdr);
                 #[cfg(feature = "telemetry")]
                 note_large_alloc(size);
                 return (ret as *mut u8, false);
@@ -584,6 +605,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     }
     let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
     init_large_header(hdr, base, mapped, size);
+    register_large_region(base, mapped, hdr);
     #[cfg(feature = "telemetry")]
     note_large_alloc(size);
     (ret as *mut u8, true)
@@ -596,6 +618,10 @@ unsafe fn free_large(p: *mut u8) {
     #[cfg(feature = "telemetry")]
     let requested = (*hdr).requested_size;
     let pages = (mapped / page::PAGE_SIZE) as u32;
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(base, mapped) {
+        crate::arena::large_table_clear(base, pages);
+    }
 
     // Tier 1: per-thread stash — the freeing thread usually reallocates next.
     // Single TLS visit: stash the region and report our shard salt together.
