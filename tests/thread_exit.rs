@@ -98,3 +98,50 @@ fn short_lived_threads_do_not_accumulate() {
         mapped
     );
 }
+
+#[test]
+fn free_only_thread_flushes_cached_blocks() {
+    const COUNT: usize = 2048;
+    const SIZE: usize = 4096;
+
+    allox::flush_current_thread();
+    let mut original = [core::ptr::null_mut(); COUNT];
+    for p in &mut original {
+        *p = unsafe { allox::malloc(SIZE) };
+        assert!(!p.is_null());
+        unsafe { *p.write(0xA5) };
+    }
+    allox::flush_current_thread();
+    original.sort_unstable();
+
+    std::thread::scope(|scope| {
+        let ptrs = &original;
+        scope.spawn(move || {
+            for p in ptrs {
+                allox::free(*p);
+            }
+        });
+    });
+
+    allox::flush_current_thread();
+    let mut reused = 0usize;
+    let mut second = [core::ptr::null_mut(); COUNT];
+    for p in &mut second {
+        *p = unsafe { allox::malloc(SIZE) };
+        assert!(!p.is_null());
+        if original.binary_search(p).is_ok() {
+            reused += 1;
+        }
+    }
+    assert!(
+        reused >= COUNT / 2,
+        "free-only worker left its cache behind: only {}/{} addresses reused",
+        reused,
+        COUNT
+    );
+
+    for p in second {
+        unsafe { allox::free(p) };
+    }
+    allox::flush_current_thread();
+}
