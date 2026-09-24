@@ -334,6 +334,7 @@ struct AlloxDiagnostics {
     big_maps: u64,
     big_unmaps: u64,
     abandoned_delta: u64,
+    abandoned_total: u64,
     arena_high_water: u64,
     probe: RunSample,
 }
