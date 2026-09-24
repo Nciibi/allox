@@ -649,12 +649,20 @@ impl ThreadCache {
             }
         }
         let first = chain;
+        let span = SpanMaster::of(first);
+        debug_assert!(!span.is_null());
         let rest = *first.cast::<*mut u8>();
-        let bin = &mut self.mbins[mclass];
-        bin.head = rest;
-        bin.len += count - 1;
+        *first.cast::<*mut u8>() = ptr::null_mut();
+        let active = &mut self.mactive[mclass];
+        debug_assert!(active.head.is_null());
+        active.span = span;
+        active.base = span as usize;
+        active.end = active.base + (*span).mapped_bytes();
+        active.head = rest;
+        active.len = count - 1;
+        active.virgin = if virgin { count - 1 } else { 0 };
         self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
-        self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
+        self.mvirgin[mclass] = 0;
         (first, virgin)
     }
 
