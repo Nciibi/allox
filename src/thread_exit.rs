@@ -22,6 +22,7 @@
 #[cfg(all(feature = "std", unix))]
 mod imp {
     use core::ffi::c_void;
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     // pthread_key_t width varies: 32-bitish on Linux/BSDs, 64-bit on Apple.
     #[cfg(target_vendor = "apple")]
@@ -37,7 +38,8 @@ mod imp {
         fn pthread_setspecific(key: Key, value: *const c_void) -> i32;
     }
 
-    static HOOK_KEY: std::sync::OnceLock<Option<Key>> = std::sync::OnceLock::new();
+    static HOOK_KEY: std::sync::OnceLock<Key> = std::sync::OnceLock::new();
+    static INSTALLING: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "C" fn thread_exit_flush(_value: *mut c_void) {
         // Blocking flush: at thread exit no allocator locks are held (all
@@ -51,23 +53,39 @@ mod imp {
         crate::tls_flush_full();
     }
 
-    pub(crate) fn ensure_hook() {
-        let key = HOOK_KEY.get_or_init(|| {
-            let mut k: Key = 0;
-            // SAFETY: out-pointer valid for the call; destructor is a plain
-            // extern fn with no allocator interaction beyond the full flush.
-            let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
-            if r == 0 {
-                Some(k)
-            } else {
-                None
+    pub(crate) fn ensure_hook() -> bool {
+        loop {
+            if let Some(k) = HOOK_KEY.get() {
+                return unsafe { pthread_setspecific(*k, 1 as *const c_void) == 0 };
             }
-        });
-        if let Some(k) = *key {
-            // Nonzero value arms the destructor for this thread. Userspace
-            // TCB write, no syscall; failure just skips this thread.
-            unsafe {
-                let _ = pthread_setspecific(k, 1 as *const c_void);
+            if INSTALLING
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                let key = if let Some(k) = HOOK_KEY.get() {
+                    Some(*k)
+                } else {
+                    let mut k: Key = 0;
+                    // SAFETY: out-pointer valid for the call; destructor is a plain
+                    // extern fn with no allocator interaction beyond the full flush.
+                    let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
+                    if r == 0 {
+                        match HOOK_KEY.set(k) {
+                            Ok(()) => Some(k),
+                            Err(existing) => Some(existing),
+                        }
+                    } else {
+                        None
+                    }
+                };
+                INSTALLING.store(false, Ordering::Release);
+                return match key {
+                    Some(k) => unsafe { pthread_setspecific(k, 1 as *const c_void) == 0 },
+                    None => false,
+                };
+            }
+            while INSTALLING.load(Ordering::Acquire) {
+                core::hint::spin_loop();
             }
         }
     }
@@ -76,6 +94,7 @@ mod imp {
 #[cfg(all(feature = "std", windows))]
 mod imp {
     use core::ffi::c_void;
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     const FLS_OUT_OF_INDEXES: u32 = 0xFFFF_FFFF;
 
@@ -84,7 +103,8 @@ mod imp {
         fn FlsSetValue(dwFlsIndex: u32, lpFlsData: *const c_void) -> i32;
     }
 
-    static HOOK_SLOT: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    static HOOK_SLOT: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    static INSTALLING: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "system" fn fls_flush(_value: *mut c_void) {
         // Blocking is safe here too: SRWLock never touches the loader lock,
