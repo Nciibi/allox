@@ -1,8 +1,8 @@
 //! Comparative allocator benchmark: allox vs system vs talc vs C allocators.
 //!
 //! All allocators run identical workloads; results are ops/s plus a
-//! relative table. The harness itself allocates through the process global
-//! (= allox); that overhead is identical for all measured allocators.
+//! relative table. The process-global harness allocator is the system
+//! allocator, while each measured allocator is called directly.
 //!
 //! P0 honest scoreboard: mimalloc + snmalloc are dev-only comparators — the
 //! library itself stays zero-deps / no-C. jemalloc is behind the optional
@@ -11,12 +11,15 @@
 //!
 //! Run with: cargo bench
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
+//! Machine-readable output: BENCH_OUTPUT=json cargo bench
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
-static GLOBAL: allox::Allox = allox::Allox;
+static HARNESS: System = System;
+
+static ALLOX: allox::Allox = allox::Allox;
 
 use spinning_top::RawSpinlock;
 use talc::{source::GlobalAllocSource, TalcLock};
@@ -37,12 +40,18 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         dlmalloc::GlobalDlmalloc.dealloc(p, l)
     }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
+        dlmalloc::GlobalDlmalloc.realloc(p, l, new_size)
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        dlmalloc::GlobalDlmalloc.alloc_zeroed(l)
+    }
 }
 
 static DLMALLOC: Dlmalloc = Dlmalloc;
 
-// C comparators (dev-only; lib stays zero-C). Wrappers delegate alloc/dealloc
-// so every workload below runs identically through each allocator.
+// C comparators (dev-only; lib stays zero-C). Wrappers delegate the native
+// GlobalAlloc operations so every workload below runs equivalently.
 struct Mimalloc;
 unsafe impl GlobalAlloc for Mimalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
@@ -50,6 +59,12 @@ unsafe impl GlobalAlloc for Mimalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         mimalloc::MiMalloc.dealloc(p, l)
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
+        mimalloc::MiMalloc.realloc(p, l, new_size)
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        mimalloc::MiMalloc.alloc_zeroed(l)
     }
 }
 static MIMALLOC: Mimalloc = Mimalloc;
@@ -61,6 +76,12 @@ unsafe impl GlobalAlloc for Snmalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         snmalloc_rs::SnMalloc.dealloc(p, l)
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
+        snmalloc_rs::SnMalloc.realloc(p, l, new_size)
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        snmalloc_rs::SnMalloc.alloc_zeroed(l)
     }
 }
 static SNMALLOC: Snmalloc = Snmalloc;
@@ -75,6 +96,12 @@ unsafe impl GlobalAlloc for Jemalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         tikv_jemallocator::Jemalloc.dealloc(p, l)
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
+        tikv_jemallocator::Jemalloc.realloc(p, l, new_size)
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        tikv_jemallocator::Jemalloc.alloc_zeroed(l)
     }
 }
 #[cfg(feature = "bench-jemalloc")]
