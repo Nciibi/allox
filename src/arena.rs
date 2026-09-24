@@ -147,10 +147,15 @@ pub(crate) struct Arena {
     init_guard: AtomicU8, // spin-serializes first reservation (0 free, 1 held)
     holes: Mutex<HoleStore>,
     hole_count: AtomicUsize,
+    #[cfg(feature = "telemetry")]
     hole_scans: AtomicUsize,
+    #[cfg(feature = "telemetry")]
     hole_hits: AtomicUsize,
+    #[cfg(feature = "telemetry")]
     hole_exact_hits: AtomicUsize,
+    #[cfg(feature = "telemetry")]
     hole_splits: AtomicUsize,
+    #[cfg(feature = "telemetry")]
     hole_empty_fastpath: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
@@ -173,10 +178,15 @@ impl Arena {
             init_guard: AtomicU8::new(0),
             holes: Mutex::new(HoleStore::new()),
             hole_count: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
             hole_scans: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
             hole_hits: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
             hole_exact_hits: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
             hole_splits: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
             hole_empty_fastpath: AtomicUsize::new(0),
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
@@ -268,11 +278,13 @@ impl Arena {
     /// afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
         if self.hole_count.load(Ordering::Acquire) == 0 {
+            #[cfg(feature = "telemetry")]
             self.hole_empty_fastpath.fetch_add(1, Ordering::Relaxed);
             return ptr::null_mut();
         }
         let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
+        #[cfg(feature = "telemetry")]
         let mut exact_hit = false;
         if pages <= EXACT_BUCKET_MAX {
             let mut index = holes.exact[pages] as usize;
@@ -299,7 +311,9 @@ impl Arena {
                 }
             }
         }
+        #[cfg(feature = "telemetry")]
         self.hole_scans.fetch_add(scanned, Ordering::Relaxed);
+        #[cfg(feature = "telemetry")]
         if exact_hit {
             self.hole_exact_hits.fetch_add(1, Ordering::Relaxed);
         }
