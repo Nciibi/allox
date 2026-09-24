@@ -374,20 +374,15 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 /// 16 (64 measured & rejected 2026-09-23: mixed-all 13.6M → 10.6M —
 /// huge medium batches hoard cache budget and thrash trim/flush).
 pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
-const MEDIUM_REFILL_BYTES: usize = 256 * 1024;
 
 pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
     let block = crate::classes::MEDIUM_CLASSES[mclass];
-    let capacity = medium_capacity_for(block, span_pages_for(block)) as u32;
-    let target = (MEDIUM_REFILL_BYTES / block) as u32;
-    let mut batch = target;
-    if batch > MEDIUM_REFILL_BATCH {
-        batch = MEDIUM_REFILL_BATCH;
+    let capacity = medium_capacity_for(block, span_pages_for(block));
+    if capacity < MEDIUM_REFILL_BATCH as usize {
+        capacity as u32
+    } else {
+        MEDIUM_REFILL_BATCH
     }
-    if batch > capacity {
-        batch = capacity;
-    }
-    batch
 }
 
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
