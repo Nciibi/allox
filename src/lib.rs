@@ -844,6 +844,13 @@ unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
         }
         let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
         let old_mapped = (*hdr).mapped_size;
+        let (_, validated_mapped) = match large_header_of(p) {
+            Some(validated) => validated,
+            None => return false,
+        };
+        if validated_mapped != old_mapped {
+            return false;
+        }
         let old_requested = (*hdr).requested_size;
         let old_base = (*hdr).base;
         let capacity = match old_mapped.checked_sub(p as usize - old_base as usize) {
