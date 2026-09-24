@@ -125,6 +125,7 @@ impl Rng {
 enum Kind {
     /// Standard churn: each thread allocs/frees its own blocks.
     Standard,
+    ZeroedLarge,
     /// Producer-consumer: thread i allocs, thread (i+1)%N frees half the
     /// blocks via a ring handoff. Exposes remote-free / cache-drift costs.
     ProdCons,
@@ -240,6 +241,13 @@ const WORKLOADS: &[Workload] = &[
         size_range: (5 * 1024 * 1024, 8 * 1024 * 1024),
         free_pct: 50,
         kind: Kind::Standard,
+    },
+    Workload {
+        name: "zeroed-large 1T",
+        threads: 1,
+        size_range: (5 * 1024 * 1024, 8 * 1024 * 1024),
+        free_pct: 50,
+        kind: Kind::ZeroedLarge,
     },
     Workload {
         name: "prodcons 8T",
