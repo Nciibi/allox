@@ -235,6 +235,13 @@ const WORKLOADS: &[Workload] = &[
         kind: Kind::Standard,
     },
     Workload {
+        name: "huge-only 1T",
+        threads: 1,
+        size_range: (5 * 1024 * 1024, 8 * 1024 * 1024),
+        free_pct: 50,
+        kind: Kind::Standard,
+    },
+    Workload {
         name: "prodcons 8T",
         threads: 8,
         size_range: (16, 4096),
