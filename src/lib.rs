@@ -1461,6 +1461,11 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     #[cfg(not(all(unix, feature = "std")))]
     let old_medium: Option<*mut u8> = None;
 
+    #[cfg(all(unix, feature = "std"))]
+    if old_large_ok && old_arena && try_grow_large_frontier(p, size) {
+        return p;
+    }
+
     if old_big.is_none() && old_medium.is_none() && !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
