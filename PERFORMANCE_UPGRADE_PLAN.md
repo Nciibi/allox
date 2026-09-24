@@ -651,7 +651,8 @@ The active-chain prototype measured better on the focused medium workloads and w
 Implemented the first arena-reuse slice:
 
 - Atomic hole-count gate avoids taking the hole mutex when no reusable holes exist.
+- Bounded exact-page index accelerates common small-hole reuse, with linear best-fit fallback for large holes.
 - Hole scan, hit, split, and empty-fast-path counters are exposed through hidden diagnostics.
-- Regression coverage verifies exact reuse, remainder splitting, and counter updates.
+- Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 
 Exact-size buckets, coalescing, larger commit granules, and large-region indexing remain the next Phase 2 experiments.
