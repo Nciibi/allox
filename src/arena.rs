@@ -300,10 +300,14 @@ impl Arena {
                 }
             }
         }
+        #[cfg(feature = "telemetry")]
         let mut scanned = 0usize;
         if best.is_none() {
             for i in 0..holes.len {
-                scanned += 1;
+                #[cfg(feature = "telemetry")]
+                {
+                    scanned += 1;
+                }
                 let (_, p) = holes.entries[i];
                 if p == pages {
                     best = Some(i);
