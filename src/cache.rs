@@ -121,6 +121,29 @@ struct Bin {
     len: u32,
 }
 
+#[derive(Clone, Copy)]
+struct ActiveMedium {
+    span: *mut SpanMaster,
+    base: usize,
+    end: usize,
+    head: *mut u8,
+    len: u32,
+    virgin: u32,
+}
+
+impl ActiveMedium {
+    const fn empty() -> Self {
+        Self {
+            span: ptr::null_mut(),
+            base: 0,
+            end: 0,
+            head: ptr::null_mut(),
+            len: 0,
+            virgin: 0,
+        }
+    }
+}
+
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
@@ -138,6 +161,7 @@ pub(crate) struct ThreadCache {
     /// Medium bins (multi-page spans), same discipline as small bins.
     mbins: [Bin; NUM_MEDIUM],
     mvirgin: [u32; NUM_MEDIUM],
+    mactive: [ActiveMedium; NUM_MEDIUM],
     /// Big bins (whole spans past the chunk cap), same discipline. Arena
     /// targets only (big spans don't exist elsewhere).
     #[cfg(all(unix, feature = "std"))]
