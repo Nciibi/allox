@@ -820,6 +820,82 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     (ret as *mut u8, true, true)
 }
 
+#[cfg(feature = "telemetry")]
+fn note_large_growth(old_size: usize, new_size: usize) {
+    let delta = new_size.saturating_sub(old_size) as u64;
+    if delta == 0 {
+        return;
+    }
+    use core::sync::atomic::Ordering::Relaxed;
+    heap::TELEMETRY.bytes_in.fetch_add(delta, Relaxed);
+    let live = heap::TELEMETRY
+        .bytes_in
+        .load(Relaxed)
+        .saturating_sub(heap::TELEMETRY.bytes_out.load(Relaxed));
+    heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
+}
+
+#[inline]
+unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        if !crate::arena::contains(p, 1) || !large_region_known(p) {
+            return false;
+        }
+        let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
+        let old_mapped = (*hdr).mapped_size;
+        let old_requested = (*hdr).requested_size;
+        let old_base = (*hdr).base;
+        let capacity = match old_mapped.checked_sub(p as usize - old_base as usize) {
+            Some(capacity) => capacity,
+            None => return false,
+        };
+        if size <= old_requested {
+            return false;
+        }
+        if size <= capacity {
+            (*hdr).requested_size = size;
+            #[cfg(feature = "telemetry")]
+            note_large_growth(old_requested, size);
+            return true;
+        }
+        let align = pointer_alignment(p);
+        let total = match size
+            .checked_add(align)
+            .and_then(|value| value.checked_add(LARGE_HEADER_SIZE))
+        {
+            Some(total) => total,
+            None => return false,
+        };
+        let new_mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
+        if new_mapped <= old_mapped {
+            return false;
+        }
+        let old_pages = old_mapped / page::PAGE_SIZE;
+        let new_pages = new_mapped / page::PAGE_SIZE;
+        let added_pages = match new_pages.checked_sub(old_pages) {
+            Some(added) if added <= u32::MAX as usize => added,
+            _ => return false,
+        };
+        if !crate::arena::grow_frontier(old_base, old_pages, new_pages) {
+            return false;
+        }
+        (*hdr).mapped_size = new_mapped;
+        (*hdr).requested_size = size;
+        let added_base = (old_base as usize + old_mapped) as *mut u8;
+        crate::arena::large_table_set(added_base, added_pages as u32, hdr);
+        heap::MAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        #[cfg(feature = "telemetry")]
+        note_large_growth(old_requested, size);
+        true
+    }
+    #[cfg(not(all(unix, feature = "std")))]
+    {
+        let _ = (p, size);
+        false
+    }
+}
+
 unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
