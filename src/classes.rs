@@ -167,13 +167,25 @@ pub(crate) const MEDIUM_CLASSES: [usize; NUM_MEDIUM] = build_medium();
 /// Largest servable medium block (top of the generated table).
 pub(crate) const MAX_MEDIUM_BLOCK: usize = MEDIUM_CLASSES[NUM_MEDIUM - 1];
 
-/// Number of blocks carved from a medium span with the current geometry.
-pub(crate) const fn medium_capacity_for(block: usize, pages: usize) -> usize {
+pub(crate) const fn medium_capacity_legacy_for(block: usize, pages: usize) -> usize {
     if pages == 0 {
         return 0;
     }
     (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / block
         + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / block)
+}
+
+#[cfg(all(unix, feature = "std"))]
+pub(crate) const fn medium_capacity_for(block: usize, pages: usize) -> usize {
+    if pages == 0 {
+        return 0;
+    }
+    (pages * PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / block
+}
+
+#[cfg(not(all(unix, feature = "std")))]
+pub(crate) const fn medium_capacity_for(block: usize, pages: usize) -> usize {
+    medium_capacity_legacy_for(block, pages)
 }
 
 pub(crate) const fn span_pages_for(block: usize) -> usize {
