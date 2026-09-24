@@ -583,8 +583,15 @@ unsafe fn mrelease_inner(
                     sys::discard(span.cast::<u8>(), span_bytes);
                     SpanFate::Keep
                 } else {
-            SpanFate::Unmap(span_bytes)
-        }
+                    #[cfg(all(unix, feature = "std"))]
+                    if crate::arena::contains(span.cast::<u8>(), span_bytes) {
+                        crate::arena::medium_table_clear(
+                            span.cast::<u8>(),
+                            (*span).npages,
+                        );
+                    }
+                    SpanFate::Unmap(span_bytes)
+                }
     } else {
         if (*span).flags & FLAG_IN_PARTIAL == 0 {
             mlink_partial(&mut list.head, span);
@@ -703,6 +710,8 @@ impl MediumHeap {
             if !raw.is_null() {
                 let span = raw.cast::<SpanMaster>();
                 (*span).init(mclass, pages as u32);
+                #[cfg(all(unix, feature = "std"))]
+                crate::arena::medium_table_set(raw, pages as u32, span);
                 if fresh {
                     MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 }
