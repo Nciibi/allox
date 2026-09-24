@@ -161,7 +161,7 @@ alloc(size, align):
   size <= 16 KiB, align<=16 -> small: cache.bin[class].pop()  -- FAST PATH
                                on miss: heap.acquire_page + batch refill
   size <= 65472             -> medium: cache medium bin, MediumHeap spans
-  size <= 262144, arena     -> big: active big span/bin, BigHeap spans (+ side table)
+  size <= 524288, arena     -> big: active big span/bin, BigHeap spans (+ side table)
   else (large, over-align,
         or no arena)        -> large: thread stash / sharded region cache
                                / arena commit, write LargeHeader

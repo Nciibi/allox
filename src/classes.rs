@@ -261,7 +261,7 @@ const BIG_MASTER_RESERVE: usize = 48;
 pub(crate) const BIG_BLOCK_CAP: usize = 524288;
 
 /// Blocks packed per big span at carve time (same amortization rationale
-/// as `TARGET_BLOCKS_PER_SPAN`; an 8 x 256 KiB span is ~2 MiB).
+/// as `TARGET_BLOCKS_PER_SPAN`; an 8 x 512 KiB span is ~4 MiB).
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const TARGET_BLOCKS_PER_BIG_SPAN: usize = 8;
 
