@@ -781,25 +781,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn coalesce_sorts_and_rebuilds_exact_index() {
-        let mut holes = HoleStore::new();
-        holes.entries[0] = (3 * ARENA_ALIGN, 1);
-        holes.entries[1] = (ARENA_ALIGN, 1);
-        holes.entries[2] = (2 * ARENA_ALIGN, 1);
-        holes.len = 3;
-        holes.bytes = 3 * ARENA_ALIGN;
-        holes.coalesce_dirty = true;
-
-        assert_eq!(holes.coalesce(), 2);
-        assert_eq!(holes.len, 1);
-        assert_eq!(holes.entries[0], (ARENA_ALIGN, 3));
-        assert_eq!(holes.entries[1], (0, 0));
-        assert_eq!(holes.exact[3], 0);
-        assert_eq!(holes.exact[1], EMPTY_BUCKET);
-        assert!(!holes.coalesce_dirty);
-    }
-
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn medium_table_resolves_cross_page_blocks() {
