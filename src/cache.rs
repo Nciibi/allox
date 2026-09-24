@@ -632,7 +632,7 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
-        let mut source = ptr::null_mut();
+        let mut source: *mut SpanMaster = ptr::null_mut();
         let mut single_span = true;
         {
             let mut b = chain;
