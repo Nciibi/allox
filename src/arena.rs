@@ -104,6 +104,8 @@ extern "C" {
 /// position-independent garbage on reset paths.
 const EXACT_BUCKET_MAX: usize = 64;
 const COALESCE_MIN_PAGES: usize = 16;
+const COALESCE_BOUNDARY_SLOTS: usize = HOLE_SLOTS * 2;
+const EMPTY_BOUNDARY: usize = usize::MAX;
 const EMPTY_BUCKET: u16 = u16::MAX;
 
 struct HoleStore {
