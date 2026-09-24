@@ -72,7 +72,7 @@ fn big_roundtrip_contents() {
 #[test]
 fn big_calloc_is_zeroed() {
     unsafe {
-        for size in [70000usize, 131072, 262144] {
+        for size in [70000usize, 131072, 262144, 300000, 524288] {
             let p = allox::calloc(1, size);
             assert!(!p.is_null(), "size {}", size);
             for i in [0, size / 2, size - 1] {
@@ -87,16 +87,16 @@ fn big_calloc_is_zeroed() {
 fn big_active_reuse_preserves_calloc_zeroing() {
     unsafe {
         for _ in 0..32 {
-            let p = allox::calloc(1, 262144);
+            let p = allox::calloc(1, 524288);
             assert!(!p.is_null());
-            for i in (0..262144).step_by(4096) {
+            for i in (0..524288).step_by(4096) {
                 *p.add(i) = 0xA5;
             }
             free(p);
 
-            let q = allox::calloc(1, 262144);
+            let q = allox::calloc(1, 524288);
             assert!(!q.is_null());
-            for i in (0..262144).step_by(4096) {
+            for i in (0..524288).step_by(4096) {
                 assert_eq!(*q.add(i), 0, "offset {}", i);
             }
             free(q);
@@ -114,7 +114,7 @@ fn big_realloc_grows_and_shrinks() {
         fill_pattern(p, size);
         for _ in 0..3 {
             let nsize = size * 2;
-            if nsize > 262144 {
+            if nsize > 524288 {
                 break;
             }
             let np = realloc(p, nsize);
