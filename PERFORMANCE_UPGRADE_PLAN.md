@@ -658,6 +658,7 @@ Implemented the first arena-reuse and large-cache slices:
 - Swap-with-last removal repairs both indexes, including stale-index fallback; focused tests cover precedence, accounting, duplicates, removal, and the boundary.
 - The new 5–8 MiB `huge-only 1T` workload measures the extended range; the full index measured about 12.7 K ops/s versus 12.5 K with the old 64-page bound.
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
+- Frontier-adjacent large realloc growth now atomically extends only live arena regions ending at the bump frontier; both realloc entry points use it, with side-table/counter updates and copy fallback for every other case.
 
 The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiment is hole coalescing; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
 
