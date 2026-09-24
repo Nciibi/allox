@@ -244,15 +244,17 @@ impl Arena {
     /// the entry removed or split, or null. Lock-scoped; caller commits
     /// afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
+        if self.hole_count.load(Ordering::Acquire) == 0 {
+            self.hole_empty_fastpath.fetch_add(1, Ordering::Relaxed);
+            return ptr::null_mut();
+        }
         let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
+        let mut scanned = 0usize;
         for i in 0..holes.len {
+            scanned += 1;
             let (_, p) = holes.entries[i];
             if p == pages {
-                // Exact hit is always the best fit — take it at once instead
-                // of scanning the rest. Behavior-preserving (an exact match
-                // beats every inexact one), but keeps deep stores cheap on
-                // the common same-size-reuse path.
                 best = Some(i);
                 break;
             }
@@ -260,21 +262,28 @@ impl Arena {
                 best = Some(i);
             }
         }
+        self.hole_scans.fetch_add(scanned, Ordering::Relaxed);
         match best {
             Some(i) => {
                 let (off, p) = holes.entries[i];
                 holes.bytes -= pages * ARENA_ALIGN;
+                self.hole_hits.fetch_add(1, Ordering::Relaxed);
                 if p > pages {
                     holes.entries[i] = (off + pages * ARENA_ALIGN, p - pages);
+                    self.hole_splits.fetch_add(1, Ordering::Relaxed);
                 } else {
                     let last = holes.len - 1;
                     holes.entries[i] = holes.entries[last];
                     holes.entries[last] = (0, 0);
                     holes.len = last;
                 }
+                self.hole_count.store(holes.len, Ordering::Release);
                 (self.start.load(Ordering::Relaxed) + off) as *mut u8
             }
-            None => ptr::null_mut(),
+            None => {
+                self.hole_count.store(holes.len, Ordering::Release);
+                ptr::null_mut()
+            }
         }
     }
 
