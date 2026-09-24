@@ -332,10 +332,12 @@ struct LargeRegionCache {
     len: usize,
     bytes: usize,
     entries: [(*mut u8, u32); LARGE_SHARD_SLOTS], // (base, mapped_pages)
+    hot_zeroed: [bool; LARGE_SHARD_SLOTS],
     hot_exact: [u16; LARGE_EXACT_MAX_PAGES + 1],
     cold_len: usize,
     cold_bytes: usize,
     cold: [(*mut u8, u32); LARGE_COLD_SLOTS],
+    cold_zeroed: [bool; LARGE_COLD_SLOTS],
     cold_exact: [u16; LARGE_EXACT_MAX_PAGES + 1],
 }
 
@@ -369,10 +371,12 @@ impl LargeRegionCache {
             len: 0,
             bytes: 0,
             entries: [(ptr::null_mut(), 0); LARGE_SHARD_SLOTS],
+            hot_zeroed: [false; LARGE_SHARD_SLOTS],
             hot_exact: [EMPTY_LARGE_INDEX; LARGE_EXACT_MAX_PAGES + 1],
             cold_len: 0,
             cold_bytes: 0,
             cold: [(ptr::null_mut(), 0); LARGE_COLD_SLOTS],
+            cold_zeroed: [false; LARGE_COLD_SLOTS],
             cold_exact: [EMPTY_LARGE_INDEX; LARGE_EXACT_MAX_PAGES + 1],
         }
     }
