@@ -506,15 +506,72 @@ unsafe fn init_large_header(
     (*hdr).registry_next = ptr::null_mut();
 }
 
-unsafe fn register_large_region(_base: *mut u8, _mapped: usize, _hdr: *mut LargeHeader) {
-    #[cfg(all(unix, feature = "std"))]
-    if crate::arena::contains(_base, _mapped) {
-        crate::arena::large_table_set(
-            _base,
-            (_mapped / page::PAGE_SIZE) as u32,
-            _hdr,
-        );
+static LARGE_REGISTRY: sys::Mutex<usize> = sys::Mutex::new(0);
+
+unsafe fn register_legacy_large(hdr: *mut LargeHeader) {
+    let mut head = LARGE_REGISTRY.lock();
+    (*hdr).registry_next = *head as *mut LargeHeader;
+    *head = hdr as usize;
+}
+
+unsafe fn unregister_legacy_large(hdr: *mut LargeHeader) {
+    let mut head = LARGE_REGISTRY.lock();
+    let mut previous = ptr::null_mut();
+    let mut current = *head as *mut LargeHeader;
+    while !current.is_null() {
+        if current == hdr {
+            let next = (*current).registry_next;
+            if previous.is_null() {
+                *head = next as usize;
+            } else {
+                (*previous).registry_next = next;
+            }
+            return;
+        }
+        previous = current;
+        current = (*current).registry_next;
     }
+}
+
+unsafe fn legacy_large_contains(p: *mut u8) -> bool {
+    let expected = match (p as usize).checked_sub(LARGE_HEADER_SIZE) {
+        Some(address) if address & (MIN_ALIGN - 1) == 0 => address as *mut LargeHeader,
+        _ => return false,
+    };
+    let head = LARGE_REGISTRY.lock();
+    let mut current = *head as *mut LargeHeader;
+    while !current.is_null() {
+        if current == expected {
+            return true;
+        }
+        current = (*current).registry_next;
+    }
+    false
+}
+
+unsafe fn register_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(base, mapped) {
+        crate::arena::large_table_set(
+            base,
+            (mapped / page::PAGE_SIZE) as u32,
+            hdr,
+        );
+        return;
+    }
+    register_legacy_large(hdr);
+}
+
+unsafe fn unregister_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(base, mapped) {
+        crate::arena::large_table_clear(
+            base,
+            (mapped / page::PAGE_SIZE) as u32,
+        );
+        return;
+    }
+    unregister_legacy_large(hdr);
 }
 
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
@@ -619,10 +676,7 @@ unsafe fn free_large(p: *mut u8) {
     #[cfg(feature = "telemetry")]
     let requested = (*hdr).requested_size;
     let pages = (mapped / page::PAGE_SIZE) as u32;
-    #[cfg(all(unix, feature = "std"))]
-    if crate::arena::contains(base, mapped) {
-        crate::arena::large_table_clear(base, pages);
-    }
+    unregister_large_region(base, mapped, hdr);
 
     // Tier 1: per-thread stash — the freeing thread usually reallocates next.
     // Single TLS visit: stash the region and report our shard salt together.
@@ -881,7 +935,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
         }
         corrupt_pointer();
     }
-    if large_header_of(p).is_some() {
+    if legacy_large_contains(p) {
         free_large(p);
         return;
     }
