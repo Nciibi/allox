@@ -640,6 +640,7 @@ Implemented and rechecked:
 - Dedicated medium-only 1T/8T benchmark workloads.
 - Adversarial large-header, arena-direct-large, legacy-large fallback, telemetry symmetry, and producer-consumer drain regressions.
 - Thread-local page-local medium free chains with single-span refill validation, active-chain flushing, and fallback to the existing mixed-span bin when a refill crosses spans.
+- Actual-capacity target-eight span geometry, with invariant tests proving every class reaches the target.
 - Focused active-cache flush/reuse coverage plus randomized multithreaded stress.
 
-The active-chain prototype measured better on the focused medium workloads and was neutral-to-positive on the 5x5-second `mixed-all 8T` comparison. The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host. Medium metadata redesign and larger target-eight geometry remain the next Phase 1 experiments.
+The active-chain prototype measured better on the focused medium workloads and was neutral-to-positive on the 5x5-second `mixed-all 8T` comparison. Target-eight geometry improved medium-only 1T throughput, kept 8T and mixed-all within the acceptance band, and increased RSS by roughly 1–3% on the focused runs. The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host. Medium metadata redesign remains the next Phase 1 experiment.
