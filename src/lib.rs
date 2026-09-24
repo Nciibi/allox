@@ -665,7 +665,7 @@ unsafe fn free_large(p: *mut u8) {
         }
     }
     #[cfg(feature = "telemetry")]
-    note_large_free(p, base, mapped);
+    note_large_free(requested);
 }
 
 #[cold]
@@ -808,13 +808,18 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
 /// this probe runs before the exact small-page check.
 #[inline]
 unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
-    let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+    let address = p as usize;
+    let header_address = address.checked_sub(LARGE_HEADER_SIZE)?;
+    if header_address & (MIN_ALIGN - 1) != 0 {
+        return None;
+    }
+    let hdr = header_address as *const LargeHeader;
     if (*hdr).magic != LARGE_MAGIC {
         return None;
     }
     let mapped = (*hdr).mapped_size;
     let base = (*hdr).base as usize;
-    if mapped == 0 || mapped & PAGE_MASK != 0 {
+    if mapped < LARGE_HEADER_SIZE || mapped & PAGE_MASK != 0 {
         return None;
     }
     let off = (p as usize).wrapping_sub(base);
