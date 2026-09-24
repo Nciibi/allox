@@ -554,7 +554,7 @@ unsafe fn large_region_known(p: *mut u8) -> bool {
     if crate::arena::contains(p, 1) {
         return !crate::arena::large_table_get(p).is_null();
     }
-    legacy_large_contains(p)
+    legacy_large_contains(p) && large_header_of(p).is_some()
 }
 
 unsafe fn register_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
