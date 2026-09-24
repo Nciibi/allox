@@ -273,19 +273,36 @@ impl Arena {
         }
         let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
-        let mut scanned = 0usize;
-        for i in 0..holes.len {
-            scanned += 1;
-            let (_, p) = holes.entries[i];
-            if p == pages {
-                best = Some(i);
-                break;
+        let mut exact_hit = false;
+        if pages <= EXACT_BUCKET_MAX {
+            let mut index = holes.exact[pages] as usize;
+            if index >= holes.len || holes.entries[index].1 != pages {
+                holes.refresh_exact(pages);
+                index = holes.exact[pages] as usize;
             }
-            if p > pages && best.map_or(true, |b| p < holes.entries[b].1) {
-                best = Some(i);
+            if index < holes.len && holes.entries[index].1 == pages {
+                best = Some(index);
+                exact_hit = true;
+            }
+        }
+        let mut scanned = 0usize;
+        if best.is_none() {
+            for i in 0..holes.len {
+                scanned += 1;
+                let (_, p) = holes.entries[i];
+                if p == pages {
+                    best = Some(i);
+                    break;
+                }
+                if p > pages && best.map_or(true, |b| p < holes.entries[b].1) {
+                    best = Some(i);
+                }
             }
         }
         self.hole_scans.fetch_add(scanned, Ordering::Relaxed);
+        if exact_hit {
+            self.hole_exact_hits.fetch_add(1, Ordering::Relaxed);
+        }
         match best {
             Some(i) => {
                 let (off, p) = holes.entries[i];
