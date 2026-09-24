@@ -224,6 +224,12 @@ Options in order:
    1T 32K–1M tail above 262144 (stays large-path by design — §7 open
    question 1) and lock-regime variance under 8T (see option A notes
    above; sharded holes already flat-reverted).
+   ACTIVE BIG CACHE (KEPT 2026-09-24): same-span refills now remain in a
+   per-class active span and active frees use a pointer-range fast path;
+   mixed-span batches still use `bigbins`, and trim/flush return active
+   chains to `BigHeap`. A capped 2 s × 2 comparison against parent
+   `v0.0.969` measured 1.52M vs 1.28M ops/s median on `large-only 8T`
+   (+19% for ActiveBig; peak RSS remained within the existing cap).
 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
    discipline matters more than the last 10% hit rate here.
 

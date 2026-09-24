@@ -180,6 +180,13 @@ chunk 1..N      : [...blocks continue across boundaries...  ]
 - Thread-cache bins: extend the medium-bin arrays (or parallel big-bin
   arrays) with `mvirgin`-style tracking resized to the new dimension;
   refill splits first/rest identically. Budget accounting unchanged.
+- Big allocations use a per-class active span as the first cache tier. A
+  same-span refill keeps the detached chain in the active list, avoiding the
+  bin head push/pop path; mixed-span refills remain in the ordinary bin.
+  Frees whose pointers fall inside the active span return directly to it, and
+  trim/flush release the active chain back to `BigHeap` before returning
+  blocks to the bin. The active span carries the same virgin accounting and
+  is bounded by the existing cache byte budget.
 - Telemetry `per_class` dimension grows by `NUM_BIG` (pre-1.0
   acceptable, CHANGELOG-noted pattern).
 
