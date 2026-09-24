@@ -430,14 +430,24 @@ impl Arena {
     fn holes_give(&self, base: *mut u8, pages: usize) {
         let start = self.start.load(Ordering::Relaxed);
         let off = (base as usize).wrapping_sub(start);
-        let bytes = pages * ARENA_ALIGN;
+        let incoming_bytes = pages * ARENA_ALIGN;
         let mut holes = self.holes.lock();
-        if holes.len < HOLE_SLOTS && holes.bytes + bytes <= HOLE_CAP_BYTES {
+        if holes.len < HOLE_SLOTS && holes.bytes + incoming_bytes <= HOLE_CAP_BYTES {
+            let (off, pages, coalesced_pages) = holes.coalesce(off, pages);
+            let bytes = pages * ARENA_ALIGN;
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
             holes.bytes += bytes;
-            if pages <= EXACT_BUCKET_MAX {
+            if coalesced_pages > 0 {
+                #[cfg(feature = "telemetry")]
+                {
+                    self.hole_coalesces.fetch_add(1, Ordering::Relaxed);
+                    self.hole_coalesced_pages
+                        .fetch_add(coalesced_pages, Ordering::Relaxed);
+                }
+                holes.rebuild_exact();
+            } else if pages <= EXACT_BUCKET_MAX {
                 holes.exact[pages] = idx as u16;
             }
             self.hole_count.store(holes.len, Ordering::Release);
@@ -562,6 +572,20 @@ impl Arena {
         }
     }
 
+    pub(crate) fn coalesce_stats(&self) -> (u64, u64) {
+        #[cfg(feature = "telemetry")]
+        {
+            (
+                self.hole_coalesces.load(Ordering::Relaxed) as u64,
+                self.hole_coalesced_pages.load(Ordering::Relaxed) as u64,
+            )
+        }
+        #[cfg(not(feature = "telemetry"))]
+        {
+            (0, 0)
+        }
+    }
+
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
@@ -596,6 +620,10 @@ pub(crate) fn stats() -> (u64, u64, u64) {
 
 pub(crate) fn hole_stats() -> (u64, u64, u64, u64) {
     ARENA.hole_stats()
+}
+
+pub(crate) fn coalesce_stats() -> (u64, u64) {
+    ARENA.coalesce_stats()
 }
 
 /// Reservation high-water in bytes (monotonic bump frontier). Hidden
