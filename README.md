@@ -116,6 +116,11 @@ carry run-to-run regime notes (lock dynamics, same reference). Full
 six-allocator output (incl. snmalloc, dlmalloc, and the
 json/request/ecs app shapes) in harness runs.
 
+The direct comparison uses the system allocator for harness bookkeeping.
+Use `BENCH_OUTPUT=json` for machine-readable samples. Use
+`BENCH_FRESH=1` to run every allocator/workload/repetition in a fresh
+process; fresh-process output is JSONL and gives per-process RSS values.
+
 ## Design
 
 mimalloc-inspired, adapted for Rust's world:
