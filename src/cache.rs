@@ -593,6 +593,14 @@ impl ThreadCache {
 
     /// Medium allocation reporting OS-zero status for `alloc_zeroed`.
     pub(crate) unsafe fn alloc_medium_zeroed(&mut self, mclass: usize) -> (*mut u8, bool) {
+        let p = self.active_medium_alloc(mclass);
+        if !p.is_null() {
+            let active = &self.mactive[mclass];
+            let zeroed = active.virgin > 0;
+            #[cfg(feature = "telemetry")]
+            self.note_alloc_medium(mclass);
+            return (p, zeroed);
+        }
         let bin = &mut self.mbins[mclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
