@@ -1613,18 +1613,6 @@ pub fn __debug_arena_detail() -> (u64, u64) {
 }
 
 #[doc(hidden)]
-pub fn __debug_arena_coalesce_stats() -> (u64, u64, u64) {
-    #[cfg(all(unix, feature = "std"))]
-    {
-        crate::arena::coalesce_stats()
-    }
-    #[cfg(not(all(unix, feature = "std")))]
-    {
-        (0, 0, 0)
-    }
-}
-
-#[doc(hidden)]
 pub fn __debug_arena_hole_stats() -> (u64, u64, u64, u64) {
     #[cfg(all(unix, feature = "std"))]
     {
