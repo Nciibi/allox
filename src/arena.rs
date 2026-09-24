@@ -501,9 +501,8 @@ pub(crate) unsafe fn large_table_set(
 pub(crate) unsafe fn medium_table_set(
     base: *mut u8,
     pages: u32,
-    master: *mut BigMaster,
+    master: *mut crate::page::SpanMaster,
 ) {
-    let master = master.cast::<SpanMaster>();
     for i in 0..pages as usize {
         match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
             Some(idx) => BIG_MAP[idx].store(master as usize | MEDIUM_TABLE_TAG, Ordering::Release),
@@ -530,11 +529,20 @@ pub(crate) unsafe fn large_table_clear(base: *mut u8, pages: u32) {
     }
 }
 
+pub(crate) unsafe fn medium_table_clear(base: *mut u8, pages: u32) {
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(0, Ordering::Release),
+            None => debug_assert!(false, "medium table clear outside reservation"),
+        }
+    }
+}
+
 pub(crate) unsafe fn big_table_get(p: *mut u8) -> *mut BigMaster {
     match big_page_index(p) {
         Some(idx) => {
             let raw = BIG_MAP[idx].load(Ordering::Acquire);
-            if raw & LARGE_TABLE_TAG != 0 {
+            if raw & (LARGE_TABLE_TAG | MEDIUM_TABLE_TAG) != 0 {
                 ptr::null_mut()
             } else {
                 raw as *mut BigMaster
