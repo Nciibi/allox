@@ -546,7 +546,7 @@ pub(crate) unsafe fn large_table_get(p: *mut u8) -> *mut LargeHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::page::{BigMaster, LargeHeader};
+    use crate::page::BigMaster;
 
     const MB: usize = 1024 * 1024;
 
