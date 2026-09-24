@@ -193,6 +193,8 @@ pub(crate) struct ThreadCache {
     bigbins: [Bin; NUM_BIG],
     #[cfg(all(unix, feature = "std"))]
     bvirgin: [u32; NUM_BIG],
+    #[cfg(all(unix, feature = "std"))]
+    bactive: [ActiveBig; NUM_BIG],
     /// Whether this thread armed the OS thread-exit flush. Set once after
     /// the hook is installed; fast paths only check the flag.
     exit_armed: bool,
