@@ -364,6 +364,39 @@ impl Arena {
         }
     }
 
+    fn granule_take(&self, pages: usize) -> Option<(*mut u8, usize, usize)> {
+        let requested = pages.checked_mul(ARENA_ALIGN)?;
+        let total = requested
+            .checked_add(ARENA_GRANULE_SIZE - 1)?
+            & !(ARENA_GRANULE_SIZE - 1);
+        let start0 = self.bump.load(Ordering::Relaxed);
+        loop {
+            let off = self.bump.load(Ordering::Relaxed);
+            let start = off
+                .checked_add(ARENA_GRANULE_SIZE - 1)?
+                & !(ARENA_GRANULE_SIZE - 1);
+            let end = start.checked_add(total)?;
+            if end > self.size {
+                return None;
+            }
+            match self.bump.compare_exchange(
+                off,
+                end,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    return Some((
+                        (self.start.load(Ordering::Relaxed) + start) as *mut u8,
+                        total / ARENA_ALIGN,
+                        (start - off) / ARENA_ALIGN,
+                    ));
+                }
+                Err(_) => core::hint::spin_loop(),
+            }
+        }
+    }
+
     /// Commit `pages` (64 KiB units, nonzero) and return `(base, fresh)`:
     /// `base` is null when unavailable — reservation failed, bump exhausted,
     /// or the commit itself failed. Null is never OOM-by-itself: callers
