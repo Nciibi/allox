@@ -170,11 +170,13 @@ notes, and rationale.
 allox = { version = "0.1", default-features = false }
 ```
 
-With `default-features = false` allox builds against `core` alone: the
+With `default-features = false` allox builds against `core` alone on targets
+with a supported memory backend (currently Unix, Windows, and WASM): the
 per-thread cache becomes a single global cache behind the allocator's own
-spin mutex (embedded targets are single-threaded; the allocator never
-re-enters that lock). Corruption diagnostics use `panic!` instead of
-`abort()` — pair with `panic = "abort"` in your profile as usual.
+spin mutex (single-threaded targets; the allocator never re-enters that
+lock). Corruption diagnostics use `panic!` instead of `abort()` — pair with
+`panic = "abort"` in your profile as usual. Bare-metal targets without a
+backend fail at compile time until a backend is supplied.
 The `wasm32` backend works with or without the `std` feature.
 
 ## WebAssembly
