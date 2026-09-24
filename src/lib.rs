@@ -342,6 +342,27 @@ struct LargeRegionCache {
 // Raw pointers are only touched while holding the enclosing mutex.
 unsafe impl Send for LargeRegionCache {}
 
+fn refresh_large_exact(
+    entries: &[(*mut u8, u32)],
+    len: usize,
+    pages: usize,
+    exact: &mut [u16; LARGE_EXACT_MAX_PAGES + 1],
+) {
+    if pages > LARGE_EXACT_MAX_PAGES {
+        return;
+    }
+    let mut found = EMPTY_LARGE_INDEX;
+    let mut i = 0;
+    while i < len {
+        if entries[i].1 as usize == pages {
+            found = i as u16;
+            break;
+        }
+        i += 1;
+    }
+    exact[pages] = found;
+}
+
 impl LargeRegionCache {
     const fn new() -> Self {
         LargeRegionCache {
