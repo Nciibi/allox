@@ -660,7 +660,7 @@ Implemented the first arena-reuse and large-cache slices:
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 - Frontier-adjacent large realloc growth now atomically extends only live arena regions ending at the bump frontier; both realloc entry points use it, with side-table/counter updates and copy fallback for every other case.
 
-The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiment is hole coalescing; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
+The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. A deferred coalescing retry and temporary boundary index were also rejected after capped A/B probes; the next safe direction is the narrow frontier-adjacent growth slice below, not per-allocation granule overmapping.
 
 ### Baseline comparison
 
