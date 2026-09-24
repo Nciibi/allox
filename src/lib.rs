@@ -164,13 +164,73 @@ fn with_cache<R>(f: impl FnOnce(&mut cache::ThreadCache) -> R, fallback: impl Fn
     tls::with(f, fallback)
 }
 
+unsafe fn take_one_small(class: usize) -> (*mut u8, bool) {
+    let (chain, count, virgin) = HEAP.take_blocks(class);
+    if chain.is_null() {
+        return (ptr::null_mut(), false);
+    }
+    let first = chain;
+    let mut tail = *first.cast::<*mut u8>();
+    *first.cast::<*mut u8>() = ptr::null_mut();
+    for _ in 1..count {
+        if tail.is_null() {
+            break;
+        }
+        let next = *tail.cast::<*mut u8>();
+        *tail.cast::<*mut u8>() = ptr::null_mut();
+        HEAP.release_blocks(page::PageHeader::of(tail), tail, 1);
+        tail = next;
+    }
+    (first, virgin)
+}
+
+unsafe fn take_one_medium(mclass: usize) -> (*mut u8, bool) {
+    let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
+    if chain.is_null() {
+        return (ptr::null_mut(), false);
+    }
+    let first = chain;
+    let mut tail = *first.cast::<*mut u8>();
+    *first.cast::<*mut u8>() = ptr::null_mut();
+    for _ in 1..count {
+        if tail.is_null() {
+            break;
+        }
+        let next = *tail.cast::<*mut u8>();
+        *tail.cast::<*mut u8>() = ptr::null_mut();
+        let span = SpanMaster::of(tail);
+        MEDIUM_HEAP.release_blocks(mclass, span, tail, tail, 1);
+        tail = next;
+    }
+    (first, virgin)
+}
+
+#[cfg(all(unix, feature = "std"))]
+unsafe fn take_one_big(bclass: usize) -> (*mut u8, bool) {
+    let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
+    if chain.is_null() {
+        return (ptr::null_mut(), false);
+    }
+    let first = chain;
+    let mut tail = *first.cast::<*mut u8>();
+    *first.cast::<*mut u8>() = ptr::null_mut();
+    for _ in 1..count {
+        if tail.is_null() {
+            break;
+        }
+        let next = *tail.cast::<*mut u8>();
+        *tail.cast::<*mut u8>() = ptr::null_mut();
+        let span = crate::arena::big_table_get(tail);
+        BIG_HEAP.release_blocks(span, tail, 1);
+        tail = next;
+    }
+    (first, virgin)
+}
+
 unsafe fn alloc_small(class: usize) -> *mut u8 {
     with_cache(
         |c| c.alloc(class),
-        || {
-            let (chain, _, _) = HEAP.take_blocks(class);
-            chain
-        },
+        || take_one_small(class).0,
     )
 }
 
@@ -190,10 +250,7 @@ unsafe fn dealloc_small(p: *mut u8) {
 
 unsafe fn alloc_medium(mclass: usize) -> *mut u8 {    with_cache(
         |c| c.alloc_medium(mclass),
-        || {
-            let (chain, _, _) = MEDIUM_HEAP.take_blocks(mclass);
-            chain
-        },
+        || take_one_medium(mclass).0,
     )
 }
 
@@ -215,10 +272,7 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 unsafe fn alloc_big(bclass: usize) -> *mut u8 {
     with_cache(
         |c| c.alloc_big(bclass),
-        || {
-            let (chain, _, _) = BIG_HEAP.take_blocks(bclass);
-            chain
-        },
+        || take_one_big(bclass).0,
     )
 }
 
@@ -676,10 +730,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         let bclass = big_class_for_size(size);
         let (p, virgin) = with_cache(
             |c| c.alloc_big_zeroed(bclass),
-            || {
-                let (chain, _, virgin) = BIG_HEAP.take_blocks(bclass);
-                (chain, virgin)
-            },
+            || take_one_big(bclass),
         );
         if p.is_null() {
             // Arena unavailable: legacy large path (fresh flag drives the
@@ -701,10 +752,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         let mclass = medium_class_for_size(size);
         let (p, virgin) = with_cache(
             |c| c.alloc_medium_zeroed(mclass),
-            || {
-                let (chain, _, virgin) = MEDIUM_HEAP.take_blocks(mclass);
-                (chain, virgin)
-            },
+            || take_one_medium(mclass),
         );
         if !p.is_null() {
             if virgin {
@@ -718,10 +766,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     let class = class_for_size(size);
     let (p, virgin) = with_cache(
         |c| c.alloc_zeroed(class),
-        || {
-            let (chain, _, virgin) = HEAP.take_blocks(class);
-            (chain, virgin)
-        },
+        || take_one_small(class),
     );
     if !p.is_null() {
         if virgin {
