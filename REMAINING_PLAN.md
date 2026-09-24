@@ -1,7 +1,8 @@
 # Remaining plan — from big-spans-validated to 0.2
 
-State at fork-off: **big spans DONE 2026-09-23** (DESIGN_SPANS_BIG
-IMPLEMENTED; large-only 8T 0.05× → 0.67× mimalloc, unmaps 0).
+State at fork-off: **big spans DONE 2026-09-23; 512 KiB big-cap phase
+DONE 2026-09-24** (DESIGN_SPANS_BIG; large-only 1T A/B 152K → 193K
+ops/s, with the 1T >512K tail still on the large path).
 **Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
 mimalloc). Full 14-workload matrix: ~9–10/14 win-or-tie vs the best
 comparator on Linux x86-64 (json/request beat mimalloc; ecs beats every
