@@ -968,6 +968,29 @@ mod tests {
         unsafe { a.release(b2, 2) };
     }
 
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
+    #[test]
+    fn frontier_growth_claims_only_adjacent_pages() {
+        let a = Arena::with_size(4 * ARENA_ALIGN);
+        let first = unsafe { a.commit(1).0 };
+        assert!(unsafe { a.grow_frontier(first, 1, 2) });
+        assert_eq!(a.high_water(), 2 * ARENA_ALIGN);
+
+        let second = unsafe { a.commit(1).0 };
+        assert!(!unsafe { a.grow_frontier(first, 2, 3) });
+        assert!(unsafe { a.grow_frontier(second, 1, 2) });
+        assert_eq!(a.high_water(), 4 * ARENA_ALIGN);
+        unsafe {
+            a.release(first, 2);
+            a.release(second, 2);
+        }
+
+        let b = Arena::with_size(2 * ARENA_ALIGN);
+        let only = unsafe { b.commit(1).0 };
+        assert!(!unsafe { b.grow_frontier(only, 1, 3) });
+        unsafe { b.release(only, 1) };
+    }
+
     // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
