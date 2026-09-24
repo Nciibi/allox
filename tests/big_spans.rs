@@ -122,6 +122,7 @@ fn big_realloc_grows_and_shrinks() {
             eprintln!("realloc {} -> {} returned {:p}", size, nsize, np);
             check_pattern(np, size);
             p = np;
+            eprintln!("usable {} byte70000 {}", allox::usable_size(p), *p.add(70000));
             size = nsize;
         }
         // Shrink within big stays usable with prefix intact.
