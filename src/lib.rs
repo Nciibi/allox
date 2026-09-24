@@ -820,7 +820,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     (ret as *mut u8, true, true)
 }
 
-#[cfg(feature = "telemetry")]
+#[cfg(all(unix, feature = "std", feature = "telemetry"))]
 fn note_large_growth(old_size: usize, new_size: usize) {
     let delta = new_size.saturating_sub(old_size) as u64;
     if delta == 0 {
@@ -835,6 +835,7 @@ fn note_large_growth(old_size: usize, new_size: usize) {
     heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
 }
 
+#[cfg(all(unix, feature = "std"))]
 #[inline]
 unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
     #[cfg(all(unix, feature = "std"))]
