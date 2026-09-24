@@ -263,6 +263,8 @@ impl ThreadCache {
             }; NUM_BIG],
             #[cfg(all(unix, feature = "std"))]
             bvirgin: [0; NUM_BIG],
+            #[cfg(all(unix, feature = "std"))]
+            bactive: [ActiveBig::empty(); NUM_BIG],
             exit_armed: false,
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
