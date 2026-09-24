@@ -339,7 +339,10 @@ pub(crate) unsafe fn pop_block(head: &mut *mut u8) -> Option<*mut u8> {
 #[cfg(all(test, unix, feature = "std"))]
 mod tests {
     use super::*;
-    use crate::classes::{big_span_pages_for, BIG_CLASSES, NUM_BIG};
+    use crate::classes::{
+        big_span_pages_for, medium_capacity_for, span_pages_for, BIG_CLASSES, MEDIUM_CLASSES,
+        MIN_ALIGN, NUM_BIG, NUM_MEDIUM,
+    };
 
     /// 64 KiB-aligned multi-page buffer without OS mmap (Miri-safe).
     /// Caller must free with the same layout.
@@ -479,6 +482,53 @@ mod tests {
             aligned_free(f2, l2);
         }
         unsafe { aligned_free(raw, layout) };
+    }
+
+    #[test]
+    fn medium_carve_matches_capacity_for_every_class() {
+        for mclass in 0..NUM_MEDIUM {
+            let block = MEDIUM_CLASSES[mclass];
+            let pages = span_pages_for(block);
+            let (raw, layout) = unsafe { aligned_pages(pages) };
+            let span = raw.cast::<SpanMaster>();
+            unsafe { (*span).init(mclass, pages as u32) };
+            let expected = medium_capacity_for(block, pages);
+            assert_eq!(unsafe { (*span).free_count } as usize, expected);
+
+            let mut addresses = Vec::with_capacity(expected);
+            let mut current = unsafe { (*span).free_head };
+            while !current.is_null() {
+                let address = current as usize;
+                assert_eq!(address % MIN_ALIGN, 0, "mclass {} address {}", mclass, address);
+                assert_eq!(unsafe { SpanMaster::of(current) }, span);
+                assert!(unsafe { (*span).contains(current) });
+                addresses.push(address);
+                current = unsafe { *current.cast::<*mut u8>() };
+            }
+            assert_eq!(addresses.len(), expected, "mclass {}", mclass);
+            addresses.sort_unstable();
+            let base = raw as usize;
+            for (index, address) in addresses.iter().copied().enumerate() {
+                let page = (address - base) / PAGE_SIZE;
+                let start = if page == 0 { SPAN_MASTER_SIZE } else { SPAN_SUB_SIZE };
+                let page_start = base + page * PAGE_SIZE;
+                assert!(address >= page_start + start, "mclass {}", mclass);
+                assert!(address + block <= page_start + PAGE_SIZE, "mclass {}", mclass);
+                if index > 0 {
+                    let previous = addresses[index - 1];
+                    let previous_page = (previous - base) / PAGE_SIZE;
+                    if page == previous_page {
+                        assert_eq!(address - previous, block, "mclass {}", mclass);
+                    }
+                }
+            }
+            for page in 1..pages {
+                let page_base = raw.add(page * PAGE_SIZE);
+                assert_eq!(*page_base.cast::<u64>(), SPAN_SUBMAGIC);
+                assert_eq!(*page_base.add(8).cast::<*mut SpanMaster>(), span);
+            }
+            unsafe { aligned_free(raw, layout) };
+        }
     }
 
     #[test]
