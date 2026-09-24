@@ -725,7 +725,7 @@ impl ThreadCache {
         // (see `dealloc`).
         let mut foreign = false;
         if self.drift_gate_open() {
-            let owner = (*span).owner;
+            let owner = (*span).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
         }
 
