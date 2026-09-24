@@ -214,23 +214,26 @@ Options in order:
    `BigMaster`/`BIG_CLASSES`/`big_span_pages_for` (`page.rs`/`classes.rs`),
    `BigHeap` per-bclass sharded + empty/cold retention (`heap.rs`),
    cache `bigbins`/`bvirgin` + `alloc_big`/`dealloc_big`, dispatch
-   `alloc_impl`/`dealloc_impl`/`alloc_zeroed_impl` routing
-   `(65472, 262144]`, `tests/big_spans.rs` (boundary/roundtrip/calloc/
-   realloc/GlobalAlloc/8T-churn), Kani P1–P6 proofs, Miri carve tests,
-   `tier_boundary_seq` fuzz. Measured (2 s × 3, full matrix): large-only
-   8T **9.06M vs mimalloc 13.51M (0.67×, was 0.05×)**, probe
-   `b1308/a1308/unmaps 0`; guards hold (mixed-all 8T 12.1M in-band,
-   tight/mixed-small flat, spawn-churn unmaps 0, thread_exit green, full
-   suite + telemetry + no_std + release). Remaining large-only gap is the
-   1T 32K–1M tail above 262144 (stays large-path by design — §7 open
-   question 1) and lock-regime variance under 8T (see option A notes
-   above; sharded holes already flat-reverted).
-   ACTIVE BIG CACHE (KEPT 2026-09-24): same-span refills now remain in a
-   per-class active span and active frees use a pointer-range fast path;
-   mixed-span batches still use `bigbins`, and trim/flush return active
-   chains to `BigHeap`. A capped 2 s × 2 comparison against parent
-   `v0.0.969` measured 1.52M vs 1.28M ops/s median on `large-only 8T`
-   (+19% for ActiveBig; peak RSS remained within the existing cap).
+    `alloc_impl`/`dealloc_impl`/`alloc_zeroed_impl` routing
+    `(65472, 524288]`, `tests/big_spans.rs` (boundary/roundtrip/calloc/
+    realloc/GlobalAlloc/8T-churn), Kani P1–P6 proofs, Miri carve tests,
+    `tier_boundary_seq` fuzz. Measured (2 s × 3, full matrix): large-only
+    8T **9.06M vs mimalloc 13.51M (0.67×, was 0.05×)**, probe
+    `b1308/a1308/unmaps 0`; guards hold (mixed-all 8T 12.1M in-band,
+    tight/mixed-small flat, spawn-churn unmaps 0, thread_exit green, full
+    suite + telemetry + no_std + release). The 2026-09-24 cap extension
+    keeps that guard in-band and improves the 1T range below 512K.
+    ACTIVE BIG CACHE (KEPT 2026-09-24): same-span refills now remain in a
+    per-class active span and active frees use a pointer-range fast path;
+    mixed-span batches still use `bigbins`, and trim/flush return active
+    chains to `BigHeap`. A capped 2 s × 2 comparison against parent
+    `v0.0.969` measured 1.52M vs 1.28M ops/s median on `large-only 8T`
+    (+19% for ActiveBig; peak RSS remained within the existing cap).
+    512K CAP (KEPT 2026-09-24): extending the top big class from 262144
+    to 524288 improved capped `large-only 1T` from 152K to 193K ops/s
+    (+27%), with peak RSS 23.3 → 23.8 MiB. `mixed-all 1T` was flat and
+    `large-only 8T` stayed within its noisy guard band. The >512K portion
+    remains the next large-tail candidate.
 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
    discipline matters more than the last 10% hit rate here.
 
