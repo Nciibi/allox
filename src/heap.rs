@@ -366,9 +366,9 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 // ---------------------------------------------------------------------------
 // Medium-span heap: one partial-span list per medium class, same sharding
 // discipline as the small heap (no path ever holds two class locks). Spans
-// are multi-page runs carved into medium blocks; batches are span-sized
-// (MEDIUM_REFILL_BATCH) rather than 64, since one span already holds 8+.
- // ---------------------------------------------------------------------------
+// are multi-page runs carved into medium blocks; refill batches are capped by
+// the selected span's actual capacity.
+// ---------------------------------------------------------------------------
 
 /// Blocks moved from spans into a thread cache per slow-path take.
 /// 16 (64 measured & rejected 2026-09-23: mixed-all 13.6M → 10.6M —

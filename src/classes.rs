@@ -184,8 +184,6 @@ pub(crate) const fn span_pages_for(block: usize) -> usize {
     (need + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-
-
 /// Direct-mapped size -> medium-class table for
 /// `size in (MAX_SMALL_SIZE, MAX_MEDIUM_BLOCK]`, slot `(size-MAX_SMALL-1)/16`.
 const MEDIUM_LUT_LEN: usize = (MAX_MEDIUM_BLOCK - MAX_SMALL_SIZE) / MIN_ALIGN;
