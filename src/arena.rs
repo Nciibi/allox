@@ -632,6 +632,39 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
+    #[test]
+    fn medium_table_resolves_cross_page_blocks() {
+        unsafe {
+            let block = MEDIUM_CLASSES[0];
+            let pages = span_pages_for(block);
+            let (raw, _) = ARENA.commit(pages);
+            assert!(!raw.is_null());
+            let span = raw.cast::<SpanMaster>();
+            (*span).init(0, pages as u32);
+            medium_table_set(raw, pages as u32, span);
+            let expected = medium_capacity_for(block, pages);
+            assert_eq!((*span).free_count as usize, expected);
+            let mut current = (*span).free_head;
+            let mut count = 0usize;
+            let mut crossed = false;
+            while !current.is_null() {
+                assert_eq!(SpanMaster::of(current), span);
+                assert!(current as usize + block <= raw as usize + pages * PAGE_SIZE);
+                if (current as usize) / PAGE_SIZE != (current as usize + block - 1) / PAGE_SIZE {
+                    crossed = true;
+                }
+                count += 1;
+                current = *current.cast::<*mut u8>();
+            }
+            assert_eq!(count, expected);
+            assert!(crossed);
+            medium_table_clear(raw, pages as u32);
+            assert!(medium_table_get(raw).is_null());
+            ARENA.release(raw, pages);
+        }
+    }
+
     // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
