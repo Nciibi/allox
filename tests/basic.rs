@@ -273,10 +273,18 @@ fn forged_large_header_does_not_steal_medium_free() {
     }
 
     unsafe {
-        let a = malloc(32768);
-        let b = malloc(32768);
-        assert!(!a.is_null() && !b.is_null());
-        let (first, second) = if a < b { (a, b) } else { (b, a) };
+        let mut blocks = [core::ptr::null_mut(); 16];
+        for p in &mut blocks {
+            *p = malloc(32768);
+            assert!(!p.is_null());
+        }
+        blocks.sort_unstable();
+        let index = blocks
+            .iter()
+            .position(|p| (*p as usize & 65535) >= 128)
+            .expect("medium block with a user-data predecessor");
+        let second = blocks[index];
+        let first = blocks[index - 1];
         let header_size = core::mem::size_of::<FakeHeader>();
         assert!(second as usize - first as usize >= header_size);
         let header = (second as usize - header_size) as *mut FakeHeader;
@@ -286,8 +294,9 @@ fn forged_large_header_does_not_steal_medium_free() {
         (*header).requested = 32768;
         (*header).next = core::ptr::null_mut();
         assert!(usable_size(second) >= 32768);
-        free(second);
-        free(first);
+        for p in blocks {
+            free(p);
+        }
     }
 }
 
