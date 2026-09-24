@@ -1223,8 +1223,25 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     };
     #[cfg(not(all(unix, feature = "std")))]
     let old_big: Option<*mut u8> = None;
+    #[cfg(all(unix, feature = "std"))]
+    let old_medium: Option<*mut u8> = if old_arena {
+        let medium = crate::arena::medium_table_get(p);
+        if !medium.is_null() {
+            #[cfg(debug_assertions)]
+            if !(*medium).contains(p) {
+                corrupt_pointer();
+            }
+            Some(medium.cast())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    #[cfg(not(all(unix, feature = "std")))]
+    let old_medium: Option<*mut u8> = None;
 
-    if old_big.is_none() && !old_large_ok {
+    if old_big.is_none() && old_medium.is_none() && !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
             magic == page::PAGE_MAGIC
@@ -1256,6 +1273,19 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             if size > classes::MAX_MEDIUM_BLOCK
                 && size <= classes::MAX_BIG_BLOCK
                 && big_class_for_size(size) == old_bclass
+            {
+                return p;
+            }
+        }
+    }
+    #[cfg(all(unix, feature = "std"))]
+    if let Some(medium) = old_medium {
+        if size != 0 {
+            let medium = medium.cast::<SpanMaster>();
+            let old_mclass = (*medium).mclass as usize;
+            if size > classes::MAX_SMALL_SIZE
+                && size <= classes::MAX_MEDIUM_BLOCK
+                && medium_class_for_size(size) == old_mclass
             {
                 return p;
             }
