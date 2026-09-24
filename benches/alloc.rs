@@ -1326,9 +1326,9 @@ fn main() {
                     )
                 },
             );
-            let mut row = format!("{:<15}{}", workload.name, format_optional(medians[0]));
-            for median in medians.iter().skip(1) {
-                row.push_str(&format_optional(*median));
+            let mut row = format!("{:<15}", workload.name);
+            for &allocator_index in &alloc_idx {
+                row.push_str(&format_optional(medians[allocator_index]));
             }
             row.push_str(&format!(
                 " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>16}",
