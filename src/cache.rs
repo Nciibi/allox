@@ -834,6 +834,12 @@ impl ThreadCache {
     /// Big allocation reporting OS-zero status for `alloc_zeroed`.
     #[cfg(all(unix, feature = "std"))]
     pub(crate) unsafe fn alloc_big_zeroed(&mut self, bclass: usize) -> (*mut u8, bool) {
+        let (p, zeroed) = self.active_big_alloc(bclass);
+        if !p.is_null() {
+            #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+            self.note_alloc_big(bclass);
+            return (p, zeroed);
+        }
         let bin = &mut self.bigbins[bclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
