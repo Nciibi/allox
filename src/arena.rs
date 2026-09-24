@@ -149,6 +149,7 @@ pub(crate) struct Arena {
     hole_count: AtomicUsize,
     hole_scans: AtomicUsize,
     hole_hits: AtomicUsize,
+    hole_exact_hits: AtomicUsize,
     hole_splits: AtomicUsize,
     hole_empty_fastpath: AtomicUsize,
     commits: AtomicUsize,
