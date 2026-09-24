@@ -939,6 +939,21 @@ impl ThreadCache {
             foreign = owner != 0 && owner != self.tid();
         }
 
+        if self.active_big_contains(p, bclass, span) {
+            self.active_big_dealloc(p, bclass);
+            self.cached_bytes += BIG_CLASSES[bclass];
+            if foreign {
+                self.foreign_bytes += BIG_CLASSES[bclass];
+            }
+            #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+            self.note_free_big(bclass);
+            if self.should_shed() {
+                self.trim();
+                self.foreign_bytes = 0;
+            }
+            return;
+        }
+
         let bin = &mut self.bigbins[bclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
