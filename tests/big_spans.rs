@@ -119,6 +119,7 @@ fn big_realloc_grows_and_shrinks() {
             }
             let np = realloc(p, nsize);
             assert!(!np.is_null());
+            eprintln!("realloc {} -> {} returned {:p}", size, nsize, np);
             check_pattern(np, size);
             p = np;
             size = nsize;
