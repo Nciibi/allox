@@ -1438,6 +1438,7 @@ impl ThreadCache {
         #[cfg(all(unix, feature = "std"))]
         {
             self.bvirgin = [0; NUM_BIG];
+            self.bactive = [ActiveBig::empty(); NUM_BIG];
         }
         // Stashed large regions are released directly (no global lock held
         // here beyond the caller's cache ownership) so an explicit flush
