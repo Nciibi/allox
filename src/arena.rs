@@ -108,6 +108,37 @@ const COALESCE_BOUNDARY_SLOTS: usize = HOLE_SLOTS * 2;
 const EMPTY_BOUNDARY: usize = usize::MAX;
 const EMPTY_BUCKET: u16 = u16::MAX;
 
+fn boundary_hash(key: usize) -> usize {
+    (key ^ key.rotate_right(17)) & (COALESCE_BOUNDARY_SLOTS - 1)
+}
+
+fn boundary_insert(
+    keys: &mut [usize],
+    indices: &mut [u16],
+    key: usize,
+    index: usize,
+) {
+    let mut slot = boundary_hash(key);
+    while keys[slot] != EMPTY_BOUNDARY && keys[slot] != key {
+        slot = (slot + 1) & (COALESCE_BOUNDARY_SLOTS - 1);
+    }
+    keys[slot] = key;
+    indices[slot] = index as u16;
+}
+
+fn boundary_lookup(keys: &[usize], indices: &[u16], key: usize) -> Option<usize> {
+    let mut slot = boundary_hash(key);
+    loop {
+        if keys[slot] == key {
+            return Some(indices[slot] as usize);
+        }
+        if keys[slot] == EMPTY_BOUNDARY {
+            return None;
+        }
+        slot = (slot + 1) & (COALESCE_BOUNDARY_SLOTS - 1);
+    }
+}
+
 struct HoleStore {
     len: usize,
     bytes: usize,
