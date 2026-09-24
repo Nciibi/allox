@@ -176,12 +176,12 @@ pub(crate) const fn medium_capacity_for(block: usize, pages: usize) -> usize {
         + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / block)
 }
 
-/// Span length in 64 KiB pages for a medium block size. The current
-/// heuristic reserves the master header plus `TARGET_BLOCKS_PER_SPAN`
-/// aggregate blocks; exact capacity is validated per chunk in tests.
 pub(crate) const fn span_pages_for(block: usize) -> usize {
-    let need = MEDIUM_CHUNK_RESERVE + TARGET_BLOCKS_PER_SPAN * block;
-    (need + PAGE_SIZE - 1) / PAGE_SIZE
+    let mut pages = 1;
+    while medium_capacity_for(block, pages) < TARGET_BLOCKS_PER_SPAN {
+        pages += 1;
+    }
+    pages
 }
 
 /// Direct-mapped size -> medium-class table for
