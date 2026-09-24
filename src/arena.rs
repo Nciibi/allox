@@ -110,7 +110,6 @@ struct HoleStore {
     bytes: usize,
     entries: [(usize, usize); HOLE_SLOTS],
     exact: [u16; EXACT_BUCKET_MAX + 1],
-    coalesce_dirty: bool,
 }
 
 impl HoleStore {
@@ -120,7 +119,6 @@ impl HoleStore {
             bytes: 0,
             entries: [(0, 0); HOLE_SLOTS],
             exact: [EMPTY_BUCKET; EXACT_BUCKET_MAX + 1],
-            coalesce_dirty: false,
         }
     }
 
@@ -160,12 +158,6 @@ pub(crate) struct Arena {
     hole_splits: AtomicUsize,
     #[cfg(feature = "telemetry")]
     hole_empty_fastpath: AtomicUsize,
-    #[cfg(feature = "telemetry")]
-    hole_coalesce_checks: AtomicUsize,
-    #[cfg(feature = "telemetry")]
-    hole_coalesces: AtomicUsize,
-    #[cfg(feature = "telemetry")]
-    hole_coalesced_pages: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
