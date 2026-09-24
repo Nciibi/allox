@@ -17,7 +17,9 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   path.)
 - Large/over-aligned: sharded exact-fit-first region caches with cold
   tier, per-thread stash, virtual-memory arena backing (unix) with hole
-  reuse and graceful legacy fallback.
+  reuse and graceful legacy fallback. Large `calloc` skips redundant zeroing
+  only after a successful discard, and arena-frontier large realloc can grow
+  in place without copying.
 - Thread-exit flush (pthread key / FlsAlloc); contention-parking mutexes
   (SRWLock on Windows, pthread on unix). Pressure-gated remote-free drift
   cap: under cache pressure, frees of blocks owned by another thread are
