@@ -529,23 +529,24 @@ impl ThreadCache {
     }
 
     #[inline]
-    unsafe fn active_medium_alloc(&mut self, mclass: usize) -> *mut u8 {
+    unsafe fn active_medium_alloc(&mut self, mclass: usize) -> (*mut u8, bool) {
         let block_size = MEDIUM_CLASSES[mclass];
-        let p = {
+        let (p, zeroed) = {
             let active = &mut self.mactive[mclass];
             let p = match pop_block(&mut active.head) {
                 Some(p) => p,
-                None => return ptr::null_mut(),
+                None => return (ptr::null_mut(), false),
             };
             let below = active.len - 1;
             active.len = below;
-            if below < active.virgin {
+            let zeroed = below < active.virgin;
+            if zeroed {
                 active.virgin -= 1;
             }
-            p
+            (p, zeroed)
         };
         self.cached_bytes -= block_size;
-        p
+        (p, zeroed)
     }
 
     #[inline]
@@ -565,7 +566,7 @@ impl ThreadCache {
 
     /// Medium fast-path allocation. Returns null only on OS exhaustion.
     pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
-        let p = self.active_medium_alloc(mclass);
+        let (p, _) = self.active_medium_alloc(mclass);
         if !p.is_null() {
             #[cfg(feature = "telemetry")]
             self.note_alloc_medium(mclass);
@@ -593,10 +594,8 @@ impl ThreadCache {
 
     /// Medium allocation reporting OS-zero status for `alloc_zeroed`.
     pub(crate) unsafe fn alloc_medium_zeroed(&mut self, mclass: usize) -> (*mut u8, bool) {
-        let p = self.active_medium_alloc(mclass);
+        let (p, zeroed) = self.active_medium_alloc(mclass);
         if !p.is_null() {
-            let active = &self.mactive[mclass];
-            let zeroed = active.virgin > 0;
             #[cfg(feature = "telemetry")]
             self.note_alloc_medium(mclass);
             return (p, zeroed);
