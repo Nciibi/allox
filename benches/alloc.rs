@@ -229,6 +229,20 @@ const WORKLOADS: &[Workload] = &[
         kind: Kind::Standard,
     },
     Workload {
+        name: "big-tail 1T",
+        threads: 1,
+        size_range: (262145, 524289),
+        free_pct: 50,
+        kind: Kind::Standard,
+    },
+    Workload {
+        name: "big-upper-tail 1T",
+        threads: 1,
+        size_range: (524289, 1048577),
+        free_pct: 50,
+        kind: Kind::Standard,
+    },
+    Workload {
         name: "large-only 8T",
         threads: 8,
         size_range: (32768, 262144),
