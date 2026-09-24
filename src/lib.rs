@@ -453,10 +453,13 @@ impl LargeRegionCache {
             }
         }
         let removed_pages = entry.1 as usize;
-        if removed_pages <= LARGE_EXACT_MAX_PAGES
-            && self.hot_exact[removed_pages] == index as u16
-        {
-            refresh_large_exact(
+        if removed_pages <= LARGE_EXACT_MAX_PAGES {
+            let bucket = self.hot_exact[removed_pages] as usize;
+            if bucket == index
+                || bucket >= self.len
+                || self.entries[bucket].1 as usize != removed_pages
+            {
+                refresh_large_exact(
                 &self.entries,
                 self.len,
                 removed_pages,
