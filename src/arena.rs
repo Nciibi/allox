@@ -137,6 +137,64 @@ impl HoleStore {
         }
         self.exact[pages] = found;
     }
+
+    fn rebuild_exact(&mut self) {
+        self.exact = [EMPTY_BUCKET; EXACT_BUCKET_MAX + 1];
+        let mut i = 0;
+        while i < self.len {
+            let pages = self.entries[i].1;
+            if pages <= EXACT_BUCKET_MAX && self.exact[pages] == EMPTY_BUCKET {
+                self.exact[pages] = i as u16;
+            }
+            i += 1;
+        }
+    }
+
+    fn remove_at(&mut self, index: usize) -> (usize, usize) {
+        let last = self.len - 1;
+        let entry = self.entries[index];
+        self.entries[index] = self.entries[last];
+        self.entries[last] = (0, 0);
+        self.len = last;
+        self.bytes -= entry.1 * ARENA_ALIGN;
+        entry
+    }
+
+    fn coalesce(&mut self, mut off: usize, mut pages: usize) -> (usize, usize, usize) {
+        let original_pages = pages;
+        loop {
+            let end = match off.checked_add(pages * ARENA_ALIGN) {
+                Some(end) => end,
+                None => break,
+            };
+            let mut adjacent = None;
+            let mut i = 0;
+            while i < self.len {
+                let (other_off, other_pages) = self.entries[i];
+                let other_end = match other_off.checked_add(other_pages * ARENA_ALIGN) {
+                    Some(other_end) => other_end,
+                    None => {
+                        i += 1;
+                        continue;
+                    }
+                };
+                if other_end == off || end == other_off {
+                    adjacent = Some((i, other_off, other_pages, other_end));
+                    break;
+                }
+                i += 1;
+            }
+            let Some((index, other_off, other_pages, other_end)) = adjacent else {
+                break;
+            };
+            if other_end == off {
+                off = other_off;
+            }
+            pages += other_pages;
+            self.remove_at(index);
+        }
+        (off, pages, pages - original_pages)
+    }
 }
 
 pub(crate) struct Arena {
