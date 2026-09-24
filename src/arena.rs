@@ -189,12 +189,6 @@ impl Arena {
             hole_splits: AtomicUsize::new(0),
             #[cfg(feature = "telemetry")]
             hole_empty_fastpath: AtomicUsize::new(0),
-            #[cfg(feature = "telemetry")]
-            hole_coalesce_checks: AtomicUsize::new(0),
-            #[cfg(feature = "telemetry")]
-            hole_coalesces: AtomicUsize::new(0),
-            #[cfg(feature = "telemetry")]
-            hole_coalesced_pages: AtomicUsize::new(0),
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
