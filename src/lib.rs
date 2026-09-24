@@ -913,10 +913,14 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     }
     #[cfg(all(unix, feature = "std"))]
     if size > MAX_MEDIUM_BLOCK {
-        // Big-span range routes by side table (contract layout, zero
-        // probing reads like the span arm). A table miss is a contract
-        // violation in any build (never segfault on it); contains() is
-        // debug-verified like the span arm.
+        if !crate::arena::contains(p, 1) {
+            #[cfg(debug_assertions)]
+            if large_header_of(p).is_none() {
+                corrupt_pointer();
+            }
+            free_large(p);
+            return;
+        }
         let big = crate::arena::big_table_get(p);
         if big.is_null() {
             corrupt_pointer();
