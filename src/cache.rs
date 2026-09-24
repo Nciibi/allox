@@ -805,6 +805,12 @@ impl ThreadCache {
     /// (callers fall back to the large path) or on OS exhaustion.
     #[cfg(all(unix, feature = "std"))]
     pub(crate) unsafe fn alloc_big(&mut self, bclass: usize) -> *mut u8 {
+        let (p, _) = self.active_big_alloc(bclass);
+        if !p.is_null() {
+            #[cfg(all(feature = "telemetry", unix, feature = "std"))]
+            self.note_alloc_big(bclass);
+            return p;
+        }
         let bin = &mut self.bigbins[bclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
