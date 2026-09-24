@@ -522,10 +522,12 @@ mod tests {
                     }
                 }
             }
-            for page in 1..pages {
-                let page_base = raw.add(page * PAGE_SIZE);
-                assert_eq!(*page_base.cast::<u64>(), SPAN_SUBMAGIC);
-                assert_eq!(*page_base.add(8).cast::<*mut SpanMaster>(), span);
+            unsafe {
+                for page in 1..pages {
+                    let page_base = raw.add(page * PAGE_SIZE);
+                    assert_eq!(*page_base.cast::<u64>(), SPAN_SUBMAGIC);
+                    assert_eq!(*page_base.add(8).cast::<*mut SpanMaster>(), span);
+                }
             }
             unsafe { aligned_free(raw, layout) };
         }

@@ -611,6 +611,7 @@ unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
     let base = (*hdr).base;
+    #[cfg(feature = "telemetry")]
     let requested = (*hdr).requested_size;
     let pages = (mapped / page::PAGE_SIZE) as u32;
 
