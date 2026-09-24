@@ -1182,6 +1182,9 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     if p.is_null() {
         return malloc(size);
     }
+    if (p as usize) < LARGE_HEADER_SIZE {
+        return malloc(size);
+    }
     // Large-offset check first (fault-safe for every live pointer; masked
     // reads can dangle outside unaligned large regions — see dealloc_impl).
     // Large resizes always go alloc-copy-free below via usable_size.
@@ -1293,6 +1296,9 @@ pub unsafe fn aligned_alloc(align: usize, size: usize) -> *mut u8 {
 /// `p` must be a live allocation of this allocator or null.
 pub unsafe fn usable_size(p: *mut u8) -> usize {
     if p.is_null() {
+        return 0;
+    }
+    if (p as usize) < LARGE_HEADER_SIZE {
         return 0;
     }
     #[cfg(all(unix, feature = "std"))]
