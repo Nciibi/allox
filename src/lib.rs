@@ -1116,7 +1116,11 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             }
         }
     }
-    let new_p = malloc(size);
+    let new_p = if old_large_ok {
+        alloc_impl(size, pointer_alignment(p))
+    } else {
+        malloc(size)
+    };
     if !new_p.is_null() && size != 0 {
         let old_size = usable_size(p);
         ptr::copy_nonoverlapping(p, new_p, old_size.min(size));
