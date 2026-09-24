@@ -460,11 +460,12 @@ impl LargeRegionCache {
                 || self.entries[bucket].1 as usize != removed_pages
             {
                 refresh_large_exact(
-                &self.entries,
-                self.len,
-                removed_pages,
-                &mut self.hot_exact,
-            );
+                    &self.entries,
+                    self.len,
+                    removed_pages,
+                    &mut self.hot_exact,
+                );
+            }
         }
         entry
     }
@@ -485,15 +486,19 @@ impl LargeRegionCache {
             }
         }
         let removed_pages = entry.1 as usize;
-        if removed_pages <= LARGE_EXACT_MAX_PAGES
-            && self.cold_exact[removed_pages] == index as u16
-        {
-            refresh_large_exact(
-                &self.cold,
-                self.cold_len,
-                removed_pages,
-                &mut self.cold_exact,
-            );
+        if removed_pages <= LARGE_EXACT_MAX_PAGES {
+            let bucket = self.cold_exact[removed_pages] as usize;
+            if bucket == index
+                || bucket >= self.cold_len
+                || self.cold[bucket].1 as usize != removed_pages
+            {
+                refresh_large_exact(
+                    &self.cold,
+                    self.cold_len,
+                    removed_pages,
+                    &mut self.cold_exact,
+                );
+            }
         }
         entry
     }
@@ -1767,8 +1772,8 @@ mod large_cache_tests {
         let replacement = add_hot(&mut cache, 4);
         assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((replacement, 4)));
         assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8)));
         assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8)));
         assert_eq!(cache.len, 0);
         assert_eq!(cache.bytes, 0);
         assert_eq!(cache.cold_len, 0);
