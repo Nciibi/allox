@@ -516,7 +516,7 @@ unsafe fn register_legacy_large(hdr: *mut LargeHeader) {
 
 unsafe fn unregister_legacy_large(hdr: *mut LargeHeader) {
     let mut head = LARGE_REGISTRY.lock();
-    let mut previous = ptr::null_mut();
+    let mut previous: *mut LargeHeader = ptr::null_mut();
     let mut current = *head as *mut LargeHeader;
     while !current.is_null() {
         if current == hdr {
