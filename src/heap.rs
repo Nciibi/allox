@@ -653,13 +653,16 @@ impl MediumHeap {
     /// Acquire up to MEDIUM_REFILL_BATCH free blocks of `mclass` as an
     /// intrusive chain. Returns `(null, 0, _)` only on OS exhaustion.
     pub(crate) unsafe fn take_blocks(&self, mclass: usize) -> (*mut u8, u32, bool) {
+        debug_assert!(mclass < NUM_MEDIUM);
+        let refill_cap = medium_refill_batch(mclass);
+        debug_assert!(refill_cap > 0);
         let mut chain: *mut u8 = ptr::null_mut();
         let mut count: u32 = 0;
         let mut virgin = true;
 
         {
             let mut list = self.classes[mclass].lock();
-            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
+            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
 
             if count == 0 && !list.empty.is_null() {
                 let span = list.empty;
@@ -671,7 +674,7 @@ impl MediumHeap {
                     virgin = false;
                 }
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
             }
 
             if count == 0 && list.cold_len > 0 {
@@ -690,7 +693,7 @@ impl MediumHeap {
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
             }
         }
 
@@ -707,7 +710,7 @@ impl MediumHeap {
                 SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
             } else {
                 virgin = false;
             }

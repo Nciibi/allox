@@ -437,16 +437,15 @@ mod tests {
             assert_eq!(medium_class_for_size(size), medium_scan(size));
             size += 1;
         }
-        // Carve capacity is per 64 KiB chunk, not aggregate span capacity.
         for &b in MEDIUM_CLASSES.iter() {
             let pages = span_pages_for(b);
             assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
-            let first_chunk = (65536 - MEDIUM_CHUNK_RESERVE) / b;
-            let later_chunks = (65536 - 16) / b;
-            let capacity = first_chunk + (pages - 1) * later_chunks;
+            let capacity = medium_capacity_for(b, pages);
             assert!(capacity > 0, "block {} pages {}", b, pages);
+            assert_eq!(capacity, (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / b
+                + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / b));
             assert!(
-                capacity <= pages * 65536 / b,
+                capacity <= pages * PAGE_SIZE / b,
                 "block {} pages {} capacity {} exceeds aggregate bound",
                 b,
                 pages,

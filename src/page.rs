@@ -2,7 +2,7 @@
 //! multi-page spans for medium blocks, plus the header layout used for large
 //! (directly mapped) regions.
 
-use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
+use crate::classes::{medium_capacity_for, MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::CLASSES;
 #[cfg(all(unix, feature = "std"))]
 use crate::classes::{BIG_CLASSES, NUM_BIG};
@@ -178,6 +178,10 @@ impl SpanMaster {
             page += 1;
         }
         debug_assert!(count > 0);
+        debug_assert_eq!(
+            count as usize,
+            medium_capacity_for(block_size, npages as usize)
+        );
         self.magic = SPAN_MAGIC;
         self.prev = ptr::null_mut();
         self.next = ptr::null_mut();
