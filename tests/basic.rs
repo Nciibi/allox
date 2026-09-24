@@ -294,6 +294,7 @@ fn forged_large_header_does_not_steal_medium_free() {
         (*header).base = second.sub(128);
         (*header).requested = 28000;
         (*header).next = core::ptr::null_mut();
+        *((second as usize & !65535) as *mut u8).cast::<u64>() = 0xA110_CCA7_E5A1_1E5D;
         assert!(usable_size(second) >= 28000);
         for p in blocks {
             free(p);
