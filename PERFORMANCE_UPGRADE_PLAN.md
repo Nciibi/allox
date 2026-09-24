@@ -639,5 +639,7 @@ Implemented and rechecked:
 - One owner claim per contiguous source span during medium refills.
 - Dedicated medium-only 1T/8T benchmark workloads.
 - Adversarial large-header, arena-direct-large, legacy-large fallback, telemetry symmetry, and producer-consumer drain regressions.
+- Thread-local page-local medium free chains with single-span refill validation, active-chain flushing, and fallback to the existing mixed-span bin when a refill crosses spans.
+- Focused active-cache flush/reuse coverage plus randomized multithreaded stress.
 
-The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host. Page-local active spans, medium metadata redesign, and larger target-eight geometry remain the next Phase 1 experiments.
+The active-chain prototype measured better on the focused medium workloads and was neutral-to-positive on the 5x5-second `mixed-all 8T` comparison. The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host. Medium metadata redesign and larger target-eight geometry remain the next Phase 1 experiments.
