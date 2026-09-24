@@ -325,14 +325,18 @@ const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
 /// collapse). 8 shards x 512 x 16 B = 64 KiB static. Hot stays shallow
 /// (hot retention is mapped RSS, not virtual).
 const LARGE_COLD_SLOTS: usize = 512;
+const LARGE_EXACT_MAX_PAGES: usize = 64;
+const EMPTY_LARGE_INDEX: u16 = u16::MAX;
 
 struct LargeRegionCache {
     len: usize,
     bytes: usize,
     entries: [(*mut u8, u32); LARGE_SHARD_SLOTS], // (base, mapped_pages)
+    hot_exact: [u16; LARGE_EXACT_MAX_PAGES + 1],
     cold_len: usize,
     cold_bytes: usize,
     cold: [(*mut u8, u32); LARGE_COLD_SLOTS],
+    cold_exact: [u16; LARGE_EXACT_MAX_PAGES + 1],
 }
 
 // Raw pointers are only touched while holding the enclosing mutex.
@@ -344,9 +348,11 @@ impl LargeRegionCache {
             len: 0,
             bytes: 0,
             entries: [(ptr::null_mut(), 0); LARGE_SHARD_SLOTS],
+            hot_exact: [EMPTY_LARGE_INDEX; LARGE_EXACT_MAX_PAGES + 1],
             cold_len: 0,
             cold_bytes: 0,
             cold: [(ptr::null_mut(), 0); LARGE_COLD_SLOTS],
+            cold_exact: [EMPTY_LARGE_INDEX; LARGE_EXACT_MAX_PAGES + 1],
         }
     }
 
