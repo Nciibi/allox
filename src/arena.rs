@@ -158,6 +158,8 @@ pub(crate) struct Arena {
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
+    granule_commits: AtomicUsize,
+    granule_bytes: AtomicUsize,
     /// Reservation size for this instance (global uses `ARENA_SIZE`).
     size: usize,
 }
