@@ -43,6 +43,11 @@ mod imp {
     static INSTALLING: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "C" fn thread_exit_flush(_value: *mut c_void) {
+        if let Some(k) = HOOK_KEY.get() {
+            unsafe {
+                let _ = pthread_setspecific(*k, core::ptr::null());
+            }
+        }
         // Blocking flush: at thread exit no allocator locks are held (all
         // critical sections are scoped and user-code-free), so waiting on a
         // class lock can only stall behind another bounded critical section
@@ -108,6 +113,11 @@ mod imp {
     static INSTALLING: AtomicBool = AtomicBool::new(false);
 
     unsafe extern "system" fn fls_flush(_value: *mut c_void) {
+        if let Some(s) = HOOK_SLOT.get() {
+            unsafe {
+                let _ = FlsSetValue(*s, core::ptr::null());
+            }
+        }
         // Blocking is safe here too: SRWLock never touches the loader lock,
         // and allocator critical sections never touch it either, so no wait
         // cycle exists even though Fls callbacks run during thread teardown.
