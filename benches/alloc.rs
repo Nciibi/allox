@@ -1110,7 +1110,74 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
     output.push('}');
 }
 
+fn run_fresh_processes() {
+    let exe = std::env::current_exe().expect("benchmark executable path");
+    let secs = std::env::var("BENCH_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(3)
+        .max(1);
+    let reps = std::env::var("BENCH_REPS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(5)
+        .max(1);
+    let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
+    let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
+    let mut allocator_names = vec!["allox", "talc", "dlmalloc", "system", "mimalloc", "snmalloc"];
+    #[cfg(feature = "bench-jemalloc")]
+    allocator_names.push("jemalloc");
+
+    for workload in WORKLOADS {
+        if !workload_filter.is_empty() && !workload.name.contains(&workload_filter) {
+            continue;
+        }
+        for allocator in &allocator_names {
+            if !allocator_filter.is_empty() && !allocator.contains(&allocator_filter) {
+                continue;
+            }
+            for _ in 0..reps {
+                let output = std::process::Command::new(&exe)
+                    .env("BENCH_CHILD", "1")
+                    .env("BENCH_FRESH", "0")
+                    .env("BENCH_ALLOC", allocator)
+                    .env("BENCH_ONLY", workload.name)
+                    .env("BENCH_SECS", secs.to_string())
+                    .env("BENCH_REPS", "1")
+                    .env("BENCH_WARMUP", "0")
+                    .env("BENCH_OUTPUT", "json")
+                    .output();
+                match output {
+                    Ok(output) if output.status.success() => {
+                        print!("{}", String::from_utf8_lossy(&output.stdout));
+                    }
+                    Ok(output) => {
+                        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                        std::process::exit(1);
+                    }
+                    Err(error) => {
+                        eprintln!("failed to spawn fresh benchmark process: {}", error);
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn main() {
+    let fresh = std::env::var("BENCH_FRESH")
+        .ok()
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let child = std::env::var("BENCH_CHILD")
+        .ok()
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if fresh && !child {
+        run_fresh_processes();
+        return;
+    }
     let output_name = std::env::var("BENCH_OUTPUT")
         .or_else(|_| std::env::var("BENCH_FORMAT"))
         .unwrap_or_else(|_| "text".to_string());
