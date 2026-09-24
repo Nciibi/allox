@@ -260,6 +260,37 @@ fn aligned_realloc_preserves_alignment() {
     }
 }
 
+#[cfg(all(unix, feature = "std"))]
+#[test]
+fn forged_large_header_does_not_steal_medium_free() {
+    #[repr(C, align(16))]
+    struct FakeHeader {
+        magic: u64,
+        mapped: usize,
+        base: *mut u8,
+        requested: usize,
+        next: *mut u8,
+    }
+
+    unsafe {
+        let a = malloc(32768);
+        let b = malloc(32768);
+        assert!(!a.is_null() && !b.is_null());
+        let (first, second) = if a < b { (a, b) } else { (b, a) };
+        let header_size = core::mem::size_of::<FakeHeader>();
+        assert!(second as usize - first as usize >= header_size);
+        let header = (second as usize - header_size) as *mut FakeHeader;
+        (*header).magic = 0x00B1_0C5A_6E0F_F1CE;
+        (*header).mapped = 65536;
+        (*header).base = second.sub(128);
+        (*header).requested = 32768;
+        (*header).next = core::ptr::null_mut();
+        assert!(usable_size(second) >= 32768);
+        free(second);
+        free(first);
+    }
+}
+
 #[test]
 fn usable_size_covers_request() {
     unsafe {
