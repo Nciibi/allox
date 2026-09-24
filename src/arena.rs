@@ -102,10 +102,14 @@ extern "C" {
 /// discarded slices read back as zeros, so any metadata stored inside them
 /// would not survive. Offsets (not absolute bases) keep the entries
 /// position-independent garbage on reset paths.
+const EXACT_BUCKET_MAX: usize = 64;
+const EMPTY_BUCKET: u16 = u16::MAX;
+
 struct HoleStore {
     len: usize,
     bytes: usize,
     entries: [(usize, usize); HOLE_SLOTS],
+    exact: [u16; EXACT_BUCKET_MAX + 1],
 }
 
 impl HoleStore {
@@ -114,7 +118,24 @@ impl HoleStore {
             len: 0,
             bytes: 0,
             entries: [(0, 0); HOLE_SLOTS],
+            exact: [EMPTY_BUCKET; EXACT_BUCKET_MAX + 1],
         }
+    }
+
+    fn refresh_exact(&mut self, pages: usize) {
+        if pages > EXACT_BUCKET_MAX {
+            return;
+        }
+        let mut found = EMPTY_BUCKET;
+        let mut i = 0;
+        while i < self.len {
+            if self.entries[i].1 == pages {
+                found = i as u16;
+                break;
+            }
+            i += 1;
+        }
+        self.exact[pages] = found;
     }
 }
 
