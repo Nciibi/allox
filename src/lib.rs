@@ -557,12 +557,12 @@ unsafe fn large_region_known(p: *mut u8) -> bool {
     legacy_large_contains(p) && large_header_of(p).is_some()
 }
 
-unsafe fn register_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
+unsafe fn register_large_region(_base: *mut u8, _mapped: usize, hdr: *mut LargeHeader) {
     #[cfg(all(unix, feature = "std"))]
-    if crate::arena::contains(base, mapped) {
+    if crate::arena::contains(_base, _mapped) {
         crate::arena::large_table_set(
-            base,
-            (mapped / page::PAGE_SIZE) as u32,
+            _base,
+            (_mapped / page::PAGE_SIZE) as u32,
             hdr,
         );
         return;
@@ -570,12 +570,12 @@ unsafe fn register_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHea
     register_legacy_large(hdr);
 }
 
-unsafe fn unregister_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
+unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut LargeHeader) {
     #[cfg(all(unix, feature = "std"))]
-    if crate::arena::contains(base, mapped) {
+    if crate::arena::contains(_base, _mapped) {
         crate::arena::large_table_clear(
-            base,
-            (mapped / page::PAGE_SIZE) as u32,
+            _base,
+            (_mapped / page::PAGE_SIZE) as u32,
         );
         return;
     }
@@ -943,7 +943,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
         }
         corrupt_pointer();
     }
-    if legacy_large_contains(p) {
+    if large_region_known(p) {
         free_large(p);
         return;
     }
@@ -1667,12 +1667,9 @@ mod header_probe_tests {
             let base = crate::sys::map_any(mapped);
             assert!(!base.is_null());
             let p = base.add(LARGE_HEADER_SIZE);
-            init_large_header(
-                p.sub(LARGE_HEADER_SIZE).cast::<LargeHeader>(),
-                base,
-                mapped,
-                70_000,
-            );
+            let hdr = p.sub(LARGE_HEADER_SIZE).cast::<LargeHeader>();
+            init_large_header(hdr, base, mapped, 70_000);
+            register_large_region(base, mapped, hdr);
             dealloc_with_layout(p, 70_000, MIN_ALIGN);
         }
     }
