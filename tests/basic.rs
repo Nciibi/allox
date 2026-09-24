@@ -279,6 +279,7 @@ fn forged_large_header_does_not_steal_medium_free() {
             assert!(!p.is_null());
         }
         blocks.sort_unstable();
+        eprintln!("blocks={:?}", blocks.iter().map(|p| (*p as usize, usable_size(*p))).collect::<Vec<_>>());
         let index = blocks
             .iter()
             .position(|p| (*p as usize & 65535) >= 128)
