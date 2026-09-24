@@ -125,6 +125,11 @@ pub(crate) struct Arena {
     bump: AtomicUsize, // byte offset of the next fresh slice
     init_guard: AtomicU8, // spin-serializes first reservation (0 free, 1 held)
     holes: Mutex<HoleStore>,
+    hole_count: AtomicUsize,
+    hole_scans: AtomicUsize,
+    hole_hits: AtomicUsize,
+    hole_splits: AtomicUsize,
+    hole_empty_fastpath: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
