@@ -154,7 +154,7 @@ impl SpanMaster {
         let block_size = MEDIUM_CLASSES[mclass];
         let base = self as *mut _ as usize;
         #[cfg(all(unix, feature = "std"))]
-        let arena_owned = crate::arena::contains(base, npages as usize * PAGE_SIZE);
+        let arena_owned = crate::arena::contains(base as *mut u8, npages as usize * PAGE_SIZE);
         #[cfg(not(all(unix, feature = "std")))]
         let arena_owned = false;
         let mut head: *mut u8 = ptr::null_mut();
