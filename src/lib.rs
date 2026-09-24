@@ -533,6 +533,8 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
             (*hdr).magic = LARGE_MAGIC;
             (*hdr).mapped_size = region_size;
             (*hdr).base = base;
+            #[cfg(feature = "telemetry")]
+            note_large_alloc(size);
             return (ret as *mut u8, false);
         }
         // Alignment made the cached region unusable; drop it (arena-owned
