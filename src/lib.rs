@@ -1229,6 +1229,10 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     }
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(p, 1) {
+        let large = crate::arena::large_table_get(p);
+        if !large.is_null() {
+            return (*large).mapped_size.saturating_sub(p as usize - (*large).base as usize);
+        }
         let big = crate::arena::big_table_get(p);
         if !big.is_null() {
             if (*big).contains(p) {
