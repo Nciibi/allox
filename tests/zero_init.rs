@@ -40,6 +40,35 @@ fn zero_after_churn() {
     }
 }
 
+#[test]
+fn medium_active_cache_flushes_and_reuses() {
+    unsafe {
+        for size in [20000usize, 32768, 50000] {
+            let mut first = Vec::with_capacity(64);
+            for i in 0..64 {
+                let p = allox::malloc(size);
+                assert!(!p.is_null());
+                *p.add(size - 1) = i as u8;
+                first.push(p);
+            }
+            for p in first {
+                allox::free(p);
+            }
+            allox::flush_current_thread();
+            let mut second = Vec::with_capacity(64);
+            for _ in 0..64 {
+                let p = allox::malloc(size);
+                assert!(!p.is_null());
+                second.push(p);
+            }
+            for p in second {
+                allox::free(p);
+            }
+            allox::flush_current_thread();
+        }
+    }
+}
+
 /// Multi-threaded: exercises virgin tracking across threads sharing pages,
 /// where one thread's refill drains a page another thread dirtied earlier.
 #[test]
