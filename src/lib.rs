@@ -934,6 +934,13 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     alloc_small(class_for_size(size))
 }
 
+#[inline]
+unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
+    if !p.is_null() && !known_zeroed {
+        ptr::write_bytes(p, 0, size);
+    }
+}
+
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
 /// blocks only need their freelist-link word cleared; recycled large regions
 /// are memset unless their cache metadata proves they were discarded.
@@ -949,18 +956,13 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         #[cfg(not(all(unix, feature = "std")))]
         {
             let (p, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !p.is_null() {
-                // Recycled region: dirtied by its previous life.
-                ptr::write_bytes(p, 0, size);
-            }
+            zero_large_allocation(p, size, known_zeroed);
             return p;
         }
         #[cfg(all(unix, feature = "std"))]
         if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
             let (p, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !p.is_null() {
-                ptr::write_bytes(p, 0, size);
-            }
+            zero_large_allocation(p, size, known_zeroed);
             return p;
         }
     }
@@ -972,12 +974,8 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             || take_one_big(bclass),
         );
         if p.is_null() {
-            // Arena unavailable: legacy large path (fresh flag drives the
-            // memset, mirroring the large branch above).
             let (lp, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !lp.is_null() {
-                ptr::write_bytes(lp, 0, size);
-            }
+            zero_large_allocation(lp, size, known_zeroed);
             return lp;
         }
         if virgin {
@@ -1598,9 +1596,8 @@ pub fn __debug_map_split() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
 
 /// Arena internals for tuning (see REMAINING_PLAN §3). Returns
 /// `(abandoned, bump_high_water_bytes)`: cumulative hole-store overflow
-/// parks (virtual retained, never reused — the hole-coalescing trigger is
-/// its steady-state rate) and the monotonic reservation frontier (the
-/// reservation-sizing validation input).
+/// parks (virtual retained, never reused) and the monotonic reservation
+/// frontier (the reservation-sizing validation input).
 /// Hidden: not semver-covered, may change or vanish.
 #[doc(hidden)]
 pub fn __debug_arena_detail() -> (u64, u64) {
@@ -1612,6 +1609,18 @@ pub fn __debug_arena_detail() -> (u64, u64) {
     #[cfg(not(all(unix, feature = "std")))]
     {
         (0, 0)
+    }
+}
+
+#[doc(hidden)]
+pub fn __debug_arena_coalesce_stats() -> (u64, u64, u64) {
+    #[cfg(all(unix, feature = "std"))]
+    {
+        crate::arena::coalesce_stats()
+    }
+    #[cfg(not(all(unix, feature = "std")))]
+    {
+        (0, 0, 0)
     }
 }
 
@@ -1771,6 +1780,21 @@ mod large_cache_tests {
         cache.cold_bytes += pages as usize * PAGE_SIZE;
         cache.index_cold(index, pages as usize);
         base
+    }
+
+    #[test]
+    fn zeroing_decision_honors_known_zero_state() {
+        let mut bytes = [0xA5; 64];
+        unsafe {
+            zero_large_allocation(bytes.as_mut_ptr(), bytes.len(), false);
+        }
+        assert!(bytes.iter().all(|&byte| byte == 0));
+
+        bytes.fill(0xA5);
+        unsafe {
+            zero_large_allocation(bytes.as_mut_ptr(), bytes.len(), true);
+        }
+        assert!(bytes.iter().all(|&byte| byte == 0xA5));
     }
 
     #[test]

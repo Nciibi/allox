@@ -41,6 +41,36 @@ fn zero_after_churn() {
 }
 
 #[test]
+fn large_calloc_reuses_discarded_zero_regions() {
+    const SIZE: usize = 300_000;
+    const COUNT: usize = 40;
+
+    unsafe {
+        let mut original = [std::ptr::null_mut(); COUNT];
+        for p in &mut original {
+            *p = allox::calloc(1, SIZE);
+            assert!(!p.is_null());
+            std::ptr::write_bytes(*p, 0xA5, SIZE);
+        }
+        for &p in &original {
+            allox::free(p);
+        }
+
+        let mut reused = [std::ptr::null_mut(); COUNT];
+        for actual in &mut reused {
+            *actual = allox::calloc(1, SIZE);
+            assert!(!actual.is_null());
+            assert!(std::slice::from_raw_parts(*actual, SIZE)
+                .iter()
+                .all(|&byte| byte == 0));
+        }
+        for p in reused {
+            allox::free(p);
+        }
+    }
+}
+
+#[test]
 fn medium_active_cache_flushes_and_reuses() {
     unsafe {
         for size in [20000usize, 32768, 50000] {

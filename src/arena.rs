@@ -103,6 +103,7 @@ extern "C" {
 /// would not survive. Offsets (not absolute bases) keep the entries
 /// position-independent garbage on reset paths.
 const EXACT_BUCKET_MAX: usize = 64;
+const COALESCE_MIN_PAGES: usize = 4;
 const EMPTY_BUCKET: u16 = u16::MAX;
 
 struct HoleStore {
@@ -110,6 +111,7 @@ struct HoleStore {
     bytes: usize,
     entries: [(usize, usize); HOLE_SLOTS],
     exact: [u16; EXACT_BUCKET_MAX + 1],
+    coalesce_dirty: bool,
 }
 
 impl HoleStore {
@@ -119,6 +121,7 @@ impl HoleStore {
             bytes: 0,
             entries: [(0, 0); HOLE_SLOTS],
             exact: [EMPTY_BUCKET; EXACT_BUCKET_MAX + 1],
+            coalesce_dirty: false,
         }
     }
 
@@ -138,6 +141,48 @@ impl HoleStore {
         self.exact[pages] = found;
     }
 
+    fn rebuild_exact(&mut self) {
+        self.exact = [EMPTY_BUCKET; EXACT_BUCKET_MAX + 1];
+        let mut i = 0;
+        while i < self.len {
+            let pages = self.entries[i].1;
+            if pages <= EXACT_BUCKET_MAX && self.exact[pages] == EMPTY_BUCKET {
+                self.exact[pages] = i as u16;
+            }
+            i += 1;
+        }
+    }
+
+    fn coalesce(&mut self) -> usize {
+        if !self.coalesce_dirty || self.len < 2 {
+            self.coalesce_dirty = false;
+            return 0;
+        }
+        self.entries[..self.len].sort_unstable_by_key(|entry| entry.0);
+        let old_len = self.len;
+        let mut write = 0;
+        let mut merged_pages = 0;
+        for read in 0..old_len {
+            let entry = self.entries[read];
+            if write != 0 {
+                let (previous_off, previous_pages) = self.entries[write - 1];
+                if previous_off + previous_pages * ARENA_ALIGN == entry.0 {
+                    self.entries[write - 1].1 += entry.1;
+                    merged_pages += entry.1;
+                    continue;
+                }
+            }
+            self.entries[write] = entry;
+            write += 1;
+        }
+        for index in write..old_len {
+            self.entries[index] = (0, 0);
+        }
+        self.len = write;
+        self.coalesce_dirty = false;
+        self.rebuild_exact();
+        merged_pages
+    }
 }
 
 pub(crate) struct Arena {
@@ -158,6 +203,12 @@ pub(crate) struct Arena {
     hole_splits: AtomicUsize,
     #[cfg(feature = "telemetry")]
     hole_empty_fastpath: AtomicUsize,
+    #[cfg(feature = "telemetry")]
+    hole_coalesce_checks: AtomicUsize,
+    #[cfg(feature = "telemetry")]
+    hole_coalesces: AtomicUsize,
+    #[cfg(feature = "telemetry")]
+    hole_coalesced_pages: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
@@ -189,6 +240,12 @@ impl Arena {
             hole_splits: AtomicUsize::new(0),
             #[cfg(feature = "telemetry")]
             hole_empty_fastpath: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
+            hole_coalesce_checks: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
+            hole_coalesces: AtomicUsize::new(0),
+            #[cfg(feature = "telemetry")]
+            hole_coalesced_pages: AtomicUsize::new(0),
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
@@ -357,6 +414,40 @@ impl Arena {
         }
     }
 
+    fn coalesce_holes(&self) {
+        let mut holes = self.holes.lock();
+        if !holes.coalesce_dirty {
+            return;
+        }
+        #[cfg(feature = "telemetry")]
+        self.hole_coalesce_checks.fetch_add(1, Ordering::Relaxed);
+        let merged_pages = holes.coalesce();
+        #[cfg(feature = "telemetry")]
+        if merged_pages > 0 {
+            self.hole_coalesces.fetch_add(1, Ordering::Relaxed);
+            self.hole_coalesced_pages
+                .fetch_add(merged_pages, Ordering::Relaxed);
+        }
+        #[cfg(not(feature = "telemetry"))]
+        let _ = merged_pages;
+        self.hole_count.store(holes.len, Ordering::Release);
+    }
+
+    unsafe fn commit_hole(&self, pages: usize, len: usize) -> *mut u8 {
+        let reuse = self.holes_take(pages);
+        if reuse.is_null() {
+            return ptr::null_mut();
+        }
+        if self.commit_range(reuse as usize, len) {
+            self.reuses.fetch_add(1, Ordering::Relaxed);
+            self.commits.fetch_add(1, Ordering::Relaxed);
+            reuse
+        } else {
+            self.holes_give(reuse, pages);
+            ptr::null_mut()
+        }
+    }
+
     /// Park a slice for reuse. Discard-then-park is the caller's job (needs
     /// exclusive ownership, which only the caller has pre-lock); see docs.
     /// Overflow discards nothing (caller already did) and abandons the entry:
@@ -371,6 +462,7 @@ impl Arena {
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
+            holes.coalesce_dirty = holes.len > 1;
             holes.bytes += bytes;
             if pages <= EXACT_BUCKET_MAX {
                 holes.exact[pages] = idx as u16;
@@ -403,17 +495,16 @@ impl Arena {
         if !self.ensure_init() {
             return (ptr::null_mut(), false);
         }
-        // Best-fit hole first: virtual already live and counted; the commit
-        // only restores fresh zeros, so this is NOT new virtual.
-        let reuse = self.holes_take(pages);
+        let reuse = self.commit_hole(pages, len);
         if !reuse.is_null() {
-            if self.commit_range(reuse as usize, len) {
-                self.reuses.fetch_add(1, Ordering::Relaxed);
-                self.commits.fetch_add(1, Ordering::Relaxed);
+            return (reuse, false);
+        }
+        if self.hole_count.load(Ordering::Acquire) > 1 {
+            self.coalesce_holes();
+            let reuse = self.commit_hole(pages, len);
+            if !reuse.is_null() {
                 return (reuse, false);
             }
-            self.holes_give(reuse, pages);
-            return (ptr::null_mut(), false);
         }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
         let start = self.start.load(Ordering::Relaxed);
@@ -421,7 +512,13 @@ impl Arena {
             let off = self.bump.load(Ordering::Relaxed);
             let end = match off.checked_add(len) {
                 Some(e) if e <= self.size => e,
-                _ => return (ptr::null_mut(), false), // exhausted: legacy fallback
+                _ => {
+                    if self.hole_count.load(Ordering::Acquire) > 1 {
+                        self.coalesce_holes();
+                    }
+                    let reuse = self.commit_hole(pages, len);
+                    return (reuse, false);
+                }
             };
             match self
                 .bump
@@ -497,6 +594,21 @@ impl Arena {
         }
     }
 
+    pub(crate) fn coalesce_stats(&self) -> (u64, u64, u64) {
+        #[cfg(feature = "telemetry")]
+        {
+            (
+                self.hole_coalesce_checks.load(Ordering::Relaxed) as u64,
+                self.hole_coalesces.load(Ordering::Relaxed) as u64,
+                self.hole_coalesced_pages.load(Ordering::Relaxed) as u64,
+            )
+        }
+        #[cfg(not(feature = "telemetry"))]
+        {
+            (0, 0, 0)
+        }
+    }
+
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
@@ -531,6 +643,10 @@ pub(crate) fn stats() -> (u64, u64, u64) {
 
 pub(crate) fn hole_stats() -> (u64, u64, u64, u64) {
     ARENA.hole_stats()
+}
+
+pub(crate) fn coalesce_stats() -> (u64, u64, u64) {
+    ARENA.coalesce_stats()
 }
 
 /// Reservation high-water in bytes (monotonic bump frontier). Hidden
@@ -781,6 +897,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn coalesce_sorts_and_rebuilds_exact_index() {
+        let mut holes = HoleStore::new();
+        holes.entries[0] = (3 * ARENA_ALIGN, 1);
+        holes.entries[1] = (ARENA_ALIGN, 1);
+        holes.entries[2] = (2 * ARENA_ALIGN, 1);
+        holes.len = 3;
+        holes.bytes = 3 * ARENA_ALIGN;
+        holes.coalesce_dirty = true;
+
+        assert_eq!(holes.coalesce(), 2);
+        assert_eq!(holes.len, 1);
+        assert_eq!(holes.entries[0], (ARENA_ALIGN, 3));
+        assert_eq!(holes.entries[1], (0, 0));
+        assert_eq!(holes.exact[3], 0);
+        assert_eq!(holes.exact[1], EMPTY_BUCKET);
+        assert!(!holes.coalesce_dirty);
+    }
+
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
     fn medium_table_resolves_cross_page_blocks() {
@@ -841,7 +976,7 @@ mod tests {
     // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
-    fn exhaustion_falls_back_to_null() {
+    fn exhaustion_reuses_coalesced_holes() {
         // 256 KiB arena = 4 pages: exact-supply then graceful nulls.
         let a = Arena::with_size(4 * ARENA_ALIGN);
         let mut bases = Vec::new();
@@ -853,6 +988,7 @@ mod tests {
         assert!(unsafe { a.commit(1).0 }.is_null());
         assert!(unsafe { a.commit(64).0 }.is_null());
         // Exact-size holes serve exact requests (no syscalls beyond commit).
+        let first = bases[0];
         for b in bases.drain(..) {
             unsafe { a.release(b, 1) };
         }
@@ -861,10 +997,13 @@ mod tests {
             assert!(!b.is_null(), "exact hole reuse");
             unsafe { a.release(b, 1) };
         }
-        // Documented v1 limitation: holes never coalesce, so four 1-page
-        // holes can't serve a 4-page request — the caller falls back to a
-        // legacy mapping (correct, just one syscall). Future: coalescing.
-        assert!(unsafe { a.commit(4).0 }.is_null());
+        let (coalesced, fresh) = unsafe { a.commit(4) };
+        assert_eq!(coalesced, first);
+        assert!(!fresh);
+        assert_eq!(a.hole_count.load(Ordering::Acquire), 0);
+        #[cfg(feature = "telemetry")]
+        assert_eq!(a.coalesce_stats(), (1, 1, 3));
+        unsafe { a.release(coalesced, 4) };
     }
 
     // Raw mmap/MAP_FIXED: Miri cannot execute these syscalls.
