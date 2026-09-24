@@ -627,3 +627,15 @@ Deferred to the next Phase 0 slice:
 - Full lock-wait, purge, and realloc-copy counters.
 - Process-global application benchmark binaries.
 - A real bare-metal memory backend.
+
+## Phase 1 implementation status
+
+Implemented and rechecked:
+
+- Exact per-chunk medium capacity modeling shared by sizing, refill, and all-class carve tests.
+- Capacity-derived refill caps, with the fixed 16-block cap retained only as an upper bound.
+- One owner claim per contiguous source span during medium refills.
+- Dedicated medium-only 1T/8T benchmark workloads.
+- Adversarial large-header, arena-direct-large, legacy-large fallback, telemetry symmetry, and producer-consumer drain regressions.
+
+The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host. Page-local active spans, medium metadata redesign, and larger target-eight geometry remain the next Phase 1 experiments.
