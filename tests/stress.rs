@@ -64,13 +64,14 @@ fn randomized_stress_multithreaded() {
                         }
                     }
                 }
+                let leaked = live.len();
                 for (p, size, tag) in live.iter() {
                     unsafe {
                         assert_eq!(*p.add(*size - 1), tag.wrapping_add(1), "corruption");
                         allox::free(*p);
                     }
                 }
-                0
+                leaked
             })
         })
         .collect();

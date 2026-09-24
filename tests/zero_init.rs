@@ -34,6 +34,9 @@ fn zero_after_churn() {
                 allox::free(ptrs.swap_remove(0));
             }
         }
+        for p in ptrs {
+            allox::free(p);
+        }
     }
 }
 

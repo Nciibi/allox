@@ -65,6 +65,9 @@ fn telemetry_accounting() {
         assert_eq!(rest - rest_before, 1);
         allox::free(a);
         allox::free(b);
+        allox::flush_current_thread();
+        let after = snapshot();
+        assert_eq!(after.per_class_allocs, mid.per_class_allocs);
     }
 
     // ---- Large allocations are counted too ----
