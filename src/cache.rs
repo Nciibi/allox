@@ -632,7 +632,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
-        // Claim every span in the batch for this thread (drift-cap owner).
+        let mut source = ptr::null_mut();
+        let mut single_span = true;
         {
             let mut b = chain;
             let mut claimed = ptr::null_mut();
@@ -641,18 +642,36 @@ impl ThreadCache {
                     break;
                 }
                 let span = SpanMaster::of(b);
-                if !span.is_null() && span != claimed {
-                    self.claim_span(span);
-                    claimed = span;
+                if span.is_null() {
+                    single_span = false;
+                } else {
+                    if source.is_null() {
+                        source = span;
+                    } else if source != span {
+                        single_span = false;
+                    }
+                    if span != claimed {
+                        self.claim_span(span);
+                        claimed = span;
+                    }
                 }
                 b = *b.cast::<*mut u8>();
             }
         }
         let first = chain;
-        let span = SpanMaster::of(first);
-        debug_assert!(!span.is_null());
         let rest = *first.cast::<*mut u8>();
         *first.cast::<*mut u8>() = ptr::null_mut();
+        if !single_span {
+            let bin = &mut self.mbins[mclass];
+            debug_assert!(bin.head.is_null());
+            bin.head = rest;
+            bin.len = count - 1;
+            self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+            self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
+            return (first, virgin);
+        }
+        let span = source;
+        debug_assert!(!span.is_null());
         let active = &mut self.mactive[mclass];
         debug_assert!(active.head.is_null());
         active.span = span;
