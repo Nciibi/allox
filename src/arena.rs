@@ -566,6 +566,20 @@ pub(crate) unsafe fn large_table_get(p: *mut u8) -> *mut LargeHeader {
     }
 }
 
+pub(crate) unsafe fn medium_table_get(p: *mut u8) -> *mut crate::page::SpanMaster {
+    match big_page_index(p) {
+        Some(idx) => {
+            let raw = BIG_MAP[idx].load(Ordering::Acquire);
+            if raw & MEDIUM_TABLE_TAG == 0 {
+                ptr::null_mut()
+            } else {
+                (raw & !MEDIUM_TABLE_TAG) as *mut crate::page::SpanMaster
+            }
+        }
+        None => ptr::null_mut(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
