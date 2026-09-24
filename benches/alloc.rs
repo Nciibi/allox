@@ -1169,9 +1169,9 @@ fn main() {
     }
 
     if !json_output {
-        let mut header = format!("{:<15} {:>11}", "workload", "allox");
-        for allocator in allocators.iter().skip(1) {
-            header.push_str(&format!(" {:>11}", allocator.0));
+        let mut header = format!("{:<15}", "workload");
+        for &allocator_index in &alloc_idx {
+            header.push_str(&format!(" {:>11}", allocators[allocator_index].0.trim()));
         }
         header.push_str(&format!(
             " {:>9} {:>10} {:>10} {:>10} {:>10} {:>16}",
