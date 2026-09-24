@@ -725,8 +725,8 @@ unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut Larg
     unregister_legacy_large(hdr);
 }
 
-/// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
-/// OS-zero (a brand-new mapping rather than a recycled one).
+/// Returns `(ptr, fresh, known_zeroed)` where `fresh` distinguishes new
+/// virtual memory and `known_zeroed` permits calloc to skip its memset.
 unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     let total = match size
         .checked_add(align)
