@@ -16,6 +16,12 @@ full suite + telemetry + no_std + release green. Sensitivity: non-arena
 targets (`cfg` gated out) route the same sizes through the large path and
 pass the identical assertions (`tests/big_spans.rs` covers both shapes).
 
+Phase-2 validation (2026-09-24, capped 2 s × 2 A/B): raising the big cap to
+512 KiB improved `large-only 1T` from 152K to 193K ops/s (+27%) while peak
+RSS moved from 23.3 MiB to 23.8 MiB. `mixed-all 1T` was flat within noise;
+`large-only 8T` remained within the noisy guard band, and all new boundary,
+`calloc`, realloc, and multithreaded big-span tests passed.
+
 ## 1. Problem
 
 `large-only 8T` (32K–256K uniform variance) runs 0.05–0.18x mimalloc with
@@ -60,7 +66,7 @@ Ground facts (verify against code before implementing; drift kills):
 
 ## 3. Requirements
 
-1. Serve `(65472, 262144]` (phase 1; 256K–1M stays large-path — §7) with
+1. Serve `(65472, 524288]` (phase 2; 512K–1M stays large-path — §7) with
    per-thread bins + sharded heap + cold retention, mirroring medium.
 2. `free(p)` with NO layout (C ABI) must locate the owning span from the
    bare pointer without faulting and without false positives.
