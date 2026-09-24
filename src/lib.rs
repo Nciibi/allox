@@ -855,6 +855,11 @@ unsafe fn dealloc_impl(p: *mut u8) {
     }
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(p, 1) {
+        let large = crate::arena::large_table_get(p);
+        if !large.is_null() {
+            free_large(p);
+            return;
+        }
         let big = crate::arena::big_table_get(p);
         if !big.is_null() {
             if (*big).contains(p) {
@@ -928,6 +933,11 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
             if large_header_of(p).is_none() {
                 corrupt_pointer();
             }
+            free_large(p);
+            return;
+        }
+        let large = crate::arena::large_table_get(p);
+        if !large.is_null() {
             free_large(p);
             return;
         }
