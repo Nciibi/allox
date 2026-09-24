@@ -235,13 +235,6 @@ const WORKLOADS: &[Workload] = &[
         kind: Kind::Standard,
     },
     Workload {
-        name: "huge-only 1T",
-        threads: 1,
-        size_range: (5 * 1024 * 1024, 8 * 1024 * 1024),
-        free_pct: 50,
-        kind: Kind::Standard,
-    },
-    Workload {
         name: "prodcons 8T",
         threads: 8,
         size_range: (16, 4096),
@@ -357,8 +350,6 @@ struct AlloxDiagnostics {
     big_unmaps: u64,
     abandoned_delta: u64,
     abandoned_total: u64,
-    granule_commits: u64,
-    granule_bytes: u64,
     arena_high_water: u64,
     probe: RunSample,
 }
@@ -1129,7 +1120,7 @@ fn append_json_allocator(
 
 fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
     output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"granule_commits\":{},\"granule_bytes\":{},\"arena_high_water\":{},\"probe\":",
+        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
         diagnostics.mapped_delta,
@@ -1143,8 +1134,6 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.big_unmaps,
         diagnostics.abandoned_delta,
         diagnostics.abandoned_total,
-        diagnostics.granule_commits,
-        diagnostics.granule_bytes,
         diagnostics.arena_high_water,
     ));
     append_json_sample(output, diagnostics.probe);
@@ -1284,7 +1273,7 @@ fn main() {
             header.push_str(&format!(" {:>11}", allocators[allocator_index].0.trim()));
         }
         header.push_str(&format!(
-            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>26}",
+            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>16}",
             "a/talc", "rssKiB", "peakRSS", "mapcalls", "unmaps", "arena"
         ));
         println!("{}", header);
@@ -1364,12 +1353,10 @@ fn main() {
             let s0 = allox::stats();
             let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
             let (d0abnd, _) = allox::__debug_arena_detail();
-            let (d0gc, d0gb) = allox::__debug_arena_granule_stats();
             let probe = run(allocators[allocator_index].1, workload, 1);
             let s1 = allox::stats();
             let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
             let (d1abnd, d1hi) = allox::__debug_arena_detail();
-            let (d1gc, d1gb) = allox::__debug_arena_granule_stats();
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
                 unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
@@ -1384,8 +1371,6 @@ fn main() {
                 big_unmaps: d1bmu.saturating_sub(d0bmu),
                 abandoned_delta: d1abnd.saturating_sub(d0abnd),
                 abandoned_total: d1abnd,
-                granule_commits: d1gc.saturating_sub(d0gc),
-                granule_bytes: d1gb.saturating_sub(d0gb),
                 arena_high_water: d1hi,
                 probe,
             })
@@ -1433,11 +1418,9 @@ fn main() {
                 || "-".to_string(),
                 |diagnostics| {
                     format!(
-                        "abnd+{}/s tot{} g{}/{}MiB hi{}MiB",
+                        "abnd+{}/s tot{} hi{}MiB",
                         diagnostics.abandoned_delta,
                         diagnostics.abandoned_total,
-                        diagnostics.granule_commits,
-                        diagnostics.granule_bytes / (1024 * 1024),
                         diagnostics.arena_high_water / (1024 * 1024)
                     )
                 },
@@ -1447,7 +1430,7 @@ fn main() {
                 row.push_str(&format_optional(medians[allocator_index]));
             }
             row.push_str(&format!(
-                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>26}",
+                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>16}",
                 ratio,
                 current_rss_kib(),
                 peak_rss_kib(),
