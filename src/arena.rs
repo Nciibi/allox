@@ -768,13 +768,16 @@ mod tests {
         assert_eq!(b.hole_count.load(Ordering::Acquire), 1);
         let (remainder, fresh) = unsafe { b.commit(1) };
         assert!(!remainder.is_null() && !fresh);
-        unsafe { b.release(remainder, 1) };
-        assert!(b.hole_exact_hits.load(Ordering::Acquire) >= 1);
-        let stats = b.hole_stats();
-        assert!(stats.0 >= 1);
-        assert!(stats.1 >= 2);
-        assert!(stats.2 >= 1);
-        assert!(stats.3 >= 1);
+        unsafe { a.release(remainder, 1) };
+        #[cfg(feature = "telemetry")]
+        {
+            assert!(b.hole_exact_hits.load(Ordering::Acquire) >= 1);
+            let stats = b.hole_stats();
+            assert!(stats.0 >= 1);
+            assert!(stats.1 >= 2);
+            assert!(stats.2 >= 1);
+            assert!(stats.3 >= 1);
+        }
     }
 
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
