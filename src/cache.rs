@@ -1090,6 +1090,23 @@ impl ThreadCache {
                     mbest = mclass;
                 }
             }
+            #[cfg(all(unix, feature = "std"))]
+            let mut active_bbest = usize::MAX;
+            #[cfg(all(unix, feature = "std"))]
+            let mut active_bbest_bytes = 0usize;
+            #[cfg(all(unix, feature = "std"))]
+            for (bclass, size) in BIG_CLASSES.iter().enumerate() {
+                let active_bytes = self.bactive[bclass].len as usize * size;
+                if self.bactive[bclass].len > 0 && active_bytes > active_bbest_bytes {
+                    active_bbest_bytes = active_bytes;
+                    active_bbest = bclass;
+                }
+            }
+            #[cfg(all(unix, feature = "std"))]
+            if active_bbest != usize::MAX {
+                self.flush_active_big(active_bbest);
+                continue;
+            }
             // Big bins outrank medium the same way (arena targets only).
             #[cfg(all(unix, feature = "std"))]
             let mut bbest = usize::MAX;
