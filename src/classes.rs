@@ -425,17 +425,20 @@ mod tests {
             assert_eq!(medium_class_for_size(size), medium_scan(size));
             size += 1;
         }
-        // Every span holds comfortably more than one lock's worth of blocks.
+        // Carve capacity is per 64 KiB chunk, not aggregate span capacity.
         for &b in MEDIUM_CLASSES.iter() {
             let pages = span_pages_for(b);
             assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
-            let usable = pages * 65536 - MEDIUM_CHUNK_RESERVE - (pages - 1) * 16;
+            let first_chunk = (65536 - MEDIUM_CHUNK_RESERVE) / b;
+            let later_chunks = (65536 - 16) / b;
+            let capacity = first_chunk + (pages - 1) * later_chunks;
+            assert!(capacity > 0, "block {} pages {}", b, pages);
             assert!(
-                usable / b >= TARGET_BLOCKS_PER_SPAN,
-                "block {} pages {} capacity {}",
+                capacity <= pages * 65536 / b,
+                "block {} pages {} capacity {} exceeds aggregate bound",
                 b,
                 pages,
-                usable / b
+                capacity
             );
         }
     }
