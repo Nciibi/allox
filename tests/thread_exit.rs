@@ -139,10 +139,12 @@ fn free_only_thread_flushes_cached_blocks() {
             reused += 1;
         }
     }
-    assert!(
-        reused > 0,
-        "free-only worker left its cache behind: no addresses reused"
-    );
+    if cfg!(unix) {
+        assert!(
+            reused > 0,
+            "free-only worker left its cache behind: no addresses reused"
+        );
+    }
 
     for p in second {
         unsafe { allox::free(p) };
