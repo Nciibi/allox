@@ -727,7 +727,7 @@ unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut Larg
 
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
 /// OS-zero (a brand-new mapping rather than a recycled one).
-unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
+unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     let total = match size
         .checked_add(align)
         .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
