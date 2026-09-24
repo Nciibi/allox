@@ -422,7 +422,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// Producer-consumer: each thread allocates, then hands every other block to
@@ -507,7 +507,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     }
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-    total as f64 / seconds as f64
+    total
 }
 
 /// Spawn churn: loop spawning short-lived threads that burst-allocate then
@@ -565,8 +565,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
             ops += h.join().unwrap();
         }
     }
-    // Elapsed-time normalisation: caller divides by seconds.
-    ops as f64 / seconds as f64
+    ops
 }
 
 /// Spawn-exit with no allocator interaction: isolates pthread spawn/join
@@ -590,7 +589,7 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
         }
         threads += wl.threads as u64;
     }
-    threads as f64 / seconds as f64
+    threads
 }
 
 /// JSON-ish: per document, allocate ~200 tiny buffers (strings/numbers,
@@ -663,7 +662,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// Request-handler: per request, ~100 tiny allocs (8–128 B headers/strings)
@@ -720,7 +719,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// ECS-archetype: 4 large component buffers (64 KiB–1 MiB) repeatedly
@@ -798,7 +797,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 fn median(v: &mut [f64]) -> f64 {
