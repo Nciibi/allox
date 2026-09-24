@@ -890,12 +890,36 @@ impl ThreadCache {
             }
         }
         let first = chain;
+        let source = crate::arena::big_table_get(first);
+        let mut single = !source.is_null();
+        let mut cursor = *first.cast::<*mut u8>();
+        for _ in 1..count {
+            if cursor.is_null() || crate::arena::big_table_get(cursor) != source {
+                single = false;
+                break;
+            }
+            cursor = *cursor.cast::<*mut u8>();
+        }
         let rest = *first.cast::<*mut u8>();
-        let bin = &mut self.bigbins[bclass];
-        bin.head = rest;
-        bin.len += count - 1;
-        self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
-        self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
+        *first.cast::<*mut u8>() = ptr::null_mut();
+        if single {
+            let active = &mut self.bactive[bclass];
+            debug_assert!(active.head.is_null());
+            active.span = source;
+            active.base = source as usize;
+            active.end = source as usize + (*source).mapped_bytes();
+            active.head = rest;
+            active.len = count - 1;
+            active.virgin = if virgin { count - 1 } else { 0 };
+            self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.bvirgin[bclass] = 0;
+        } else {
+            let bin = &mut self.bigbins[bclass];
+            bin.head = rest;
+            bin.len += count - 1;
+            self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
+        }
         (first, virgin)
     }
 
