@@ -248,7 +248,8 @@ unsafe fn dealloc_small(p: *mut u8) {
     );
 }
 
-unsafe fn alloc_medium(mclass: usize) -> *mut u8 {    with_cache(
+unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
+    with_cache(
         |c| c.alloc_medium(mclass),
         || take_one_medium(mclass).0,
     )
