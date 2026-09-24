@@ -1344,25 +1344,41 @@ unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
     if p as usize <= base || p as usize >= base + npages * PAGE_SIZE {
         invalid("allox: medium dealloc outside owning span");
     }
-    // Block must lie inside its page-chunk, clear of headers.
-    let rel = (p as usize - base) / PAGE_SIZE;
-    let chunk = base + rel * PAGE_SIZE;
-    let (start, end) = if rel == 0 {
-        (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
-    } else {
-        // Must really be a sub-page of this span.
-        if *(chunk as *const u64) != crate::page::SPAN_SUBMAGIC {
-            invalid("allox: medium dealloc through corrupt sub-page");
+    #[cfg(all(unix, feature = "std"))]
+    let arena_owned = crate::arena::contains(
+        base as *mut u8,
+        npages * PAGE_SIZE,
+    );
+    #[cfg(not(all(unix, feature = "std")))]
+    let arena_owned = false;
+    if arena_owned {
+        let start = base + SPAN_MASTER_SIZE;
+        let end = base + npages * PAGE_SIZE;
+        if (p as usize) < start || (p as usize) + block_size > end {
+            invalid("allox: medium dealloc of misaligned interior pointer");
         }
-        (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
-    };
-    if (p as usize) < start || (p as usize) + block_size > end {
-        invalid("allox: medium dealloc of misaligned interior pointer");
+        if (p as usize - start) % block_size != 0 {
+            invalid("allox: medium dealloc of misaligned interior pointer");
+        }
+    } else {
+        let rel = (p as usize - base) / PAGE_SIZE;
+        let chunk = base + rel * PAGE_SIZE;
+        let (start, end) = if rel == 0 {
+            (chunk + SPAN_MASTER_SIZE, chunk + PAGE_SIZE)
+        } else {
+            if *(chunk as *const u64) != crate::page::SPAN_SUBMAGIC {
+                invalid("allox: medium dealloc through corrupt sub-page");
+            }
+            (chunk + SPAN_SUB_SIZE, chunk + PAGE_SIZE)
+        };
+        if (p as usize) < start || (p as usize) + block_size > end {
+            invalid("allox: medium dealloc of misaligned interior pointer");
+        }
+        if (p as usize - start) % block_size != 0 {
+            invalid("allox: medium dealloc of misaligned interior pointer");
+        }
     }
-    if (p as usize - start) % block_size != 0 {
-        invalid("allox: medium dealloc of misaligned interior pointer");
-    }
-    let _ = PAGE_MASK; // masking already done by SpanMaster::of
+    let _ = PAGE_MASK;
     let _guard = crate::heap::MEDIUM_HEAP.debug_lock_medium(mclass);
     let mut cur = (*span).free_head;
     let mut steps = (*span).free_count;
