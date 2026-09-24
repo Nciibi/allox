@@ -416,9 +416,9 @@ impl Arena {
             return (ptr::null_mut(), false);
         }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
-        let start = self.start.load(Relaxed);
+        let start = self.start.load(Ordering::Relaxed);
         loop {
-            let off = self.bump.load(Relaxed);
+            let off = self.bump.load(Ordering::Relaxed);
             let end = match off.checked_add(len) {
                 Some(e) if e <= self.size => e,
                 _ => return (ptr::null_mut(), false), // exhausted: legacy fallback
