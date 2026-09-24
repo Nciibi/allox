@@ -923,6 +923,14 @@ unsafe fn dealloc_impl(p: *mut u8) {
             free_large(p);
             return;
         }
+        let medium = crate::arena::medium_table_get(p);
+        if !medium.is_null() {
+            if (*medium).contains(p) {
+                dealloc_medium(p, medium);
+                return;
+            }
+            corrupt_pointer();
+        }
         let big = crate::arena::big_table_get(p);
         if !big.is_null() {
             if (*big).contains(p) {
