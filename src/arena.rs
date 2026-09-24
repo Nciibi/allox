@@ -231,7 +231,8 @@ impl Arena {
     }
 
     /// Pop a best-fit hole of at least `pages`. Returns the base address with
-    /// the entry removed, or null. Lock-scoped; caller commits afterwards.
+    /// the entry removed or split, or null. Lock-scoped; caller commits
+    /// afterwards.
     fn holes_take(&self, pages: usize) -> *mut u8 {
         let mut holes = self.holes.lock();
         let mut best: Option<usize> = None;
@@ -251,12 +252,16 @@ impl Arena {
         }
         match best {
             Some(i) => {
-                let last = holes.len - 1;
                 let (off, p) = holes.entries[i];
-                holes.entries[i] = holes.entries[last];
-                holes.entries[last] = (0, 0);
-                holes.len = last;
-                holes.bytes -= p * ARENA_ALIGN;
+                holes.bytes -= pages * ARENA_ALIGN;
+                if p > pages {
+                    holes.entries[i] = (off + pages * ARENA_ALIGN, p - pages);
+                } else {
+                    let last = holes.len - 1;
+                    holes.entries[i] = holes.entries[last];
+                    holes.entries[last] = (0, 0);
+                    holes.len = last;
+                }
                 (self.start.load(Ordering::Relaxed) + off) as *mut u8
             }
             None => ptr::null_mut(),
@@ -530,7 +535,7 @@ mod tests {
                 bclass: 0,
                 flags: 0,
                 npages: 4,
-                owner: 0,
+                owner: core::sync::atomic::AtomicU32::new(0),
             };
             let mptr = &mut master as *mut BigMaster;
             big_table_set(raw, 4, mptr);
@@ -660,6 +665,11 @@ mod tests {
         // ...and the 15-page remainder must serve a later request.
         let rest = unsafe { a.commit(15).0 };
         assert!(!rest.is_null(), "split remainder lost");
+        assert_eq!(
+            rest as usize,
+            small as usize + ARENA_ALIGN,
+            "oversized hole was not split at the requested boundary"
+        );
         unsafe {
             a.release(small, 1);
             a.release(rest, 15);
