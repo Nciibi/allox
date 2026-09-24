@@ -82,4 +82,41 @@ fn telemetry_accounting() {
         assert_eq!(delta(&after, &before, |t| t.large_allocs), 1);
         assert_eq!(delta(&after, &before, |t| t.total_frees), 1);
     }
+
+    allox::flush_current_thread();
+    let before = snapshot();
+    unsafe {
+        let mut regions = [core::ptr::null_mut(); 9];
+        for p in &mut regions {
+            *p = allox::malloc(1 << 20);
+            assert!(!p.is_null());
+        }
+        for p in regions {
+            allox::free(p);
+        }
+        let mut drain = [core::ptr::null_mut(); 8];
+        for p in &mut drain {
+            *p = allox::aligned_alloc(32, 1);
+            assert!(!p.is_null());
+        }
+        let reused = allox::malloc(1 << 20);
+        assert!(!reused.is_null());
+        for p in drain {
+            allox::free(p);
+        }
+        allox::free(reused);
+        allox::flush_current_thread();
+    }
+    let after = snapshot();
+    assert_eq!(delta(&after, &before, |t| t.large_allocs), 18);
+    assert_eq!(delta(&after, &before, |t| t.total_allocs), 18);
+    assert_eq!(delta(&after, &before, |t| t.total_frees), 18);
+    assert_eq!(
+        delta(&after, &before, |t| t.allocated_bytes),
+        10 * (1 << 20) + 8
+    );
+    assert_eq!(
+        delta(&after, &before, |t| t.freed_bytes),
+        10 * (1 << 20) + 8
+    );
 }
