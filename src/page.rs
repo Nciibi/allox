@@ -360,8 +360,8 @@ pub(crate) unsafe fn pop_block(head: &mut *mut u8) -> Option<*mut u8> {
 mod tests {
     use super::*;
     use crate::classes::{
-        big_span_pages_for, medium_capacity_for, span_pages_for, BIG_CLASSES, MEDIUM_CLASSES,
-        MIN_ALIGN, NUM_BIG, NUM_MEDIUM,
+        big_span_pages_for, medium_capacity_legacy_for, span_pages_for, BIG_CLASSES,
+        MEDIUM_CLASSES, MIN_ALIGN, NUM_BIG, NUM_MEDIUM,
     };
 
     /// 64 KiB-aligned multi-page buffer without OS mmap (Miri-safe).
