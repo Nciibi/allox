@@ -655,4 +655,4 @@ Implemented the first arena-reuse slice:
 - Hole scan, hit, split, and empty-fast-path counters are exposed through hidden diagnostics.
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 
-Exact-size buckets, coalescing, larger commit granules, and large-region indexing remain the next Phase 2 experiments.
+The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiments are exact-size extent buckets/coalescing and replacing the linear large-region cache scan; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
