@@ -294,7 +294,10 @@ impl Arena {
             }
             if index < holes.len && holes.entries[index].1 == pages {
                 best = Some(index);
-                exact_hit = true;
+                #[cfg(feature = "telemetry")]
+                {
+                    exact_hit = true;
+                }
             }
         }
         let mut scanned = 0usize;
@@ -321,6 +324,7 @@ impl Arena {
             Some(i) => {
                 let (off, p) = holes.entries[i];
                 holes.bytes -= pages * ARENA_ALIGN;
+                #[cfg(feature = "telemetry")]
                 self.hole_hits.fetch_add(1, Ordering::Relaxed);
                 if p > pages {
                     holes.entries[i] = (off + pages * ARENA_ALIGN, p - pages);
@@ -329,6 +333,7 @@ impl Arena {
                     if remainder <= EXACT_BUCKET_MAX {
                         holes.exact[remainder] = i as u16;
                     }
+                    #[cfg(feature = "telemetry")]
                     self.hole_splits.fetch_add(1, Ordering::Relaxed);
                 } else {
                     let last = holes.len - 1;
