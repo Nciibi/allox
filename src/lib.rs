@@ -1315,6 +1315,13 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         if !large.is_null() {
             return (*large).mapped_size.saturating_sub(p as usize - (*large).base as usize);
         }
+        let medium = crate::arena::medium_table_get(p);
+        if !medium.is_null() {
+            if (*medium).contains(p) {
+                return classes::MEDIUM_CLASSES[(*medium).mclass as usize];
+            }
+            return 0;
+        }
         let big = crate::arena::big_table_get(p);
         if !big.is_null() {
             if (*big).contains(p) {
