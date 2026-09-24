@@ -1434,12 +1434,10 @@ fn main() {
             let s0 = allox::stats();
             let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
             let (d0abnd, _) = allox::__debug_arena_detail();
-            let (d0cc, d0cm, d0cp) = allox::__debug_arena_coalesce_stats();
             let probe = run(allocators[allocator_index].1, workload, 1);
             let s1 = allox::stats();
             let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
             let (d1abnd, d1hi) = allox::__debug_arena_detail();
-            let (d1cc, d1cm, d1cp) = allox::__debug_arena_coalesce_stats();
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
                 unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
