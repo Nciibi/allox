@@ -1102,7 +1102,15 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     // Large-offset check first (fault-safe for every live pointer; masked
     // reads can dangle outside unaligned large regions — see dealloc_impl).
     // Large resizes always go alloc-copy-free below via usable_size.
-    let old_large_ok = large_header_of(p).is_some();
+    #[cfg(all(unix, feature = "std"))]
+    let old_arena = crate::arena::contains(p, 1);
+    #[cfg(not(all(unix, feature = "std")))]
+    let old_arena = false;
+    let old_large_ok = if old_arena {
+        false
+    } else {
+        large_header_of(p).is_some()
+    };
     if !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
