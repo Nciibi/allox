@@ -815,8 +815,8 @@ pub(crate) static MEDIUM_HEAP: MediumHeap = MediumHeap::new();
 // ---------------------------------------------------------------------------
 
 /// Blocks moved from big spans into a thread cache per slow-path take.
-/// Smaller than the medium batch: big blocks are huge (up to 256 KiB), so
-/// 4 per refill already moves ~1 MiB; measure 2/4/8 during tuning.
+/// Smaller than the medium batch: big blocks are huge (up to 512 KiB), so
+/// 4 per refill already moves ~2 MiB; measure 2/4/8 during tuning.
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const BIG_REFILL_BATCH: u32 = 4;
 

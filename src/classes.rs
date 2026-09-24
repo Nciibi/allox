@@ -255,10 +255,10 @@ const BIG_MASTER_RESERVE: usize = 64;
 #[cfg(all(not(target_pointer_width = "64"), unix, feature = "std"))]
 const BIG_MASTER_RESERVE: usize = 48;
 
-/// Largest big block (explicit top class, phase 1 cap). The 1T bench tail
-/// past 256 KiB stays on the large path; revisit with its own numbers.
+/// Largest big block (explicit top class, phase 2 cap). Requests above this
+/// stay on the large path.
 #[cfg(all(unix, feature = "std"))]
-pub(crate) const BIG_BLOCK_CAP: usize = 262144;
+pub(crate) const BIG_BLOCK_CAP: usize = 524288;
 
 /// Blocks packed per big span at carve time (same amortization rationale
 /// as `TARGET_BLOCKS_PER_SPAN`; an 8 x 256 KiB span is ~2 MiB).
@@ -283,7 +283,7 @@ const fn count_big() -> usize {
 /// Number of big size classes: the geometric chain plus one explicit top
 /// class at exactly BIG_BLOCK_CAP when the chain stops short (same tail
 /// argument as TOP_MEDIUM_BLOCK: without it, requests in
-/// (geo_last, 262144] would fall to the mmap large path).
+/// (geo_last, 524288] would fall to the mmap large path).
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const NUM_BIG: usize = {
     let mut last = medium_step(MAX_MEDIUM_BLOCK);
