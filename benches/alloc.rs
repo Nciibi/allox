@@ -490,11 +490,7 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
 /// by realloc doubling (64 B → 8 KiB). Frees everything still live at
 /// document end. Models serde-style parse churn through GlobalAlloc
 /// (realloc exercises the same-class identity + grow paths).
-fn run_json<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> f64 {
+fn run_json<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -502,8 +498,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0x150A ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0x150A ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         // One document: tiny values + growing buffers.
@@ -573,8 +568,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0xBEACE ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0xBEACE ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     while Instant::now() < stop {
                         let mut live: Vec<(*mut u8, Layout)> = Vec::with_capacity(128);
@@ -619,11 +613,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
 /// realloc-grown (doubling, then freed), plus steady small component churn
 /// (16–256 B, 50% frees). Models game-engine storage: realloc growth path
 /// with big regions plus background small churn.
-fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> f64 {
+fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -631,8 +621,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng =
-                        Rng(0xEC5 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
+                    let mut rng = Rng(0xEC5 ^ ((t as u64 + 1).wrapping_mul(0xD1B54A32D192ED03)));
                     let mut ops = 0u64;
                     let mut small_live: Vec<(*mut u8, Layout)> = Vec::with_capacity(512);
                     while Instant::now() < stop {
@@ -758,10 +747,7 @@ fn main() {
     allocators.push(Named("jemalloc", &JEMALLOC));
 
     // Header: fixed probe columns after one relative column (a/talc).
-    let mut hdr = format!(
-        "{:<15} {:>11}",
-        "workload", "allox"
-    );
+    let mut hdr = format!("{:<15} {:>11}", "workload", "allox");
     for a in allocators.iter().skip(1) {
         hdr.push_str(&format!(" {:>11}", a.0));
     }
@@ -852,21 +838,14 @@ fn main() {
         }
         row.push_str(&format!(
             " {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
-            if talc_s > 0.0 {
-                allox_s / talc_s
-            } else {
-                0.0
-            },
+            if talc_s > 0.0 { allox_s / talc_s } else { 0.0 },
             format!(
                 "{}/{}/{}/{}/a{}/b{}",
                 map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps
             ),
             format!("{}/{}/b{}", unmap_delta, span_unmaps, big_unmaps),
             rss,
-            format!(
-                "abnd+{}/s tot{} hi{}MiB",
-                abnd_rate, d1abnd, hi_mib
-            ),
+            format!("abnd+{}/s tot{} hi{}MiB", abnd_rate, d1abnd, hi_mib),
         ));
         println!("{}", row);
     }
