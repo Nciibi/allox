@@ -437,25 +437,11 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
     alloc_large_ex(size, align).0
 }
 
-/// Map a large region: arena commit first (1 VMA op, 64 KiB-aligned by
-/// construction), legacy `map_any` fallback when the arena is unavailable
-/// (non-unix, reservation failure, bump exhaustion). Fresh zeros either way.
-///
-/// Returns `(base, fresh)`: `fresh` is true for genuinely new virtual
-/// (arena bump or legacy map) and false for recommitted arena holes. The
-/// caller counts one mapping op (`MAP_CALLS`) per non-null return but live
-/// virtual (`MAPPED_PAGES`) only when `fresh` is set — hole releases never
-/// decrement it, so counting reuses would drift it into a cumulative
-/// counter under churn (see `arena::Arena::commit`).
 #[inline]
 pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
-    #[cfg(all(unix, feature = "std"))]
-    {
-        let (base, fresh) =
-            crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
-        if !base.is_null() {
-            return (base, fresh);
-        }
+    let base = sys::map_any(mapped);
+    (base, !base.is_null())
+}
     }
     let base = sys::map_any(mapped);
     (base, !base.is_null())
