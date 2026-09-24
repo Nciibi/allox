@@ -403,32 +403,25 @@ impl Arena {
         if !self.ensure_init() {
             return (ptr::null_mut(), false);
         }
-        let reuse = self.commit_hole(pages, len);
+        // Best-fit hole first: virtual already live and counted; the commit
+        // only restores fresh zeros, so this is NOT new virtual.
+        let reuse = self.holes_take(pages);
         if !reuse.is_null() {
-            return (reuse, false);
-        }
-        if pages >= COALESCE_MIN_PAGES && self.hole_count.load(Ordering::Acquire) > 1 {
-            self.coalesce_holes();
-            let reuse = self.commit_hole(pages, len);
-            if !reuse.is_null() {
+            if self.commit_range(reuse as usize, len) {
+                self.reuses.fetch_add(1, Ordering::Relaxed);
+                self.commits.fetch_add(1, Ordering::Relaxed);
                 return (reuse, false);
             }
+            self.holes_give(reuse, pages);
+            return (ptr::null_mut(), false);
         }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
-        let start = self.start.load(Ordering::Relaxed);
+        let start = self.start.load(Relaxed);
         loop {
-            let off = self.bump.load(Ordering::Relaxed);
+            let off = self.bump.load(Relaxed);
             let end = match off.checked_add(len) {
                 Some(e) if e <= self.size => e,
-                _ => {
-                    if pages >= COALESCE_MIN_PAGES
-                        && self.hole_count.load(Ordering::Acquire) > 1
-                    {
-                        self.coalesce_holes();
-                    }
-                    let reuse = self.commit_hole(pages, len);
-                    return (reuse, false);
-                }
+                _ => return (ptr::null_mut(), false), // exhausted: legacy fallback
             };
             match self
                 .bump
