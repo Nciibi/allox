@@ -1,8 +1,8 @@
 //! Comparative allocator benchmark: allox vs system vs talc vs C allocators.
 //!
 //! All allocators run identical workloads; results are ops/s plus a
-//! relative table. The process-global harness allocator is the system
-//! allocator, while each measured allocator is called directly.
+//! relative table. The harness itself allocates through the process global
+//! (= allox); that overhead is identical for all measured allocators.
 //!
 //! P0 honest scoreboard: mimalloc + snmalloc are dev-only comparators — the
 //! library itself stays zero-deps / no-C. jemalloc is behind the optional
@@ -11,15 +11,12 @@
 //!
 //! Run with: cargo bench
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
-//! Machine-readable output: BENCH_OUTPUT=json cargo bench
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
-static HARNESS: System = System;
-
-static ALLOX: allox::Allox = allox::Allox;
+static GLOBAL: allox::Allox = allox::Allox;
 
 use spinning_top::RawSpinlock;
 use talc::{source::GlobalAllocSource, TalcLock};
@@ -40,18 +37,12 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         dlmalloc::GlobalDlmalloc.dealloc(p, l)
     }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        dlmalloc::GlobalDlmalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        dlmalloc::GlobalDlmalloc.alloc_zeroed(l)
-    }
 }
 
 static DLMALLOC: Dlmalloc = Dlmalloc;
 
-// C comparators (dev-only; lib stays zero-C). Wrappers delegate the native
-// GlobalAlloc operations so every workload below runs equivalently.
+// C comparators (dev-only; lib stays zero-C). Wrappers delegate alloc/dealloc
+// so every workload below runs identically through each allocator.
 struct Mimalloc;
 unsafe impl GlobalAlloc for Mimalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
@@ -59,12 +50,6 @@ unsafe impl GlobalAlloc for Mimalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         mimalloc::MiMalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        mimalloc::MiMalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        mimalloc::MiMalloc.alloc_zeroed(l)
     }
 }
 static MIMALLOC: Mimalloc = Mimalloc;
@@ -76,12 +61,6 @@ unsafe impl GlobalAlloc for Snmalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         snmalloc_rs::SnMalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        snmalloc_rs::SnMalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        snmalloc_rs::SnMalloc.alloc_zeroed(l)
     }
 }
 static SNMALLOC: Snmalloc = Snmalloc;
@@ -96,12 +75,6 @@ unsafe impl GlobalAlloc for Jemalloc {
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         tikv_jemallocator::Jemalloc.dealloc(p, l)
-    }
-    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
-        tikv_jemallocator::Jemalloc.realloc(p, l, new_size)
-    }
-    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-        tikv_jemallocator::Jemalloc.alloc_zeroed(l)
     }
 }
 #[cfg(feature = "bench-jemalloc")]
@@ -263,89 +236,8 @@ const WORKLOADS: &[Workload] = &[
     },
 ];
 
-#[derive(Clone, Copy, Debug)]
-struct RunSample {
-    ops: u64,
-    elapsed: Duration,
-    rss_kib: u64,
-    peak_rss_kib: u64,
-}
-
-impl RunSample {
-    fn from_start(ops: u64, start: Instant) -> Self {
-        let elapsed = start.elapsed();
-        Self {
-            ops,
-            elapsed,
-            rss_kib: current_rss_kib(),
-            peak_rss_kib: peak_rss_kib(),
-        }
-    }
-
-    fn ops_per_sec(&self) -> f64 {
-        self.ops as f64 / self.elapsed.as_secs_f64().max(f64::MIN_POSITIVE)
-    }
-
-    fn elapsed_ns(&self) -> u64 {
-        self.elapsed.as_nanos().min(u64::MAX as u128) as u64
-    }
-
-    fn ns_per_op(&self) -> f64 {
-        if self.ops == 0 {
-            0.0
-        } else {
-            self.elapsed_ns() as f64 / self.ops as f64
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TimingSummary {
-    mean_ns_per_op: f64,
-    min_run_ns_per_op: f64,
-    max_run_ns_per_op: f64,
-    p50_run_ns_per_op: f64,
-    p95_run_ns_per_op: f64,
-    p99_run_ns_per_op: f64,
-    p99_9_run_ns_per_op: f64,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SampleSummary {
-    median_ops_per_sec: f64,
-    mean_ops_per_sec: f64,
-    min_ops_per_sec: f64,
-    max_ops_per_sec: f64,
-    total_ops: u64,
-    total_elapsed_ns: u64,
-    timing: TimingSummary,
-}
-
-struct AlloxDiagnostics {
-    map_delta: u64,
-    unmap_delta: u64,
-    mapped_delta: i64,
-    span_maps: u64,
-    span_unmaps: u64,
-    small_maps: u64,
-    small_unmaps: u64,
-    arena_reuses: u64,
-    arena_commits: u64,
-    big_maps: u64,
-    big_unmaps: u64,
-    abandoned_delta: u64,
-    abandoned_total: u64,
-    arena_high_water: u64,
-    probe: RunSample,
-}
-
-fn run<A: GlobalAlloc + Sync + ?Sized>(
-    alloc: &'static A,
-    wl: &Workload,
-    seconds: u64,
-) -> RunSample {
-    let start = Instant::now();
-    let ops = match wl.kind {
+fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
+    match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
@@ -353,15 +245,14 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
         Kind::Json => run_json(alloc, wl, seconds),
         Kind::Request => run_request(alloc, wl, seconds),
         Kind::Ecs => run_ecs(alloc, wl, seconds),
-    };
-    RunSample::from_start(ops, start)
+    }
 }
 
 fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let threads = wl.threads;
@@ -423,7 +314,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total
+    total as f64 / seconds as f64
 }
 
 /// Producer-consumer: each thread allocates, then hands every other block to
@@ -434,7 +325,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     use std::sync::mpsc::{channel, Receiver, Sender};
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
@@ -508,7 +399,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     }
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-    total
+    total as f64 / seconds as f64
 }
 
 /// Spawn churn: loop spawning short-lived threads that burst-allocate then
@@ -519,7 +410,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let (min, max) = wl.size_range;
@@ -566,13 +457,14 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
             ops += h.join().unwrap();
         }
     }
-    ops
+    // Elapsed-time normalisation: caller divides by seconds.
+    ops as f64 / seconds as f64
 }
 
 /// Spawn-exit with no allocator interaction: isolates pthread spawn/join
 /// latency so spawn-churn numbers can be decomposed. Reported in threads/s
 /// (not alloc ops/s) — expect identical scores for every comparator.
-fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
+fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let mut threads = 0u64;
     while Instant::now() < stop {
@@ -590,7 +482,7 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
         }
         threads += wl.threads as u64;
     }
-    threads
+    threads as f64 / seconds as f64
 }
 
 /// JSON-ish: per document, allocate ~200 tiny buffers (strings/numbers,
@@ -602,7 +494,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -663,7 +555,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total
+    total as f64 / seconds as f64
 }
 
 /// Request-handler: per request, ~100 tiny allocs (8–128 B headers/strings)
@@ -673,7 +565,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -720,7 +612,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total
+    total as f64 / seconds as f64
 }
 
 /// ECS-archetype: 4 large component buffers (64 KiB–1 MiB) repeatedly
@@ -731,7 +623,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> u64 {
+) -> f64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -798,354 +690,46 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total
+    total as f64 / seconds as f64
 }
 
 fn median(v: &mut [f64]) -> f64 {
-    percentile(v, 0.5)
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v[v.len() / 2]
 }
 
-fn percentile(v: &mut [f64], p: f64) -> f64 {
-    if v.is_empty() {
-        return 0.0;
-    }
-    v.sort_by(|a, b| a.total_cmp(b));
-    let index = (((v.len() - 1) as f64) * p).round() as usize;
-    v[index.min(v.len() - 1)]
-}
-
-fn summarize(samples: &[RunSample]) -> SampleSummary {
-    if samples.is_empty() {
-        return SampleSummary {
-            median_ops_per_sec: 0.0,
-            mean_ops_per_sec: 0.0,
-            min_ops_per_sec: 0.0,
-            max_ops_per_sec: 0.0,
-            total_ops: 0,
-            total_elapsed_ns: 0,
-            timing: TimingSummary {
-                mean_ns_per_op: 0.0,
-                min_run_ns_per_op: 0.0,
-                max_run_ns_per_op: 0.0,
-                p50_run_ns_per_op: 0.0,
-                p95_run_ns_per_op: 0.0,
-                p99_run_ns_per_op: 0.0,
-                p99_9_run_ns_per_op: 0.0,
-            },
-        };
-    }
-
-    let mut rates = Vec::with_capacity(samples.len());
-    let mut run_ns = Vec::with_capacity(samples.len());
-    let mut total_ops = 0u64;
-    let mut total_elapsed_ns = 0u64;
-    let mut min_rate = f64::INFINITY;
-    let mut max_rate: f64 = 0.0;
-    let mut min_run_ns = f64::INFINITY;
-    let mut max_run_ns: f64 = 0.0;
-    for sample in samples {
-        let rate = sample.ops_per_sec();
-        let ns = sample.ns_per_op();
-        rates.push(rate);
-        run_ns.push(ns);
-        total_ops = total_ops.saturating_add(sample.ops);
-        total_elapsed_ns = total_elapsed_ns.saturating_add(sample.elapsed_ns());
-        min_rate = min_rate.min(rate);
-        max_rate = max_rate.max(rate);
-        min_run_ns = min_run_ns.min(ns);
-        max_run_ns = max_run_ns.max(ns);
-    }
-    let mean_rate = rates.iter().sum::<f64>() / rates.len() as f64;
-    let median_rate = median(&mut rates);
-    let mut p50_values = run_ns.clone();
-    let mut p95_values = run_ns.clone();
-    let mut p99_values = run_ns.clone();
-    let mut p99_9_values = run_ns;
-    let timing = TimingSummary {
-        mean_ns_per_op: if total_ops == 0 {
-            0.0
-        } else {
-            total_elapsed_ns as f64 / total_ops as f64
-        },
-        min_run_ns_per_op: min_run_ns,
-        max_run_ns_per_op: max_run_ns,
-        p50_run_ns_per_op: percentile(&mut p50_values, 0.5),
-        p95_run_ns_per_op: percentile(&mut p95_values, 0.95),
-        p99_run_ns_per_op: percentile(&mut p99_values, 0.99),
-        p99_9_run_ns_per_op: percentile(&mut p99_9_values, 0.999),
-    };
-    SampleSummary {
-        median_ops_per_sec: median_rate,
-        mean_ops_per_sec: mean_rate,
-        min_ops_per_sec: min_rate,
-        max_ops_per_sec: max_rate,
-        total_ops,
-        total_elapsed_ns,
-        timing,
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn status_kib(field: &str) -> u64 {
-    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix(field))
-        .and_then(|value| value.split_whitespace().next())
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0)
-}
-
-#[cfg(target_os = "linux")]
-fn current_rss_kib() -> u64 {
-    status_kib("VmRSS:")
-}
-
-#[cfg(not(target_os = "linux"))]
-fn current_rss_kib() -> u64 {
-    0
-}
-
+/// Peak RSS in KiB (Linux only; 0 elsewhere). Read from /proc/self/status.
 #[cfg(target_os = "linux")]
 fn peak_rss_kib() -> u64 {
-    status_kib("VmHWM:")
+    let s = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    for line in s.lines() {
+        if let Some(v) = line.strip_prefix("VmHWM:") {
+            return v
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+        }
+    }
+    0
 }
-
 #[cfg(not(target_os = "linux"))]
 fn peak_rss_kib() -> u64 {
     0
-}
-
-struct Named(&'static str, &'static dyn SyncGlobalAlloc);
-
-trait SyncGlobalAlloc: GlobalAlloc + Sync {}
-
-impl<T: GlobalAlloc + Sync> SyncGlobalAlloc for T {}
-
-fn format_f64_vec(values: &[f64]) -> String {
-    let mut text = String::from("[");
-    for (index, value) in values.iter().enumerate() {
-        if index != 0 {
-            text.push(',');
-        }
-        text.push_str(&format!("{:.3}", value));
-    }
-    text.push(']');
-    text
-}
-
-fn format_u64_vec(values: &[u64]) -> String {
-    let mut text = String::from("[");
-    for (index, value) in values.iter().enumerate() {
-        if index != 0 {
-            text.push(',');
-        }
-        text.push_str(&value.to_string());
-    }
-    text.push(']');
-    text
-}
-
-fn print_raw_samples(
-    allocators: &[Named],
-    selected: &[usize],
-    runs: &[Vec<RunSample>],
-    warmups: &[Option<RunSample>],
-) {
-    for &index in selected {
-        let samples = &runs[index];
-        let rates: Vec<f64> = samples.iter().map(RunSample::ops_per_sec).collect();
-        let elapsed_ms: Vec<f64> = samples
-            .iter()
-            .map(|sample| sample.elapsed.as_secs_f64() * 1000.0)
-            .collect();
-        let ops: Vec<u64> = samples.iter().map(|sample| sample.ops).collect();
-        let ns_per_op: Vec<f64> = samples.iter().map(RunSample::ns_per_op).collect();
-        let rss: Vec<u64> = samples.iter().map(|sample| sample.rss_kib).collect();
-        let peak: Vec<u64> = samples
-            .iter()
-            .map(|sample| sample.peak_rss_kib)
-            .collect();
-        let warmup_ops = warmups[index]
-            .map(|sample| sample.ops.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        println!(
-            "  raw {:<8} warmup_ops={} ops/s={} ops={} elapsed_ms={} ns/op={} rss_kib={} peak_kib={}",
-            allocators[index].0.trim(),
-            warmup_ops,
-            format_f64_vec(&rates),
-            format_u64_vec(&ops),
-            format_f64_vec(&elapsed_ms),
-            format_f64_vec(&ns_per_op),
-            format_u64_vec(&rss),
-            format_u64_vec(&peak),
-        );
-        let timing = summarize(samples).timing;
-        println!(
-            "       timing ns/op mean={:.2} p50={:.2} p95={:.2} p99={:.2} p99.9={:.2} (per-run aggregate)",
-            timing.mean_ns_per_op,
-            timing.p50_run_ns_per_op,
-            timing.p95_run_ns_per_op,
-            timing.p99_run_ns_per_op,
-            timing.p99_9_run_ns_per_op,
-        );
-    }
-}
-
-fn summary_for_name(
-    allocators: &[Named],
-    summaries: &[Option<SampleSummary>],
-    name: &str,
-) -> Option<f64> {
-    allocators
-        .iter()
-        .position(|allocator| allocator.0.trim() == name)
-        .and_then(|index| summaries[index].map(|summary| summary.median_ops_per_sec))
-}
-
-fn json_escape(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            control if control.is_control() => {
-                escaped.push_str(&format!("\\u{:04x}", control as u32));
-            }
-            other => escaped.push(other),
-        }
-    }
-    escaped
-}
-
-fn json_string(value: &str) -> String {
-    format!("\"{}\"", json_escape(value))
-}
-
-fn json_number(value: f64) -> String {
-    if value.is_finite() {
-        format!("{:.6}", value)
-    } else {
-        "null".to_string()
-    }
-}
-
-fn append_json_sample(output: &mut String, sample: RunSample) {
-    output.push_str(&format!(
-        "{{\"ops\":{},\"elapsed_ns\":{},\"ops_per_sec\":{},\"ns_per_op\":{},\"rss_kib\":{},\"peak_rss_kib\":{}}}",
-        sample.ops,
-        sample.elapsed_ns(),
-        json_number(sample.ops_per_sec()),
-        json_number(sample.ns_per_op()),
-        sample.rss_kib,
-        sample.peak_rss_kib,
-    ));
-}
-
-fn append_json_samples(output: &mut String, samples: &[RunSample]) {
-    output.push('[');
-    for (index, sample) in samples.iter().enumerate() {
-        if index != 0 {
-            output.push(',');
-        }
-        append_json_sample(output, *sample);
-    }
-    output.push(']');
-}
-
-fn append_json_summary(output: &mut String, summary: &SampleSummary) {
-    let timing = summary.timing;
-    output.push_str(&format!(
-        "{{\"median_ops_per_sec\":{},\"mean_ops_per_sec\":{},\"min_ops_per_sec\":{},\"max_ops_per_sec\":{},\"total_ops\":{},\"total_elapsed_ns\":{},\"timing\":{{\"mean_ns_per_op\":{},\"min_run_ns_per_op\":{},\"max_run_ns_per_op\":{},\"p50_run_ns_per_op\":{},\"p95_run_ns_per_op\":{},\"p99_run_ns_per_op\":{},\"p99_9_run_ns_per_op\":{}}}}}",
-        json_number(summary.median_ops_per_sec),
-        json_number(summary.mean_ops_per_sec),
-        json_number(summary.min_ops_per_sec),
-        json_number(summary.max_ops_per_sec),
-        summary.total_ops,
-        summary.total_elapsed_ns,
-        json_number(timing.mean_ns_per_op),
-        json_number(timing.min_run_ns_per_op),
-        json_number(timing.max_run_ns_per_op),
-        json_number(timing.p50_run_ns_per_op),
-        json_number(timing.p95_run_ns_per_op),
-        json_number(timing.p99_run_ns_per_op),
-        json_number(timing.p99_9_run_ns_per_op),
-    ));
-}
-
-fn append_json_allocator(
-    output: &mut String,
-    name: &str,
-    warmup: Option<RunSample>,
-    samples: &[RunSample],
-    summary: Option<SampleSummary>,
-) {
-    output.push_str("{\"name\":");
-    output.push_str(&json_string(name));
-    output.push_str(",\"warmup\":");
-    if let Some(sample) = warmup {
-        append_json_sample(output, sample);
-    } else {
-        output.push_str("null");
-    }
-    output.push_str(",\"samples\":");
-    append_json_samples(output, samples);
-    output.push_str(",\"summary\":");
-    if let Some(summary) = summary {
-        append_json_summary(output, &summary);
-    } else {
-        output.push_str("null");
-    }
-    output.push('}');
-}
-
-fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
-    output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
-        diagnostics.map_delta,
-        diagnostics.unmap_delta,
-        diagnostics.mapped_delta,
-        diagnostics.span_maps,
-        diagnostics.span_unmaps,
-        diagnostics.small_maps,
-        diagnostics.small_unmaps,
-        diagnostics.arena_reuses,
-        diagnostics.arena_commits,
-        diagnostics.big_maps,
-        diagnostics.big_unmaps,
-        diagnostics.abandoned_delta,
-        diagnostics.abandoned_total,
-        diagnostics.arena_high_water,
-    ));
-    append_json_sample(output, diagnostics.probe);
-    output.push('}');
 }
 
 fn main() {
-    let output_name = std::env::var("BENCH_OUTPUT")
-        .or_else(|_| std::env::var("BENCH_FORMAT"))
-        .unwrap_or_else(|_| "text".to_string());
-    let json_flag = std::env::var("BENCH_JSON")
-        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    let json_output = json_flag || output_name.eq_ignore_ascii_case("json");
-    let secs = std::env::var("BENCH_SECS")
+    let secs: u64 = std::env::var("BENCH_SECS")
         .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(3)
-        .max(1);
-    let reps = std::env::var("BENCH_REPS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let reps: usize = std::env::var("BENCH_REPS")
         .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(5)
-        .max(1);
-    let warmup_secs = std::env::var("BENCH_WARMUP")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| secs.min(1));
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    // P2 tuning hook: override the per-thread cache budget (MiB, 0 = default
+    // 32 MiB). Medium blocks blow through small-tuned budgets instantly, so
+    // this isolates budget-induced trim churn from structural costs.
     if let Ok(mb) = std::env::var("BENCH_BUDGET_MB") {
         if let Ok(mb) = mb.parse::<usize>() {
             if mb > 0 {
@@ -1155,240 +739,142 @@ fn main() {
         }
     }
 
+    struct Named(&'static str, &'static dyn SyncGlobalAlloc);
+    trait SyncGlobalAlloc: GlobalAlloc + Sync {}
+    impl<T: GlobalAlloc + Sync> SyncGlobalAlloc for T {}
+
+    // Dynamic list: jemalloc column appears only under `bench-jemalloc`.
+    // `mut` is only consumed when that feature pushes the extra entry.
     #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
     let mut allocators: Vec<Named> = vec![
-        Named("allox", &ALLOX),
+        Named("allox", &GLOBAL),
         Named("talc ", &TALC),
         Named("dlmalloc", &DLMALLOC),
-        Named("system", &HARNESS),
+        Named("system", &System),
         Named("mimalloc", &MIMALLOC),
         Named("snmalloc", &SNMALLOC),
     ];
     #[cfg(feature = "bench-jemalloc")]
     allocators.push(Named("jemalloc", &JEMALLOC));
 
+    // Header: fixed probe columns after one relative column (a/talc).
+    let mut hdr = format!(
+        "{:<15} {:>11}",
+        "workload", "allox"
+    );
+    for a in allocators.iter().skip(1) {
+        hdr.push_str(&format!(" {:>11}", a.0));
+    }
+    hdr.push_str(&format!(
+        " {:>9} {:>10} {:>10} {:>10} {:>16}",
+        "a/talc", "mapcalls", "unmaps", "peakRSS", "arena"
+    ));
+    println!("{}", hdr);
+    println!("{}", "-".repeat(hdr.len()));
+
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
+    // Optional allocator subset for profiling (e.g. BENCH_ALLOC=allox under
+    // `perf`). Empty = all. Matched as substring against the column name.
     let alloc_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
     let alloc_idx: Vec<usize> = allocators
         .iter()
         .enumerate()
-        .filter(|(_, allocator)| {
-            alloc_filter.is_empty() || allocator.0.trim().contains(&alloc_filter)
-        })
-        .map(|(index, _)| index)
+        .filter(|(_, a)| alloc_filter.is_empty() || a.0.trim().contains(&alloc_filter))
+        .map(|(i, _)| i)
         .collect();
     if alloc_idx.is_empty() {
         eprintln!("BENCH_ALLOC={alloc_filter} matched no allocators");
         return;
     }
-
-    if !json_output {
-        let mut header = format!("{:<15} {:>11}", "workload", "allox");
-        for allocator in allocators.iter().skip(1) {
-            header.push_str(&format!(" {:>11}", allocator.0));
-        }
-        header.push_str(&format!(
-            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>16}",
-            "a/talc", "rssKiB", "peakRSS", "mapcalls", "unmaps", "arena"
-        ));
-        println!("{}", header);
-        println!("{}", "-".repeat(header.len()));
-        println!(
-            "config: seconds={} reps={} warmup_seconds={} harness=system",
-            secs, reps, warmup_secs
-        );
-    }
-
-    let mut json = String::from("{\"schema\":\"allox.bench.v1\",\"harness_allocator\":\"system\",\"config\":{");
-    json.push_str(&format!("\"seconds\":{},\"repetitions\":{},\"warmup_seconds\":{},", secs, reps, warmup_secs));
-    json.push_str(&format!("\"workload_filter\":{},\"allocator_filter\":{},", json_string(&filter), json_string(&alloc_filter)));
-    json.push_str("\"timing_unit\":\"nanoseconds per workload operation\",\"timing_percentiles\":\"per-run aggregate ns/op\"},\"allocators\":[");
-    for (index, &allocator_index) in alloc_idx.iter().enumerate() {
-        if index != 0 {
-            json.push(',');
-        }
-        json.push_str(&json_string(allocators[allocator_index].0.trim()));
-    }
-    json.push_str("],\"results\":[");
-
-    let mut first_result = true;
-    for workload in WORKLOADS {
-        if !filter.is_empty() && !workload.name.contains(&filter) {
+    for wl in WORKLOADS {
+        if !filter.is_empty() && !wl.name.contains(&filter) {
             continue;
         }
-
-        let mut runs: Vec<Vec<RunSample>> = (0..allocators.len())
-            .map(|_| Vec::with_capacity(reps))
-            .collect();
-        let mut warmups: Vec<Option<RunSample>> = (0..allocators.len()).map(|_| None).collect();
-        if warmup_secs > 0 {
-            for &allocator_index in &alloc_idx {
-                let allocator = &allocators[allocator_index];
-                eprintln!("  warmup {} / {}...", workload.name, allocator.0);
-                warmups[allocator_index] = Some(run(allocator.1, workload, warmup_secs));
-            }
-        }
+        // Median of REPS runs per allocator: interleaved so thermal drift
+        // affects all allocators equally.
+        let mut scores = vec![vec![]; allocators.len()];
         for _ in 0..reps {
-            for &allocator_index in &alloc_idx {
-                let allocator = &allocators[allocator_index];
-                eprintln!("  running {} / {}...", workload.name, allocator.0);
-                runs[allocator_index].push(run(allocator.1, workload, secs));
+            for &i in &alloc_idx {
+                let a = &allocators[i];
+                eprintln!("  running {} / {}...", wl.name, a.0);
+                scores[i].push(run(a.1, wl, secs));
             }
         }
-
-        let summaries: Vec<Option<SampleSummary>> = (0..allocators.len())
-            .map(|index| {
-                if runs[index].is_empty() {
+        let medians: Vec<Option<f64>> = scores
+            .iter_mut()
+            .enumerate()
+            .map(|(_, s)| {
+                if s.is_empty() {
                     None
                 } else {
-                    Some(summarize(&runs[index]))
+                    Some(median(s.as_mut_slice()))
                 }
             })
             .collect();
-        let medians: Vec<Option<f64>> = summaries
-            .iter()
-            .map(|summary| summary.map(|summary| summary.median_ops_per_sec))
-            .collect();
-
-        let allox_index = allocators
-            .iter()
-            .position(|allocator| allocator.0.trim() == "allox");
-        let diagnostics = if let Some(allocator_index) = allox_index.filter(|index| alloc_idx.contains(index)) {
-            let s0 = allox::stats();
-            let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) =
-                allox::__debug_map_split();
-            let (d0abnd, _) = allox::__debug_arena_detail();
-            let probe = run(allocators[allocator_index].1, workload, 1);
-            let s1 = allox::stats();
-            let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) =
-                allox::__debug_map_split();
-            let (d1abnd, d1hi) = allox::__debug_arena_detail();
-            Some(AlloxDiagnostics {
-                map_delta: s1.map_calls.saturating_sub(s0.map_calls),
-                unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
-                mapped_delta: s1.mapped_pages as i64 - s0.mapped_pages as i64,
-                span_maps: d1sp.saturating_sub(d0sp),
-                span_unmaps: d1su.saturating_sub(d0su),
-                small_maps: d1sm.saturating_sub(d0sm),
-                small_unmaps: d1smu.saturating_sub(d0smu),
-                arena_reuses: d1aru.saturating_sub(d0aru),
-                arena_commits: d1ac.saturating_sub(d0ac),
-                big_maps: d1bm.saturating_sub(d0bm),
-                big_unmaps: d1bmu.saturating_sub(d0bmu),
-                abandoned_delta: d1abnd.saturating_sub(d0abnd),
-                abandoned_total: d1abnd,
-                arena_high_water: d1hi,
-                probe,
-            })
-        } else {
-            None
+        // Syscall + RSS diagnostics: snapshot allox counters around one extra
+        // allox-only probe run so numbers reflect steady-state behaviour.
+        let allox_i = alloc_idx.first().copied().unwrap_or(0);
+        let s0 = allox::stats();
+        let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
+        let (d0abnd, _d0hi) = allox::__debug_arena_detail();
+        let _ = run(allocators[allox_i].1, wl, secs.min(1).max(1));
+        let s1 = allox::stats();
+        let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
+        let (d1abnd, d1hi) = allox::__debug_arena_detail();
+        let map_delta = s1.map_calls.saturating_sub(s0.map_calls);
+        let unmap_delta = s1.unmap_calls.saturating_sub(s0.unmap_calls);
+        let mapped_delta = s1.mapped_pages as i64 - s0.mapped_pages as i64;
+        let span_maps = d1sp.saturating_sub(d0sp);
+        let span_unmaps = d1su.saturating_sub(d0su);
+        let small_maps = d1sm.saturating_sub(d0sm);
+        let _small_unmaps = d1smu.saturating_sub(d0smu);
+        let arena_reuses = d1aru.saturating_sub(d0aru);
+        let _arena_commits = d1ac.saturating_sub(d0ac);
+        let big_maps = d1bm.saturating_sub(d0bm);
+        let big_unmaps = d1bmu.saturating_sub(d0bmu);
+        // Abandoned delta over the 1 s probe IS the per-second rate (§3
+        // hole-coalescing trigger: >1k/s sustained). Bump high-water is
+        // monotonic process-wide (MiB) for reservation sizing; the absolute
+        // abandoned total distinguishes slot/cap overflow (abandonment)
+        // from best-fit mismatch (stranding: hi grows, abandoned flat).
+        let abnd_rate = d1abnd.saturating_sub(d0abnd);
+        let hi_mib = d1hi / (1024 * 1024);
+        let rss = peak_rss_kib();
+        let fmt_opt = |o: Option<f64>| match o {
+            Some(v) => format!("{:>11.0}", v),
+            None => format!("{:>11}", "-"),
         };
-
-        if !json_output {
-            let format_optional = |value: Option<f64>| match value {
-                Some(value) => format!("{:>11.0}", value),
-                None => format!("{:>11}", "-"),
-            };
-            let allox_score = summary_for_name(&allocators, &summaries, "allox");
-            let talc_score = summary_for_name(&allocators, &summaries, "talc");
-            let ratio = match (allox_score, talc_score) {
-                (Some(allox_score), Some(talc_score)) if talc_score > 0.0 => {
-                    allox_score / talc_score
-                }
-                _ => 0.0,
-            };
-            let mapcalls = diagnostics.as_ref().map_or_else(
-                || "-".to_string(),
-                |diagnostics| {
-                    format!(
-                        "{}/{}/{}/{}/a{}/b{}",
-                        diagnostics.map_delta,
-                        diagnostics.span_maps,
-                        diagnostics.small_maps,
-                        diagnostics.mapped_delta,
-                        diagnostics.arena_reuses,
-                        diagnostics.big_maps
-                    )
-                },
-            );
-            let unmaps = diagnostics.as_ref().map_or_else(
-                || "-".to_string(),
-                |diagnostics| {
-                    format!(
-                        "{}/{}/b{}",
-                        diagnostics.unmap_delta, diagnostics.span_unmaps, diagnostics.big_unmaps
-                    )
-                },
-            );
-            let arena = diagnostics.as_ref().map_or_else(
-                || "-".to_string(),
-                |diagnostics| {
-                    format!(
-                        "abnd+{}/s tot{} hi{}MiB",
-                        diagnostics.abandoned_delta,
-                        diagnostics.abandoned_total,
-                        diagnostics.arena_high_water / (1024 * 1024)
-                    )
-                },
-            );
-            let mut row = format!("{:<15}{}", workload.name, format_optional(medians[0]));
-            for median in medians.iter().skip(1) {
-                row.push_str(&format_optional(*median));
-            }
-            row.push_str(&format!(
-                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>16}",
-                ratio,
-                current_rss_kib(),
-                peak_rss_kib(),
-                mapcalls,
-                unmaps,
-                arena,
-            ));
-            println!("{}", row);
-            print_raw_samples(&allocators, &alloc_idx, &runs, &warmups);
+        let allox_s = medians[0].unwrap_or(0.0);
+        let talc_s = medians.get(1).and_then(|x| *x).unwrap_or(0.0);
+        let mut row = format!("{:<15}{}", wl.name, fmt_opt(medians[0]));
+        for m in medians.iter().skip(1) {
+            row.push_str(&fmt_opt(*m));
         }
-
-        if !first_result {
-            json.push(',');
-        }
-        first_result = false;
-        json.push_str("{\"workload\":");
-        json.push_str(&json_string(workload.name));
-        json.push_str(&format!(
-            ",\"threads\":{},\"size_min\":{},\"size_max\":{},\"free_pct\":{},\"allocators\":[",
-            workload.threads, workload.size_range.0, workload.size_range.1, workload.free_pct
+        row.push_str(&format!(
+            " {:>8.2}x {:>10} {:>10} {:>10} {:>16}",
+            if talc_s > 0.0 {
+                allox_s / talc_s
+            } else {
+                0.0
+            },
+            format!(
+                "{}/{}/{}/{}/a{}/b{}",
+                map_delta, span_maps, small_maps, mapped_delta, arena_reuses, big_maps
+            ),
+            format!("{}/{}/b{}", unmap_delta, span_unmaps, big_unmaps),
+            rss,
+            format!(
+                "abnd+{}/s tot{} hi{}MiB",
+                abnd_rate, d1abnd, hi_mib
+            ),
         ));
-        for (index, &allocator_index) in alloc_idx.iter().enumerate() {
-            if index != 0 {
-                json.push(',');
-            }
-            append_json_allocator(
-                &mut json,
-                allocators[allocator_index].0.trim(),
-                warmups[allocator_index],
-                &runs[allocator_index],
-                summaries[allocator_index],
-            );
-        }
-        json.push_str("],\"allox_diagnostics\":");
-        if let Some(diagnostics) = &diagnostics {
-            append_json_diagnostics(&mut json, diagnostics);
-        } else {
-            json.push_str("null");
-        }
-        json.push('}');
+        println!("{}", row);
     }
 
-    json.push_str("]}\n");
-    if json_output {
-        print!("{}", json);
-    } else {
-        println!("{}", "-".repeat(60));
-        println!("raw samples are per repetition; timing percentiles are over aggregate ns/op values, avoiding a timer around every allocator call.");
-        println!("rssKiB = current VmRSS; peakRSS = VmHWM; both are KiB on Linux and 0 elsewhere.");
-        println!("allox counters are sampled only when allox is selected by BENCH_ALLOC.");
-        println!("BENCH_OUTPUT=json or BENCH_JSON=1 emits one machine-readable JSON document.");
-        #[cfg(feature = "bench-jemalloc")]
-        println!("jemalloc column present (--features bench-jemalloc); absent when feature off.");
-    }
+    println!("{}", "-".repeat(60));
+    println!("note: harness Vecs allocate through allox (process global); identical for all.");
+    println!("mapcalls = allox MAP_CALLS delta / mapped-pages delta during 1s probe; unmaps = UNMAP_CALLS delta; peakRSS = VmHWM KiB (linux).");
+    println!("arena = abandoned-delta/s during 1s probe (hole-coalescing trigger >1k/s) + reservation high-water MiB (16 GiB sizing check).");
+    #[cfg(feature = "bench-jemalloc")]
+    println!("jemalloc column present (--features bench-jemalloc); absent when feature off.");
 }
