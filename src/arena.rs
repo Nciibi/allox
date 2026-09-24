@@ -974,12 +974,12 @@ mod tests {
         let a = Arena::with_size(4 * ARENA_ALIGN);
         let first = unsafe { a.commit(1).0 };
         assert!(unsafe { a.grow_frontier(first, 1, 2) });
-        assert_eq!(a.high_water(), 2 * ARENA_ALIGN);
+        assert_eq!(a.high_water(), (2 * ARENA_ALIGN) as u64);
 
         let second = unsafe { a.commit(1).0 };
         assert!(!unsafe { a.grow_frontier(first, 2, 3) });
         assert!(unsafe { a.grow_frontier(second, 1, 2) });
-        assert_eq!(a.high_water(), 4 * ARENA_ALIGN);
+        assert_eq!(a.high_water(), (4 * ARENA_ALIGN) as u64);
         unsafe {
             a.release(first, 2);
             a.release(second, 2);
