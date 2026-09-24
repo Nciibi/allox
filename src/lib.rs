@@ -474,7 +474,7 @@ impl LargeRegionCache {
                 );
             }
         }
-        (entry, zeroed)
+        (entry.0, entry.1, zeroed)
     }
 
     fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool) {
@@ -510,7 +510,7 @@ impl LargeRegionCache {
                 );
             }
         }
-        (entry, zeroed)
+        (entry.0, entry.1, zeroed)
     }
 
     /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
