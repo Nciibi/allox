@@ -178,9 +178,12 @@ Options in order:
   traffic is arena-backed (probe ~47/48 hole reuses), so legacy-only
   mremap never fires. Reverted entirely (helper, call sites, wrapper,
   stubs, white-box tests); kept the two fallback-growth integration
-  tests as regression coverage. Honest follow-up, NOT trialed:
-  frontier-adjacent arena growth (extend bump when the region sits at
-  the frontier) — narrow, uncertain hit rate, needs its own probe.
+   tests as regression coverage. Frontier-adjacent arena growth is now
+   implemented as a narrow slice: a live region ending exactly at the bump
+   frontier can atomically claim and commit adjacent pages, and both realloc
+   entry points use it with legacy/non-frontier copy fallback. The dedicated
+   `frontier_growth` regression passes; this is not yet a general growable
+   extent design.
    TRIALED 2026-09-23, REVERTED (no effect): 16 size-shards × 1024
    slots + global CAS-claimed byte cap (exact-size home shard, first-fit
    fallback across shards, never nested locks). Result on large-only 8T
