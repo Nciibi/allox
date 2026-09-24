@@ -70,6 +70,7 @@ fn global_realloc_zero_layout_grows_fresh() {
         // pointer back (same-class identity must not fire on size 0).
         let l0 = Layout::from_size_align(0, 16).unwrap();
         let p = a.alloc(l0);
+        assert_eq!(allox::usable_size(p), 0);
         let q = a.realloc(p, l0, 8);
         assert_ne!(q, p, "realloc must not return the zero-size dangling pointer");
         assert!(!q.is_null());
