@@ -444,20 +444,18 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
 
     // Ring channels: thread i sends to (i+1)%n. Pointers cross threads as
     // usize (raw *mut u8 is !Send); cast back on receipt.
-    let mut senders: Vec<Sender<(usize, usize)>> = Vec::new();
-    let mut receivers: Vec<Option<Receiver<(usize, usize)>>> = Vec::new();
+    let mut senders: Vec<Sender<Option<(usize, usize)>>> = Vec::new();
+    let mut receivers: Vec<Option<Receiver<Option<(usize, usize)>>>> = Vec::new();
     for _ in 0..n {
-        let (tx, rx) = channel::<(usize, usize)>();
+        let (tx, rx) = channel::<Option<(usize, usize)>>();
         senders.push(tx);
         receivers.push(Some(rx));
     }
     // Each thread gets its own incoming rx plus a clone of the next tx.
-    let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut handles = Vec::new();
     for t in 0..n {
         let rx = receivers[t].take().unwrap();
         let tx_next = senders[(t + 1) % n].clone();
-        let stop_c = stop_flag.clone();
         let stop_time = stop;
         handles.push(
             std::thread::Builder::new()
