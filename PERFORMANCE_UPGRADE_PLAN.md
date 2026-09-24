@@ -620,6 +620,8 @@ Implemented in the first implementation pass:
 - Target-width header-reserve constants, bounded all-size roundtrip coverage, and a real WASM global-allocator smoke path.
 - Large allocation/free telemetry on stash and recycle-cache paths.
 - Explicit compile-time failure for unsupported bare-metal targets without a memory backend.
+- Trusted arena/legacy large-allocation metadata dispatch, including fallback deallocation, forged-header resistance, symmetric requested-byte telemetry, and WASM unmap accounting.
+- Producer-consumer shutdown/drain correctness and a direct exit-hook flush regression probe.
 
 Deferred to the next Phase 0 slice:
 
