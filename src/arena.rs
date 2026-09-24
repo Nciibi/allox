@@ -768,7 +768,7 @@ mod tests {
         assert_eq!(b.hole_count.load(Ordering::Acquire), 1);
         let (remainder, fresh) = unsafe { b.commit(1) };
         assert!(!remainder.is_null() && !fresh);
-        unsafe { a.release(remainder, 1) };
+        unsafe { b.release(remainder, 1) };
         #[cfg(feature = "telemetry")]
         {
             assert!(b.hole_exact_hits.load(Ordering::Acquire) >= 1);
