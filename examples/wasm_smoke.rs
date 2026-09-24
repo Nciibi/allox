@@ -4,6 +4,9 @@
 //! Exports return 0 on success, non-zero failure codes.
 
 // Binaries need a main; the JS host drives the exported function instead.
+#[global_allocator]
+static GLOBAL: allox::Allox = allox::Allox;
+
 fn main() {}
 
 struct Rng(u64);
