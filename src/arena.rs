@@ -527,6 +527,13 @@ impl Arena {
         )
     }
 
+    pub(crate) fn granule_stats(&self) -> (u64, u64) {
+        (
+            self.granule_commits.load(Ordering::Relaxed) as u64,
+            self.granule_bytes.load(Ordering::Relaxed) as u64,
+        )
+    }
+
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
