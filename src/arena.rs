@@ -369,7 +369,6 @@ impl Arena {
         let total = requested
             .checked_add(ARENA_GRANULE_SIZE - 1)?
             & !(ARENA_GRANULE_SIZE - 1);
-        let start0 = self.bump.load(Ordering::Relaxed);
         loop {
             let off = self.bump.load(Ordering::Relaxed);
             let start = off
