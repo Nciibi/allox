@@ -549,6 +549,14 @@ unsafe fn legacy_large_contains(p: *mut u8) -> bool {
     false
 }
 
+unsafe fn large_region_known(p: *mut u8) -> bool {
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(p, 1) {
+        return !crate::arena::large_table_get(p).is_null();
+    }
+    legacy_large_contains(p)
+}
+
 unsafe fn register_large_region(base: *mut u8, mapped: usize, hdr: *mut LargeHeader) {
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(base, mapped) {
