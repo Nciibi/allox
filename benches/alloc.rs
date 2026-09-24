@@ -366,9 +366,6 @@ struct AlloxDiagnostics {
     abandoned_delta: u64,
     abandoned_total: u64,
     arena_high_water: u64,
-    coalesce_checks: u64,
-    coalesce_merges: u64,
-    coalesced_pages: u64,
     probe: RunSample,
 }
 
@@ -1204,7 +1201,7 @@ fn append_json_allocator(
 
 fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
     output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"coalesce_checks\":{},\"coalesce_merges\":{},\"coalesced_pages\":{},\"probe\":",
+        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
         diagnostics.mapped_delta,
@@ -1219,9 +1216,6 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.abandoned_delta,
         diagnostics.abandoned_total,
         diagnostics.arena_high_water,
-        diagnostics.coalesce_checks,
-        diagnostics.coalesce_merges,
-        diagnostics.coalesced_pages,
     ));
     append_json_sample(output, diagnostics.probe);
     output.push('}');
@@ -1360,7 +1354,7 @@ fn main() {
             header.push_str(&format!(" {:>11}", allocators[allocator_index].0.trim()));
         }
         header.push_str(&format!(
-            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>28}",
+            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>16}",
             "a/talc", "rssKiB", "peakRSS", "mapcalls", "unmaps", "arena"
         ));
         println!("{}", header);
@@ -1525,7 +1519,7 @@ fn main() {
                 row.push_str(&format_optional(medians[allocator_index]));
             }
             row.push_str(&format!(
-                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>28}",
+                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>16}",
                 ratio,
                 current_rss_kib(),
                 peak_rss_kib(),
