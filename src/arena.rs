@@ -357,40 +357,6 @@ impl Arena {
         }
     }
 
-    fn coalesce_holes(&self) {
-        let mut holes = self.holes.lock();
-        if !holes.coalesce_dirty {
-            return;
-        }
-        #[cfg(feature = "telemetry")]
-        self.hole_coalesce_checks.fetch_add(1, Ordering::Relaxed);
-        let merged_pages = holes.coalesce();
-        #[cfg(feature = "telemetry")]
-        if merged_pages > 0 {
-            self.hole_coalesces.fetch_add(1, Ordering::Relaxed);
-            self.hole_coalesced_pages
-                .fetch_add(merged_pages, Ordering::Relaxed);
-        }
-        #[cfg(not(feature = "telemetry"))]
-        let _ = merged_pages;
-        self.hole_count.store(holes.len, Ordering::Release);
-    }
-
-    unsafe fn commit_hole(&self, pages: usize, len: usize) -> *mut u8 {
-        let reuse = self.holes_take(pages);
-        if reuse.is_null() {
-            return ptr::null_mut();
-        }
-        if self.commit_range(reuse as usize, len) {
-            self.reuses.fetch_add(1, Ordering::Relaxed);
-            self.commits.fetch_add(1, Ordering::Relaxed);
-            reuse
-        } else {
-            self.holes_give(reuse, pages);
-            ptr::null_mut()
-        }
-    }
-
     /// Park a slice for reuse. Discard-then-park is the caller's job (needs
     /// exclusive ownership, which only the caller has pre-lock); see docs.
     /// Overflow discards nothing (caller already did) and abandons the entry:
@@ -405,7 +371,6 @@ impl Arena {
             let idx = holes.len;
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
-            holes.coalesce_dirty = holes.len > 1;
             holes.bytes += bytes;
             if pages <= EXACT_BUCKET_MAX {
                 holes.exact[pages] = idx as u16;
