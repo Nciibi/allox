@@ -377,6 +377,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
     let start = Instant::now();
     let ops = match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
+        Kind::ZeroedLarge => run_zeroed_large(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
         Kind::SpawnEmpty => run_spawn_empty(wl, seconds),
