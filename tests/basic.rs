@@ -282,7 +282,12 @@ fn forged_large_header_does_not_steal_medium_free() {
         blocks.sort_unstable();
         let index = blocks
             .iter()
-            .position(|p| (*p as usize & 65535) >= 128)
+            .position(|p| {
+                let address = *p as usize;
+                let page = address & !65535;
+                address & 65535 >= 128
+                    && unsafe { *(page as *const u64) } != 0xA110_CCA7_5EED_5A11
+            })
             .expect("medium block with a user-data predecessor");
         let second = blocks[index];
         let first = blocks[index - 1];
