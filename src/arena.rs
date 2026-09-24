@@ -191,22 +191,65 @@ impl HoleStore {
             self.coalesce_dirty = false;
             return 0;
         }
-        self.entries[..self.len].sort_unstable_by_key(|entry| entry.0);
+        let mut start_keys = [EMPTY_BOUNDARY; COALESCE_BOUNDARY_SLOTS];
+        let mut start_indices = [EMPTY_BUCKET; COALESCE_BOUNDARY_SLOTS];
+        let mut end_keys = [EMPTY_BOUNDARY; COALESCE_BOUNDARY_SLOTS];
+        let mut end_indices = [EMPTY_BUCKET; COALESCE_BOUNDARY_SLOTS];
+        for index in 0..self.len {
+            let (off, pages) = self.entries[index];
+            boundary_insert(&mut start_keys, &mut start_indices, off, index);
+            boundary_insert(
+                &mut end_keys,
+                &mut end_indices,
+                off + pages * ARENA_ALIGN,
+                index,
+            );
+        }
+
         let old_len = self.len;
-        let mut write = 0;
         let mut merged_pages = 0;
-        for read in 0..old_len {
-            let entry = self.entries[read];
-            if write != 0 {
-                let (previous_off, previous_pages) = self.entries[write - 1];
-                if previous_off + previous_pages * ARENA_ALIGN == entry.0 {
-                    self.entries[write - 1].1 += entry.1;
-                    merged_pages += entry.1;
-                    continue;
+        for index in 0..old_len {
+            if self.entries[index].1 == 0 {
+                continue;
+            }
+            loop {
+                let (off, pages) = self.entries[index];
+                let end = off + pages * ARENA_ALIGN;
+                let mut merged = false;
+                if let Some(other) = boundary_lookup(&start_keys, &start_indices, end) {
+                    if other != index && self.entries[other].1 != 0 {
+                        let other_pages = self.entries[other].1;
+                        self.entries[index].1 += other_pages;
+                        self.entries[other].1 = 0;
+                        merged_pages += other_pages;
+                        merged = true;
+                    }
+                }
+                if !merged {
+                    if let Some(other) = boundary_lookup(&end_keys, &end_indices, off) {
+                        if other != index && self.entries[other].1 != 0 {
+                            let (other_off, other_pages) = self.entries[other];
+                            self.entries[index].0 = other_off;
+                            self.entries[index].1 += other_pages;
+                            self.entries[other].1 = 0;
+                            merged_pages += other_pages;
+                            merged = true;
+                        }
+                    }
+                }
+                if !merged {
+                    break;
                 }
             }
-            self.entries[write] = entry;
-            write += 1;
+        }
+
+        let mut write = 0;
+        for read in 0..old_len {
+            let entry = self.entries[read];
+            if entry.1 != 0 {
+                self.entries[write] = entry;
+                write += 1;
+            }
         }
         for index in write..old_len {
             self.entries[index] = (0, 0);
