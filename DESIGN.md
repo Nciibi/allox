@@ -89,8 +89,8 @@ Allocation tiers (dispatch order in `lib.rs::alloc_impl`):
 |---|---|---|---|
 | Small | ≤ 16 KiB, align ≤ 16 | 64 KiB pages, one class each | `PageHeader` (page-mask) |
 | Medium | 16 KiB ..= 65472 B | multi-page spans, class each | `SpanMaster` (containment) |
-| Big | 65473 ..= 262144 B | whole spans (arena-backed, unix+std) | side table + `BigMaster` |
-| Large | > 262144 B, or align > 16, or no arena | directly-mapped regions | `LargeHeader` (offset probe) |
+| Big | 65473 ..= 524288 B | whole spans (arena-backed, unix+std) | side table + `BigMaster` |
+| Large | > 524288 B, or align > 16, or no arena | directly-mapped regions | `LargeHeader` (offset probe) |
 
 Small allocations (size <= MAX_SMALL = 16 KiB, align <= 16):
 
@@ -113,12 +113,12 @@ Small allocations (size <= MAX_SMALL = 16 KiB, align <= 16):
 Medium allocations (MAX_SMALL < size <= 65472): multi-page spans carved into
 one medium class; per-thread refill batches (`MEDIUM_REFILL_BATCH = 16`);
 cold retention drops physical pages via `madvise(MADV_DONTNEED)` while keeping
-virtual. Big allocations (<= 262144, arena on unix+std) mirror medium with
+virtual. Big allocations (<= 524288, arena on unix+std) mirror medium with
 `BIG_REFILL_BATCH = 4` and a 2 MiB static side table for O(1) pointer ->
 span lookup. Same-span refills stay in a per-class active span; mixed-span
 batches use the ordinary bin (see `DESIGN_SPANS_BIG.md` for carving proofs).
 
-Large / over-aligned allocations (>262144, or align > 16, or no arena):
+Large / over-aligned allocations (>524288, or align > 16, or no arena):
 
 ```
 mapped region (multiple of 64 KiB)
@@ -149,7 +149,7 @@ minimum block = 16 B = max useful fundamental alignment):
   profiles.
 - **Medium:** (16384, 65472] — steps sized so a block still fits beside
   the span master header inside a 64 KiB chunk (`TOP_MEDIUM_BLOCK`).
-- **Big:** (65472, 262144] — same geometric chain, `BIG_REFILL_BATCH = 4`
+- **Big:** (65472, 524288] — same geometric chain, `BIG_REFILL_BATCH = 4`
   (top class and batch sizes are bench-tunable; see
   `DESIGN_SPANS_BIG.md` — status IMPLEMENTED, carving proofs P1–P6).
 
