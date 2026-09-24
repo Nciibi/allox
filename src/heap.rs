@@ -167,21 +167,41 @@ unsafe fn fill_from_list(
         if (*page).flags & FLAG_VIRGIN == 0 {
             *virgin = false;
         }
-        match pop_block(&mut (*page).free_head) {
-            Some(b) => {
-                *b.cast::<*mut u8>() = *chain;
-                *chain = b;
-                *count += 1;
-                (*page).free_count -= 1;
-                (*page).used += 1;
-                if (*page).free_count == 0 {
+        let mut extended = false;
+        loop {
+            match pop_block(&mut (*page).free_head) {
+                Some(b) => {
+                    *b.cast::<*mut u8>() = *chain;
+                    *chain = b;
+                    *count += 1;
+                    (*page).free_count -= 1;
+                    (*page).used += 1;
+                    if (*page).free_count == 0
+                        && (*page).used as usize + (*page).free_count as usize
+                            >= (*page).capacity()
+                    {
+                        unlink_partial(list, page);
+                    }
+                    break;
+                }
+                None => {
+                    let materialized =
+                        (*page).used as usize + (*page).free_count as usize;
+                    if materialized < (*page).capacity() {
+                        if (*page).provision(PAGE_PROVISION_BATCH) == 0 {
+                            unlink_partial(list, page);
+                            break;
+                        }
+                        extended = true;
+                        continue;
+                    }
                     unlink_partial(list, page);
+                    break;
                 }
             }
-            None => {
-                // Empty page must never be on the partial list; recover anyway.
-                unlink_partial(list, page);
-            }
+        }
+        if extended {
+            break;
         }
     }
 }
