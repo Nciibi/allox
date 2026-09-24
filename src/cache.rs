@@ -1285,6 +1285,26 @@ impl ThreadCache {
         }
     }
 
+    #[cfg(all(unix, feature = "std"))]
+    unsafe fn flush_active_big(&mut self, bclass: usize) {
+        let block_size = BIG_CLASSES[bclass];
+        let (span, head, len) = {
+            let active = &self.bactive[bclass];
+            (active.span, active.head, active.len)
+        };
+        if span.is_null() || head.is_null() || len == 0 {
+            self.bactive[bclass] = ActiveBig::empty();
+            return;
+        }
+        let mut tail = head;
+        while !(*tail.cast::<*mut u8>()).is_null() {
+            tail = *tail.cast::<*mut u8>();
+        }
+        self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
+        self.bactive[bclass] = ActiveBig::empty();
+        crate::heap::BIG_HEAP.release_blocks(span, head, len);
+    }
+
     /// Shrink big `bclass`'s bin down to `floor_blocks`, returning removed
     /// blocks to their owning spans grouped by master (one heap lock per span
     /// per chunk). Owning spans come from the arena side table (data chunks
