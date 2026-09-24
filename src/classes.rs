@@ -83,9 +83,11 @@ pub(crate) const fn class_for_size(size: usize) -> usize {
 // ---------------------------------------------------------------------------
 
 /// Room a medium block needs inside one 64 KiB chunk: the master header is
-/// 64 bytes (`page::SPAN_MASTER_SIZE`, kept literal here to avoid a module
-/// cycle; asserted equal in tests below).
+/// 64 bytes on 64-bit and 48 bytes on narrower targets.
+#[cfg(target_pointer_width = "64")]
 const MEDIUM_CHUNK_RESERVE: usize = 64;
+#[cfg(not(target_pointer_width = "64"))]
+const MEDIUM_CHUNK_RESERVE: usize = 48;
 
 /// Largest medium block: biggest 12.5% step that still fits beside headers.
 pub(crate) const MEDIUM_BLOCK_CAP: usize = 65536 - MEDIUM_CHUNK_RESERVE;
