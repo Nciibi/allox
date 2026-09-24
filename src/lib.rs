@@ -442,9 +442,6 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
     let base = sys::map_any(mapped);
     (base, !base.is_null())
 }
-    }
-    let base = sys::map_any(mapped);
-    (base, !base.is_null())
 }
 
 /// Release a large region: back to arena holes when arena-owned (no
