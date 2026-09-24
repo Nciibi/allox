@@ -333,9 +333,8 @@ impl ThreadCache {
     /// caches never leave the fast path hold nothing worth reclaiming.
     #[inline]
     pub(crate) fn arm_exit_hook(&mut self) {
-        if !self.exit_armed {
+        if !self.exit_armed && crate::thread_exit::ensure_hook() {
             self.exit_armed = true;
-            crate::thread_exit::ensure_hook();
         }
     }
 
@@ -362,7 +361,7 @@ impl ThreadCache {
         let id = self.tid();
         // SAFETY: caller holds a live page pointer from a refill chain.
         unsafe {
-            (*page).owner = id;
+            (*page).owner.store(id, Ordering::Relaxed);
         }
     }
 
@@ -370,7 +369,7 @@ impl ThreadCache {
     fn claim_span(&mut self, span: *mut SpanMaster) {
         let id = self.tid();
         unsafe {
-            (*span).owner = id;
+            (*span).owner.store(id, Ordering::Relaxed);
         }
     }
 
@@ -476,6 +475,7 @@ impl ThreadCache {
     /// pointer's header (`free()` path) or from layout size (fast path).
     /// Class is a parameter so layout-routed frees never load a header.
     pub(crate) unsafe fn dealloc(&mut self, p: *mut u8, class: usize) {
+        self.arm_exit_hook();
         #[cfg(debug_assertions)]
         debug_validate_free(p);
 
@@ -488,7 +488,7 @@ impl ThreadCache {
         let mut foreign = false;
         if self.drift_gate_open() {
             let page = PageHeader::of(p);
-            let owner = (*page).owner;
+            let owner = (*page).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
         }
 
@@ -592,6 +592,7 @@ impl ThreadCache {
     /// No span load here — the span is only needed on the cold no-TLS
     /// fallback, which re-derives it from the pointer.
     pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, mclass: usize) {
+        self.arm_exit_hook();
         #[cfg(debug_assertions)]
         {
             let span = SpanMaster::of(p);
@@ -606,7 +607,7 @@ impl ThreadCache {
         if self.drift_gate_open() {
             let span = SpanMaster::of(p);
             if !span.is_null() {
-                let owner = (*span).owner;
+                let owner = (*span).owner.load(Ordering::Relaxed);
                 foreign = owner != 0 && owner != self.tid();
             }
         }
@@ -697,7 +698,7 @@ impl ThreadCache {
                 let span = crate::arena::big_table_get(b);
                 if !span.is_null() {
                     let id = self.tid();
-                    (*span).owner = id;
+                    (*span).owner.store(id, Ordering::Relaxed);
                 }
                 b = *b.cast::<*mut u8>();
             }
@@ -714,6 +715,7 @@ impl ThreadCache {
 
     #[cfg(all(unix, feature = "std"))]
     pub(crate) unsafe fn dealloc_big(&mut self, p: *mut u8, span: *mut BigMaster) {
+        self.arm_exit_hook();
         #[cfg(debug_assertions)]
         debug_validate_free_big(p, span);
 
