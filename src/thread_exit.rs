@@ -73,7 +73,7 @@ mod imp {
         // ~everything when several threads exit at once (thundering herd on
         // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
-        record_flush();
+        super::record_flush();
         crate::tls_flush_full();
     }
 
@@ -140,7 +140,7 @@ mod imp {
         // and allocator critical sections never touch it either, so no wait
         // cycle exists even though Fls callbacks run during thread teardown.
         // Panic-free by construction (see above).
-        record_flush();
+        super::record_flush();
         crate::tls_flush_full();
     }
 
