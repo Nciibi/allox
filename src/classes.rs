@@ -306,9 +306,8 @@ pub(crate) const BIG_CLASSES: [usize; NUM_BIG] = build_big();
 pub(crate) const MAX_BIG_BLOCK: usize = BIG_CLASSES[NUM_BIG - 1];
 
 /// Span length in 64 KiB pages for a big block size: covers the master
-/// header plus `TARGET_BLOCKS_PER_BIG_SPAN` blocks, rounded up to whole
-/// pages. Only the 64 B master is skipped (data chunks reserve nothing),
-/// so usable space always exceeds the target (asserted in tests).
+/// header plus `TARGET_BLOCKS_PER_BIG_SPAN` aggregate blocks. Data chunks
+/// reserve no metadata, so the aggregate capacity check is exact.
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const fn big_span_pages_for(block: usize) -> usize {
     let need = BIG_MASTER_RESERVE + TARGET_BLOCKS_PER_BIG_SPAN * block;
