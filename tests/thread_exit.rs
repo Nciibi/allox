@@ -107,9 +107,10 @@ fn free_only_thread_flushes_cached_blocks() {
     allox::flush_current_thread();
     let mut original = [core::ptr::null_mut(); COUNT];
     for p in &mut original {
-        *p = unsafe { allox::malloc(SIZE) };
-        assert!(!p.is_null());
-        unsafe { *p.write(0xA5) };
+        let ptr = unsafe { allox::malloc(SIZE) };
+        assert!(!ptr.is_null());
+        *p = ptr;
+        unsafe { ptr.write(0xA5) };
     }
     allox::flush_current_thread();
     original.sort_unstable();
@@ -127,9 +128,10 @@ fn free_only_thread_flushes_cached_blocks() {
     let mut reused = 0usize;
     let mut second = [core::ptr::null_mut(); COUNT];
     for p in &mut second {
-        *p = unsafe { allox::malloc(SIZE) };
-        assert!(!p.is_null());
-        if original.binary_search(p).is_ok() {
+        let ptr = unsafe { allox::malloc(SIZE) };
+        assert!(!ptr.is_null());
+        *p = ptr;
+        if original.binary_search(&ptr).is_ok() {
             reused += 1;
         }
     }
