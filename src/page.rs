@@ -512,7 +512,7 @@ mod tests {
             let (raw, layout) = unsafe { aligned_pages(pages) };
             let span = raw.cast::<SpanMaster>();
             unsafe { (*span).init(mclass, pages as u32) };
-            let expected = medium_capacity_for(block, pages);
+            let expected = medium_capacity_legacy_for(block, pages);
             assert_eq!(unsafe { (*span).free_count } as usize, expected);
 
             let mut addresses = Vec::with_capacity(expected);
