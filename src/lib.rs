@@ -1124,9 +1124,14 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     // Large resizes always go alloc-copy-free below via usable_size.
     #[cfg(all(unix, feature = "std"))]
     let old_arena = crate::arena::contains(p, 1);
+    #[cfg(all(unix, feature = "std"))]
+    let old_large_ok = if old_arena {
+        !crate::arena::large_table_get(p).is_null()
+    } else {
+        large_header_of(p).is_some()
+    };
     #[cfg(not(all(unix, feature = "std")))]
-    let old_arena = false;
-    let old_large_ok = !old_arena && large_header_of(p).is_some();
+    let old_large_ok = large_header_of(p).is_some();
     #[cfg(all(unix, feature = "std"))]
     let old_big: Option<*mut u8> = if old_arena {
         let big = crate::arena::big_table_get(p);
