@@ -372,7 +372,7 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 
 /// Blocks moved from spans into a thread cache per slow-path take.
 /// The cap follows the target-eight geometry and never exceeds actual capacity.
-pub(crate) const MEDIUM_REFILL_BATCH: u32 = crate::classes::TARGET_BLOCKS_PER_SPAN;
+pub(crate) const MEDIUM_REFILL_BATCH: u32 = crate::classes::TARGET_BLOCKS_PER_SPAN as u32;
 
 pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
     let block = crate::classes::MEDIUM_CLASSES[mclass];
