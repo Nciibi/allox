@@ -805,6 +805,16 @@ unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
     Some((base as *mut u8, mapped))
 }
 
+#[inline]
+fn pointer_alignment(p: *mut u8) -> usize {
+    let address = p as usize;
+    if address == 0 {
+        1
+    } else {
+        address & address.wrapping_neg()
+    }
+}
+
 unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
