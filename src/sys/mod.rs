@@ -16,10 +16,12 @@ use core::cell::UnsafeCell;
 pub(crate) use unix::{discard, map, map_any, unmap, RawMutex};
 #[cfg(all(unix, not(feature = "std")))]
 pub(crate) use unix::{discard, map, map_any, unmap};
-#[cfg(all(not(windows), not(unix)))]
+#[cfg(all(not(windows), not(unix), target_family = "wasm"))]
 pub(crate) use wasm::{discard, map, unmap};
-#[cfg(all(not(windows), not(unix)))]
+#[cfg(all(not(windows), not(unix), target_family = "wasm"))]
 pub(crate) use wasm::map as map_any;
+#[cfg(all(not(windows), not(unix), not(target_family = "wasm")))]
+compile_error!("allox has no memory backend for this target");
 #[cfg(windows)]
 pub(crate) use windows::{discard, map, unmap, RawMutex};
 /// Windows VirtualAlloc is already single-syscall and 64 KiB-aligned.
