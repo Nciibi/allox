@@ -76,5 +76,9 @@ fn telemetry_accounting() {
         let mid = snapshot();
         assert_eq!(delta(&mid, &before, |t| t.large_allocs), 1);
         allox::free(p);
+        allox::flush_current_thread();
+        let after = snapshot();
+        assert_eq!(delta(&after, &before, |t| t.large_allocs), 1);
+        assert_eq!(delta(&after, &before, |t| t.total_frees), 1);
     }
 }
