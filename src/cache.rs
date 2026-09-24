@@ -1421,6 +1421,9 @@ impl ThreadCache {
         }
         #[cfg(all(unix, feature = "std"))]
         for bclass in 0..NUM_BIG {
+            if !self.bactive[bclass].head.is_null() {
+                self.flush_active_big(bclass);
+            }
             if !self.bigbins[bclass].head.is_null() {
                 self.flush_bbin(bclass, 0);
             }
