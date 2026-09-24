@@ -2,7 +2,7 @@
 //! multi-page spans for medium blocks, plus the header layout used for large
 //! (directly mapped) regions.
 
-use crate::classes::{medium_capacity_for, MEDIUM_CLASSES, NUM_MEDIUM};
+use crate::classes::{medium_capacity_for, medium_capacity_legacy_for, MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::CLASSES;
 #[cfg(all(unix, feature = "std"))]
 use crate::classes::{BIG_CLASSES, NUM_BIG};
