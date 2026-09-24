@@ -86,6 +86,27 @@ fn big_calloc_is_zeroed() {
 }
 
 #[test]
+fn big_active_reuse_preserves_calloc_zeroing() {
+    unsafe {
+        for _ in 0..32 {
+            let p = allox::calloc(1, 262144);
+            assert!(!p.is_null());
+            for i in (0..262144).step_by(4096) {
+                *p.add(i) = 0xA5;
+            }
+            free(p);
+
+            let q = allox::calloc(1, 262144);
+            assert!(!q.is_null());
+            for i in (0..262144).step_by(4096) {
+                assert_eq!(*q.add(i), 0, "offset {}", i);
+            }
+            free(q);
+        }
+    }
+}
+
+#[test]
 fn big_realloc_grows_and_shrinks() {
     unsafe {
         // Grow across big classes (may relocate or grow in place).
