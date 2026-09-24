@@ -114,20 +114,37 @@ mod imp {
         crate::tls_flush_full();
     }
 
-    pub(crate) fn ensure_hook() {
-        let slot = HOOK_SLOT.get_or_init(|| {
-            // SAFETY: callback is a plain extern fn; see above.
-            let s = unsafe { FlsAlloc(Some(fls_flush)) };
-            if s != FLS_OUT_OF_INDEXES {
-                Some(s)
-            } else {
-                None
+    pub(crate) fn ensure_hook() -> bool {
+        loop {
+            if let Some(s) = HOOK_SLOT.get() {
+                return unsafe { FlsSetValue(*s, 1 as *const c_void) == 0 };
             }
-        });
-        if let Some(s) = *slot {
-            // Nonzero value arms the callback for this thread.
-            unsafe {
-                let _ = FlsSetValue(s, 1 as *const c_void);
+            if INSTALLING
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                let slot = if let Some(s) = HOOK_SLOT.get() {
+                    Some(*s)
+                } else {
+                    // SAFETY: callback is a plain extern fn; see above.
+                    let s = unsafe { FlsAlloc(Some(fls_flush)) };
+                    if s != FLS_OUT_OF_INDEXES {
+                        match HOOK_SLOT.set(s) {
+                            Ok(()) => Some(s),
+                            Err(existing) => Some(existing),
+                        }
+                    } else {
+                        None
+                    }
+                };
+                INSTALLING.store(false, Ordering::Release);
+                return match slot {
+                    Some(s) => unsafe { FlsSetValue(s, 1 as *const c_void) == 0 },
+                    None => false,
+                };
+            }
+            while INSTALLING.load(Ordering::Acquire) {
+                core::hint::spin_loop();
             }
         }
     }
@@ -139,4 +156,6 @@ pub(crate) use imp::ensure_hook;
 /// Fallback: no OS exit hook (no_std, wasm, other platforms). Caches behave
 /// exactly as before; use `flush_current_thread()` explicitly.
 #[cfg(not(all(feature = "std", any(unix, windows))))]
-pub(crate) fn ensure_hook() {}
+pub(crate) fn ensure_hook() -> bool {
+    true
+}
