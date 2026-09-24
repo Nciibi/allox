@@ -1202,7 +1202,7 @@ fn main() {
     let mut json = String::from("{\"schema\":\"allox.bench.v1\",\"harness_allocator\":\"system\",\"config\":{");
     json.push_str(&format!("\"seconds\":{},\"repetitions\":{},\"warmup_seconds\":{},", secs, reps, warmup_secs));
     json.push_str(&format!("\"workload_filter\":{},\"allocator_filter\":{},", json_string(&filter), json_string(&alloc_filter)));
-    json.push_str("\"timing_unit\":\"nanoseconds per workload operation\",\"timing_percentiles\":\"per-run aggregate ns/op\",\"allocators\":[");
+    json.push_str("\"timing_unit\":\"nanoseconds per workload operation\",\"timing_percentiles\":\"per-run aggregate ns/op\"},\"allocators\":[");
     for (index, &allocator_index) in alloc_idx.iter().enumerate() {
         if index != 0 {
             json.push(',');
