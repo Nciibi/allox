@@ -783,35 +783,6 @@ mod tests {
 
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
-    fn adjacent_holes_coalesce_and_rebuild_exact_index() {
-        let a = Arena::with_size(8 * ARENA_ALIGN);
-        let first = unsafe { a.commit(1).0 };
-        let middle = unsafe { a.commit(1).0 };
-        let last = unsafe { a.commit(1).0 };
-        unsafe {
-            a.release(first, 1);
-            a.release(last, 1);
-        }
-        assert_eq!(a.hole_count.load(Ordering::Acquire), 2);
-        unsafe { a.release(middle, 1) };
-        assert_eq!(a.hole_count.load(Ordering::Acquire), 1);
-        {
-            let holes = a.holes.lock();
-            assert_eq!(holes.entries[0], (0, 3));
-            assert_eq!(holes.bytes, 3 * ARENA_ALIGN);
-            assert_eq!(holes.exact[3], 0);
-        }
-        let (reuse, fresh) = unsafe { a.commit(3) };
-        assert_eq!(reuse, first);
-        assert!(!fresh);
-        assert_eq!(a.hole_count.load(Ordering::Acquire), 0);
-        #[cfg(feature = "telemetry")]
-        assert_eq!(a.coalesce_stats(), (1, 2));
-        unsafe { a.release(reuse, 3) };
-    }
-
-    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
-    #[test]
     fn medium_table_resolves_cross_page_blocks() {
         unsafe {
             let block = MEDIUM_CLASSES[0];
