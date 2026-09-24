@@ -377,6 +377,124 @@ impl LargeRegionCache {
         }
     }
 
+    fn index_hot(&mut self, index: usize, pages: usize) {
+        if pages > LARGE_EXACT_MAX_PAGES {
+            return;
+        }
+        let current = self.hot_exact[pages] as usize;
+        if current == EMPTY_LARGE_INDEX as usize {
+            self.hot_exact[pages] = index as u16;
+        } else if current >= self.len || self.entries[current].1 as usize != pages {
+            refresh_large_exact(
+                &self.entries,
+                self.len,
+                pages,
+                &mut self.hot_exact,
+            );
+        }
+    }
+
+    fn index_cold(&mut self, index: usize, pages: usize) {
+        if pages > LARGE_EXACT_MAX_PAGES {
+            return;
+        }
+        let current = self.cold_exact[pages] as usize;
+        if current == EMPTY_LARGE_INDEX as usize {
+            self.cold_exact[pages] = index as u16;
+        } else if current >= self.cold_len || self.cold[current].1 as usize != pages {
+            refresh_large_exact(
+                &self.cold,
+                self.cold_len,
+                pages,
+                &mut self.cold_exact,
+            );
+        }
+    }
+
+    fn exact_hot(&self, wanted: u32) -> Option<usize> {
+        let pages = wanted as usize;
+        if pages > LARGE_EXACT_MAX_PAGES {
+            return None;
+        }
+        let index = self.hot_exact[pages] as usize;
+        if index < self.len && self.entries[index].1 == wanted {
+            Some(index)
+        } else {
+            None
+        }
+    }
+
+    fn exact_cold(&self, wanted: u32) -> Option<usize> {
+        let pages = wanted as usize;
+        if pages > LARGE_EXACT_MAX_PAGES {
+            return None;
+        }
+        let index = self.cold_exact[pages] as usize;
+        if index < self.cold_len && self.cold[index].1 == wanted {
+            Some(index)
+        } else {
+            None
+        }
+    }
+
+    fn remove_hot(&mut self, index: usize) -> (*mut u8, u32) {
+        let last = self.len - 1;
+        let entry = self.entries[index];
+        self.entries[index] = self.entries[last];
+        self.entries[last] = (ptr::null_mut(), 0);
+        self.len = last;
+        self.bytes -= entry.1 as usize * page::PAGE_SIZE;
+        if index < self.len {
+            let moved_pages = self.entries[index].1 as usize;
+            if moved_pages <= LARGE_EXACT_MAX_PAGES
+                && self.hot_exact[moved_pages] == last as u16
+            {
+                self.hot_exact[moved_pages] = index as u16;
+            }
+        }
+        let removed_pages = entry.1 as usize;
+        if removed_pages <= LARGE_EXACT_MAX_PAGES
+            && self.hot_exact[removed_pages] == index as u16
+        {
+            refresh_large_exact(
+                &self.entries,
+                self.len,
+                removed_pages,
+                &mut self.hot_exact,
+            );
+        }
+        entry
+    }
+
+    fn remove_cold(&mut self, index: usize) -> (*mut u8, u32) {
+        let last = self.cold_len - 1;
+        let entry = self.cold[index];
+        self.cold[index] = self.cold[last];
+        self.cold[last] = (ptr::null_mut(), 0);
+        self.cold_len = last;
+        self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
+        if index < self.cold_len {
+            let moved_pages = self.cold[index].1 as usize;
+            if moved_pages <= LARGE_EXACT_MAX_PAGES
+                && self.cold_exact[moved_pages] == last as u16
+            {
+                self.cold_exact[moved_pages] = index as u16;
+            }
+        }
+        let removed_pages = entry.1 as usize;
+        if removed_pages <= LARGE_EXACT_MAX_PAGES
+            && self.cold_exact[removed_pages] == index as u16
+        {
+            refresh_large_exact(
+                &self.cold,
+                self.cold_len,
+                removed_pages,
+                &mut self.cold_exact,
+            );
+        }
+        entry
+    }
+
     /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
     /// Removes and returns `(base, mapped_pages)`. Caller holds the lock.
     /// Both tiers need only a header rewrite (fresh=false); cold contents
