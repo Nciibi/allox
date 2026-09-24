@@ -659,3 +659,18 @@ Implemented the first arena-reuse and large-cache slices:
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 
 The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiments are coalescing and extending the exact extent index; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
+
+### Baseline comparison
+
+A controlled comparison was run against the pre-roadmap commit `1c32ee2` using the same System harness, separate fresh processes, `BENCH_SECS=2`, `BENCH_REPS=5`, and one-second warmups. These are directional allocator-loop results, not process-global application benchmarks.
+
+| Workload | Current median | Baseline median | Delta | Current p99 ns/op | Baseline p99 ns/op | Current / baseline RSS KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| mixed-all 8T | 15.96 M/s | 15.20 M/s | +5.0% | 67.5 | 87.3 | 24,132 / 21,888 |
+| large-only 1T | 265.8 K/s | 255.5 K/s | +4.0% | 3,980.6 | 4,188.9 | 8,364 / 7,972 |
+| large-only 8T | 9.21 M/s | 9.39 M/s | -2.0% | 119.2 | 107.5 | 12,336 / 11,036 |
+| prodcons 8T | 30.51 M/s | 28.60 M/s | +6.7% | 33.8 | 42.3 | 15,092 / 15,012 |
+| json-ish 8T | 141.9 M/s | 135.3 M/s | +4.9% | 7.6 | 7.6 | 8,092 / 7,780 |
+| ecs 8T | 7.21 M/s | 8.77 M/s | -17.9% | 143.6 | 116.6 | 11,708 / 11,272 |
+
+The medium/mixed, JSON, and producer-consumer paths improved, but the large-8T and ECS acceptance gates are not met. A separate all-allocator run measured current Allox at 20.98 M/s versus mimalloc 19.42 M/s on mixed-all 8T, but 11.05 M/s versus 14.05 M/s on large-only 8T. The next iteration must isolate and fix the ECS/large regression before adding more allocator complexity.
