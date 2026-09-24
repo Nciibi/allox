@@ -499,7 +499,7 @@ impl Arena {
         if !reuse.is_null() {
             return (reuse, false);
         }
-        if self.hole_count.load(Ordering::Acquire) > 1 {
+        if pages >= COALESCE_MIN_PAGES && self.hole_count.load(Ordering::Acquire) > 1 {
             self.coalesce_holes();
             let reuse = self.commit_hole(pages, len);
             if !reuse.is_null() {
@@ -513,7 +513,9 @@ impl Arena {
             let end = match off.checked_add(len) {
                 Some(e) if e <= self.size => e,
                 _ => {
-                    if self.hole_count.load(Ordering::Acquire) > 1 {
+                    if pages >= COALESCE_MIN_PAGES
+                        && self.hole_count.load(Ordering::Acquire) > 1
+                    {
                         self.coalesce_holes();
                     }
                     let reuse = self.commit_hole(pages, len);
