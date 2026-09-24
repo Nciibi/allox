@@ -758,6 +758,49 @@ impl ThreadCache {
         }
     }
 
+    #[cfg(all(unix, feature = "std"))]
+    #[inline]
+    unsafe fn active_big_alloc(&mut self, bclass: usize) -> (*mut u8, bool) {
+        let block_size = BIG_CLASSES[bclass];
+        let (p, zeroed) = {
+            let active = &mut self.bactive[bclass];
+            let p = match pop_block(&mut active.head) {
+                Some(p) => p,
+                None => {
+                    *active = ActiveBig::empty();
+                    return (ptr::null_mut(), false);
+                }
+            };
+            let below = active.len - 1;
+            active.len = below;
+            let zeroed = below < active.virgin;
+            if zeroed {
+                active.virgin -= 1;
+            }
+            (p, zeroed)
+        };
+        self.cached_bytes -= block_size;
+        (p, zeroed)
+    }
+
+    #[cfg(all(unix, feature = "std"))]
+    #[inline]
+    fn active_big_contains(&self, p: *mut u8, bclass: usize, span: *mut BigMaster) -> bool {
+        let active = &self.bactive[bclass];
+        active.span == span
+            && !active.span.is_null()
+            && (p as usize) >= active.base
+            && (p as usize) < active.end
+    }
+
+    #[cfg(all(unix, feature = "std"))]
+    #[inline]
+    unsafe fn active_big_dealloc(&mut self, p: *mut u8, bclass: usize) {
+        let active = &mut self.bactive[bclass];
+        push_block(&mut active.head, p);
+        active.len += 1;
+    }
+
     /// Big fast-path allocation. Returns null when the arena is unavailable
     /// (callers fall back to the large path) or on OS exhaustion.
     #[cfg(all(unix, feature = "std"))]
