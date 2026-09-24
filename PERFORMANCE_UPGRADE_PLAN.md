@@ -645,3 +645,13 @@ Implemented and rechecked:
 - Focused active-cache flush/reuse coverage plus randomized multithreaded stress.
 
 The active-chain prototype measured better on the focused medium workloads and was neutral-to-positive on the 5x5-second `mixed-all 8T` comparison. Target-eight geometry improved medium-only 1T throughput, kept 8T and mixed-all within the acceptance band, and increased RSS by roughly 1–3% on the focused runs. Arena metadata removal further improved the focused medium and mixed-all runs while preserving RSS within the measured band. The first byte-budget experiment (`256 KiB` target) was measured against the capacity-derived cap and rejected: medium-only 1T/8T and mixed-all throughput regressed on this host.
+
+## Phase 2 implementation status
+
+Implemented the first arena-reuse slice:
+
+- Atomic hole-count gate avoids taking the hole mutex when no reusable holes exist.
+- Hole scan, hit, split, and empty-fast-path counters are exposed through hidden diagnostics.
+- Regression coverage verifies exact reuse, remainder splitting, and counter updates.
+
+Exact-size buckets, coalescing, larger commit granules, and large-region indexing remain the next Phase 2 experiments.
