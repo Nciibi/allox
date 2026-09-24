@@ -68,6 +68,7 @@ fn telemetry_accounting() {
     }
 
     // ---- Large allocations are counted too ----
+    allox::flush_current_thread();
     let before = snapshot();
     unsafe {
         let p = allox::malloc(1 << 20);
