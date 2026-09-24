@@ -441,6 +441,58 @@ impl Arena {
         }
     }
 
+    pub(crate) unsafe fn grow_frontier(
+        &self,
+        base: *mut u8,
+        old_pages: usize,
+        new_pages: usize,
+    ) -> bool {
+        if old_pages == 0 || new_pages <= old_pages {
+            return false;
+        }
+        let old_len = match old_pages.checked_mul(ARENA_ALIGN) {
+            Some(len) => len,
+            None => return false,
+        };
+        let new_len = match new_pages.checked_mul(ARENA_ALIGN) {
+            Some(len) => len,
+            None => return false,
+        };
+        if !self.contains(base, old_len) {
+            return false;
+        }
+        let start = self.start.load(Ordering::Relaxed);
+        let old_end = match (base as usize)
+            .checked_sub(start)
+            .and_then(|off| off.checked_add(old_len))
+        {
+            Some(end) => end,
+            None => return false,
+        };
+        let new_end = match old_end.checked_add(new_len - old_len) {
+            Some(end) if end <= self.size => end,
+            _ => return false,
+        };
+        if self.bump.load(Ordering::Acquire) != old_end {
+            return false;
+        }
+        if self
+            .bump
+            .compare_exchange(old_end, new_end, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return false;
+        }
+        let added_base = (base as usize + old_len) as *mut u8;
+        if self.commit_range(added_base as usize, new_len - old_len) {
+            self.commits.fetch_add(1, Ordering::Relaxed);
+            true
+        } else {
+            self.holes_give(added_base, new_pages - old_pages);
+            false
+        }
+    }
+
     /// Return a slice previously obtained from [`Arena::commit`]. Discards
     /// physical FIRST (exclusive ownership pre-lock — parking first and
     /// discarding after unlock would race a concurrent pop+reuse and wipe
