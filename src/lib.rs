@@ -594,17 +594,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
     #[cfg(feature = "telemetry")]
-    {
-        use core::sync::atomic::Ordering::Relaxed;
-        heap::TELEMETRY.large_allocs.fetch_add(1, Relaxed);
-        heap::TELEMETRY.total_allocs.fetch_add(1, Relaxed);
-        heap::TELEMETRY.bytes_in.fetch_add(size as u64, Relaxed);
-        let live = heap::TELEMETRY
-            .bytes_in
-            .load(Relaxed)
-            .saturating_sub(heap::TELEMETRY.bytes_out.load(Relaxed));
-        heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
-    }
+    note_large_alloc(size);
     (ret as *mut u8, true)
 }
 
