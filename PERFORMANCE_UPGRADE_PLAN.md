@@ -648,11 +648,13 @@ The active-chain prototype measured better on the focused medium workloads and w
 
 ## Phase 2 implementation status
 
-Implemented the first arena-reuse slice:
+Implemented the first arena-reuse and large-cache slices:
 
 - Atomic hole-count gate avoids taking the hole mutex when no reusable holes exist.
 - Bounded exact-page index accelerates common small-hole reuse, with linear best-fit fallback for large holes.
 - Hole scan, hit, split, and empty-fast-path counters are exposed through hidden diagnostics.
+- The sharded `LargeRegionCache` now has fixed hot/cold exact-page indexes for the first 64 mapped pages, preserving exact hot/cold precedence and the existing best-fit fallback.
+- Swap-with-last removal repairs both indexes, including stale-index fallback; focused tests cover precedence, accounting, duplicates, removal, and the boundary.
 - Regression coverage verifies exact reuse, stale-index fallback, remainder splitting, and counter updates.
 
-The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiments are exact-size extent buckets/coalescing and replacing the linear large-region cache scan; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
+The 2 MiB commit-granule prototype was measured and removed. Rounding fresh arena mappings up to 2 MiB units did not reduce mapping operations for already large requests, added hole/prefix-tail bookkeeping, and regressed the focused 5–8 MiB workload from roughly 12.2 K ops/s to 10.3 K ops/s. Triggering it for 256 KiB big spans was also rejected after a roughly 7% large-only regression. The next safe large-allocation experiments are coalescing and extending the exact extent index; a future granule design needs a genuinely batched frontier rather than per-allocation overmapping.
