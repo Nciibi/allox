@@ -236,6 +236,27 @@ fn over_aligned_allocations_work() {
 }
 
 #[test]
+fn aligned_realloc_preserves_alignment() {
+    unsafe {
+        for align in [32usize, 256, 4096, 65536] {
+            let p = aligned_alloc(align, 1234);
+            assert!(!p.is_null(), "align {}", align);
+            assert_eq!(p as usize % align, 0, "initial align {}", align);
+            for i in 0..1234 {
+                *p.add(i) = (i as u8).wrapping_add(align as u8);
+            }
+            let np = realloc(p, 8192);
+            assert!(!np.is_null(), "realloc align {}", align);
+            assert_eq!(np as usize % align, 0, "realloc align {}", align);
+            for i in 0..1234 {
+                assert_eq!(*np.add(i), (i as u8).wrapping_add(align as u8));
+            }
+            free(np);
+        }
+    }
+}
+
+#[test]
 fn usable_size_covers_request() {
     unsafe {
         let p = malloc(100);
