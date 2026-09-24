@@ -144,8 +144,8 @@ pub(crate) struct ThreadCache {
     bigbins: [Bin; NUM_BIG],
     #[cfg(all(unix, feature = "std"))]
     bvirgin: [u32; NUM_BIG],
-    /// Whether this thread armed the OS thread-exit flush. Set once on the
-    /// first slow path; fast paths never touch it (nor the hook machinery).
+    /// Whether this thread armed the OS thread-exit flush. Set once after
+    /// the hook is installed; fast paths only check the flag.
     exit_armed: bool,
     /// Per-thread stash of freed large regions: (base, mapped_pages).
     /// Touched only by the owning thread (or the global-cache lock holder in
@@ -328,9 +328,8 @@ impl ThreadCache {
         }
     }
 
-    /// Arm the OS thread-exit flush once per thread. Called on slow paths
-    /// only (refill/trim/large) — fast paths stay untouched. Threads whose
-    /// caches never leave the fast path hold nothing worth reclaiming.
+    /// Arm the OS thread-exit flush once per thread. Called on slow paths and
+    /// when a block enters the cache.
     #[inline]
     pub(crate) fn arm_exit_hook(&mut self) {
         if !self.exit_armed && crate::thread_exit::ensure_hook() {

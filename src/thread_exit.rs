@@ -10,11 +10,12 @@
 //! flushing was measured to abandon nearly everything when several threads
 //! exit at once. Anything still unreleasable degrades to today's leak.
 //!
-//! Hooks fire only for threads that armed them (allocator slow paths set a
-//! per-thread flag and a nonzero key value; OS destructors ignore threads
-//! with no value). Threads that never allocate never pay, non-allocator
-//! threads are untouched, and the main thread on return-from-main keeps
-//! today's behavior (process exit reclaims everything).
+//! Hooks fire only for threads that armed them (allocator slow paths and
+//! cached frees set a per-thread flag and a nonzero key value; OS destructors
+//! ignore threads with no value). Threads that never allocate never pay,
+//! non-allocator threads are untouched, and the main thread on
+//! return-from-main keeps today's behavior (process exit reclaims
+//! everything).
 //!
 //! Only active with `std` on unix/Windows. Elsewhere `ensure_hook` is a
 //! no-op and caches behave exactly as before.

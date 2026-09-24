@@ -50,7 +50,7 @@ pub(crate) struct PageHeader {
     pub(crate) flags: u16,
     /// Heuristic owner thread-id (0 = unowned). Set when a thread refills
     /// from this page; used only to detect remote frees under cache pressure
-    /// (drift cap) — never for correctness. Races are benign (last writer).
+    /// (drift cap) — never for correctness. Concurrent stores are last-writer-wins.
     pub(crate) owner: AtomicU32,
 }
 

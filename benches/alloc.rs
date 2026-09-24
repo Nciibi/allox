@@ -263,8 +263,89 @@ const WORKLOADS: &[Workload] = &[
     },
 ];
 
-fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds: u64) -> f64 {
-    match wl.kind {
+#[derive(Clone, Copy, Debug)]
+struct RunSample {
+    ops: u64,
+    elapsed: Duration,
+    rss_kib: u64,
+    peak_rss_kib: u64,
+}
+
+impl RunSample {
+    fn from_start(ops: u64, start: Instant) -> Self {
+        let elapsed = start.elapsed();
+        Self {
+            ops,
+            elapsed,
+            rss_kib: current_rss_kib(),
+            peak_rss_kib: peak_rss_kib(),
+        }
+    }
+
+    fn ops_per_sec(&self) -> f64 {
+        self.ops as f64 / self.elapsed.as_secs_f64().max(f64::MIN_POSITIVE)
+    }
+
+    fn elapsed_ns(&self) -> u64 {
+        self.elapsed.as_nanos().min(u64::MAX as u128) as u64
+    }
+
+    fn ns_per_op(&self) -> f64 {
+        if self.ops == 0 {
+            0.0
+        } else {
+            self.elapsed_ns() as f64 / self.ops as f64
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TimingSummary {
+    mean_ns_per_op: f64,
+    min_run_ns_per_op: f64,
+    max_run_ns_per_op: f64,
+    p50_run_ns_per_op: f64,
+    p95_run_ns_per_op: f64,
+    p99_run_ns_per_op: f64,
+    p99_9_run_ns_per_op: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SampleSummary {
+    median_ops_per_sec: f64,
+    mean_ops_per_sec: f64,
+    min_ops_per_sec: f64,
+    max_ops_per_sec: f64,
+    total_ops: u64,
+    total_elapsed_ns: u64,
+    timing: TimingSummary,
+}
+
+struct AlloxDiagnostics {
+    map_delta: u64,
+    unmap_delta: u64,
+    mapped_delta: i64,
+    span_maps: u64,
+    span_unmaps: u64,
+    small_maps: u64,
+    small_unmaps: u64,
+    arena_reuses: u64,
+    arena_commits: u64,
+    big_maps: u64,
+    big_unmaps: u64,
+    abandoned_delta: u64,
+    abandoned_total: u64,
+    arena_high_water: u64,
+    probe: RunSample,
+}
+
+fn run<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> RunSample {
+    let start = Instant::now();
+    let ops = match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
@@ -272,14 +353,15 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, seconds
         Kind::Json => run_json(alloc, wl, seconds),
         Kind::Request => run_request(alloc, wl, seconds),
         Kind::Ecs => run_ecs(alloc, wl, seconds),
-    }
+    };
+    RunSample::from_start(ops, start)
 }
 
 fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let threads = wl.threads;
@@ -341,7 +423,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// Producer-consumer: each thread allocates, then hands every other block to
@@ -352,7 +434,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     use std::sync::mpsc::{channel, Receiver, Sender};
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
@@ -426,7 +508,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
     }
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-    total as f64 / seconds as f64
+    total
 }
 
 /// Spawn churn: loop spawning short-lived threads that burst-allocate then
@@ -437,7 +519,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let (min, max) = wl.size_range;
@@ -484,14 +566,13 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
             ops += h.join().unwrap();
         }
     }
-    // Elapsed-time normalisation: caller divides by seconds.
-    ops as f64 / seconds as f64
+    ops
 }
 
 /// Spawn-exit with no allocator interaction: isolates pthread spawn/join
 /// latency so spawn-churn numbers can be decomposed. Reported in threads/s
 /// (not alloc ops/s) — expect identical scores for every comparator.
-fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
+fn run_spawn_empty(wl: &Workload, seconds: u64) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let mut threads = 0u64;
     while Instant::now() < stop {
@@ -509,7 +590,7 @@ fn run_spawn_empty(wl: &Workload, seconds: u64) -> f64 {
         }
         threads += wl.threads as u64;
     }
-    threads as f64 / seconds as f64
+    threads
 }
 
 /// JSON-ish: per document, allocate ~200 tiny buffers (strings/numbers,
@@ -521,7 +602,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -582,7 +663,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// Request-handler: per request, ~100 tiny allocs (8–128 B headers/strings)
@@ -592,7 +673,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -639,7 +720,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 /// ECS-archetype: 4 large component buffers (64 KiB–1 MiB) repeatedly
@@ -650,7 +731,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
     seconds: u64,
-) -> f64 {
+) -> u64 {
     let stop = Instant::now() + Duration::from_secs(seconds);
     let layout_for = |n: usize| Layout::from_size_align(n.max(1), 16).expect("layout");
     let handles: Vec<_> = (0..wl.threads)
@@ -717,7 +798,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(
         .collect();
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-    total as f64 / seconds as f64
+    total
 }
 
 fn median(v: &mut [f64]) -> f64 {
