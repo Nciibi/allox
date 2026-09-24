@@ -441,11 +441,14 @@ impl LargeRegionCache {
         }
     }
 
-    fn remove_hot(&mut self, index: usize) -> (*mut u8, u32) {
+    fn remove_hot(&mut self, index: usize) -> (*mut u8, u32, bool) {
         let last = self.len - 1;
         let entry = self.entries[index];
+        let zeroed = self.hot_zeroed[index];
         self.entries[index] = self.entries[last];
         self.entries[last] = (ptr::null_mut(), 0);
+        self.hot_zeroed[index] = self.hot_zeroed[last];
+        self.hot_zeroed[last] = false;
         self.len = last;
         self.bytes -= entry.1 as usize * page::PAGE_SIZE;
         if index < self.len {
@@ -471,10 +474,10 @@ impl LargeRegionCache {
                 );
             }
         }
-        entry
+        (entry, zeroed)
     }
 
-    fn remove_cold(&mut self, index: usize) -> (*mut u8, u32) {
+    fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool) {
         let last = self.cold_len - 1;
         let entry = self.cold[index];
         self.cold[index] = self.cold[last];
