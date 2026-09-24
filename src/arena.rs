@@ -186,6 +186,8 @@ impl Arena {
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
+            granule_commits: AtomicUsize::new(0),
+            granule_bytes: AtomicUsize::new(0),
             size,
         }
     }
