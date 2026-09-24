@@ -1075,6 +1075,10 @@ mod tests {
             assert!(!b.is_null(), "exact hole reuse");
             unsafe { a.release(b, 1) };
         }
+        {
+            let holes = a.holes.lock();
+            eprintln!("holes before coalesce: {:?}", &holes.entries[..holes.len]);
+        }
         let (coalesced, fresh) = unsafe { a.commit(4) };
         assert_eq!(coalesced, first);
         assert!(!fresh);
