@@ -1493,4 +1493,33 @@ mod header_probe_tests {
             "off==0 must reject"
         );
     }
+
+    #[test]
+    fn no_tls_fallback_refills_return_one_block() {
+        unsafe {
+            let (p, _) = take_one_small(0);
+            assert!(!p.is_null());
+            assert!((*p.cast::<*mut u8>()).is_null());
+            HEAP.release_blocks(page::PageHeader::of(p), p, 1);
+
+            let mclass = medium_class_for_size(MAX_SMALL_SIZE + 1);
+            let (p, _) = take_one_medium(mclass);
+            assert!(!p.is_null());
+            assert!((*p.cast::<*mut u8>()).is_null());
+            let span = SpanMaster::of(p);
+            assert!(!span.is_null());
+            MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
+
+            #[cfg(all(unix, feature = "std"))]
+            {
+                let bclass = big_class_for_size(MAX_MEDIUM_BLOCK + 1);
+                let (p, _) = take_one_big(bclass);
+                assert!(!p.is_null());
+                assert!((*p.cast::<*mut u8>()).is_null());
+                let span = crate::arena::big_table_get(p);
+                assert!(!span.is_null());
+                BIG_HEAP.release_blocks(span, p, 1);
+            }
+        }
+    }
 }
