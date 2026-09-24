@@ -62,7 +62,8 @@ const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const HOLE_CAP_BYTES: usize = 256 * 1024 * 1024;
 
 const ARENA_GRANULE_SIZE: usize = 2 * 1024 * 1024;
-const ARENA_GRANULE_MIN_PAGES: usize = 64;
+const ARENA_GRANULE_MIN_PAGES: usize = ARENA_GRANULE_SIZE / ARENA_ALIGN;
+const ARENA_GRANULE_TRIGGER_PAGES: usize = 2 * ARENA_GRANULE_MIN_PAGES;
 
 const MAP_FIXED: i32 = 0x10; // Linux, macOS, *BSD agree on this value.
 const MAP_PRIVATE: i32 = 0x02;
@@ -430,7 +431,7 @@ impl Arena {
             self.holes_give(reuse, pages);
             return (ptr::null_mut(), false);
         }
-        if pages >= ARENA_GRANULE_MIN_PAGES {
+        if pages >= ARENA_GRANULE_TRIGGER_PAGES {
             if let Some((base, total_pages, prefix_pages)) = self.granule_take(pages) {
                 let total_len = total_pages * ARENA_ALIGN;
                 if prefix_pages > 0 {
@@ -823,7 +824,7 @@ mod tests {
     #[test]
     fn granule_commit_tracks_aligned_range_and_tail() {
         let a = Arena::with_size(4 * ARENA_GRANULE_SIZE);
-        let pages = ARENA_GRANULE_MIN_PAGES + 1;
+        let pages = ARENA_GRANULE_TRIGGER_PAGES + 1;
         let (base, fresh) = unsafe { a.commit(pages) };
         assert!(!base.is_null() && fresh);
         assert_eq!(
@@ -833,7 +834,7 @@ mod tests {
         let (tail, tail_fresh) = unsafe { a.commit(1) };
         assert!(!tail.is_null() && !tail_fresh);
         assert_eq!(tail, unsafe { base.add(pages * ARENA_ALIGN) });
-        assert_eq!(a.granule_stats(), (1, (2 * ARENA_GRANULE_SIZE) as u64));
+        assert_eq!(a.granule_stats(), (1, (4 * ARENA_GRANULE_SIZE) as u64));
         unsafe { a.release(tail, 1) };
     }
 
