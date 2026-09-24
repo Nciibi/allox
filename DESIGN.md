@@ -348,7 +348,8 @@ fuzz/     alloc_seq  zero_init_seq
   physical discarded via `madvise`, virtual retained) — and reused
   exact-fit-first on the next large allocation. Without this, block-heavy
   workloads pay one map + one unmap syscall per allocation (~10 us/op
-  ceiling). Reused regions are not OS-zero, so `alloc_zeroed` memsets them;
+  ceiling). Reused regions are treated as dirty unless the cold tier's discard
+  succeeded; `alloc_zeroed` skips the memset only for those known-zero regions.
   `malloc` does not care. On arena-backed unix, evicted regions park as
   arena holes instead of `munmap`.
 

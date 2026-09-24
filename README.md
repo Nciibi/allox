@@ -146,7 +146,8 @@ mimalloc-inspired, adapted for Rust's world:
   paying unmap/map syscalls on churn.
 - **Zero-init fast path**: `calloc`/`alloc_zeroed` from never-used ("virgin")
   memory skips the memset — only the freelist link word is cleared. Recycled
-  memory is still always explicitly zeroed.
+  memory is explicitly zeroed unless a successful discard proved it was already
+  zero.
 - **Debug builds validate every free**: pointer bounds, class alignment, and
   double-free detection.
 - **No TLS destructors, no allocation inside the allocator**: const-init
