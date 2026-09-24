@@ -667,6 +667,37 @@ mod tests {
 
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
+    fn hole_count_fast_path_and_counters() {
+        let a = Arena::with_size(4 * ARENA_ALIGN);
+        assert!(a.holes_take(1).is_null());
+        let (base, fresh) = unsafe { a.commit(1) };
+        assert!(!base.is_null() && fresh);
+        unsafe { a.release(base, 1) };
+        assert_eq!(a.hole_count.load(Ordering::Acquire), 1);
+        let (reuse, fresh) = unsafe { a.commit(1) };
+        assert_eq!(reuse, base);
+        assert!(!fresh);
+        assert_eq!(a.hole_count.load(Ordering::Acquire), 0);
+        unsafe { a.release(reuse, 1) };
+        let (large, fresh) = unsafe { a.commit(2) };
+        assert!(!large.is_null() && fresh);
+        unsafe { a.release(large, 2) };
+        assert_eq!(a.hole_count.load(Ordering::Acquire), 1);
+        let first = a.holes_take(1);
+        assert!(!first.is_null());
+        assert_eq!(a.hole_count.load(Ordering::Acquire), 1);
+        let (remainder, fresh) = unsafe { a.commit(1) };
+        assert!(!remainder.is_null() && !fresh);
+        unsafe { a.release(remainder, 1) };
+        let stats = a.hole_stats();
+        assert!(stats.0 >= 2);
+        assert!(stats.1 >= 2);
+        assert!(stats.2 >= 1);
+        assert!(stats.3 >= 1);
+    }
+
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
+    #[test]
     fn medium_table_resolves_cross_page_blocks() {
         unsafe {
             let block = MEDIUM_CLASSES[0];
