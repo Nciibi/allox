@@ -1106,12 +1106,26 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     let old_arena = crate::arena::contains(p, 1);
     #[cfg(not(all(unix, feature = "std")))]
     let old_arena = false;
-    let old_large_ok = if old_arena {
-        false
+    let old_large_ok = !old_arena && large_header_of(p).is_some();
+    #[cfg(all(unix, feature = "std"))]
+    let old_big: Option<*mut u8> = if old_arena {
+        let big = crate::arena::big_table_get(p);
+        if !big.is_null() {
+            #[cfg(debug_assertions)]
+            if !(*big).contains(p) {
+                corrupt_pointer();
+            }
+            Some(big.cast())
+        } else {
+            None
+        }
     } else {
-        large_header_of(p).is_some()
+        None
     };
-    if !old_large_ok {
+    #[cfg(not(all(unix, feature = "std")))]
+    let old_big: Option<*mut u8> = None;
+
+    if old_big.is_none() && !old_large_ok {
         let old_class_ok = {
             let magic = *((p as usize & !PAGE_MASK) as *const u64);
             magic == page::PAGE_MAGIC
@@ -1123,31 +1137,22 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
                 return p;
             }
         }
-    }
-    let old_span_ok = if old_large_ok {
-        // Large pointers never reach the span check: SpanMaster::of masks,
-        // which can dangle outside unaligned large regions (see dealloc_impl).
-        false
-    } else {
         let span = SpanMaster::of(p);
-        !span.is_null() && (*span).contains(p)
-    };
-    if old_span_ok && size != 0 {
-        let span = SpanMaster::of(p);
-        let old_mclass = (*span).mclass as usize;
-        if size > classes::MAX_SMALL_SIZE
-            && size <= classes::MAX_MEDIUM_BLOCK
-            && medium_class_for_size(size) == old_mclass
-        {
-            return p;
+        let old_span_ok = !span.is_null() && (*span).contains(p);
+        if old_span_ok && size != 0 {
+            let old_mclass = (*span).mclass as usize;
+            if size > classes::MAX_SMALL_SIZE
+                && size <= classes::MAX_MEDIUM_BLOCK
+                && medium_class_for_size(size) == old_mclass
+            {
+                return p;
+            }
         }
     }
-    // Big same-class resize is identity too (arena targets only): locate by
-    // side table (data chunks have no headers to mask), validate, compare.
     #[cfg(all(unix, feature = "std"))]
-    if size != 0 {
-        let big = crate::arena::big_table_get(p);
-        if !big.is_null() && (*big).contains(p) {
+    if let Some(big) = old_big {
+        if size != 0 {
+            let big = big.cast::<BigMaster>();
             let old_bclass = (*big).bclass as usize;
             if size > classes::MAX_MEDIUM_BLOCK
                 && size <= classes::MAX_BIG_BLOCK
