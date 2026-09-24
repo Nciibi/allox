@@ -380,7 +380,14 @@ pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
     let block = crate::classes::MEDIUM_CLASSES[mclass];
     let capacity = medium_capacity_for(block, span_pages_for(block)) as u32;
     let target = (MEDIUM_REFILL_BYTES / block) as u32;
-    target.min(MEDIUM_REFILL_BATCH).min(capacity)
+    let mut batch = target;
+    if batch > MEDIUM_REFILL_BATCH {
+        batch = MEDIUM_REFILL_BATCH;
+    }
+    if batch > capacity {
+        batch = capacity;
+    }
+    batch
 }
 
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
