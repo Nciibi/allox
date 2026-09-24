@@ -479,6 +479,29 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 
+#[cfg(feature = "telemetry")]
+fn note_large_alloc(size: usize) {
+    use core::sync::atomic::Ordering::Relaxed;
+    heap::TELEMETRY.large_allocs.fetch_add(1, Relaxed);
+    heap::TELEMETRY.total_allocs.fetch_add(1, Relaxed);
+    heap::TELEMETRY.bytes_in.fetch_add(size as u64, Relaxed);
+    let live = heap::TELEMETRY
+        .bytes_in
+        .load(Relaxed)
+        .saturating_sub(heap::TELEMETRY.bytes_out.load(Relaxed));
+    heap::TELEMETRY.peak_live_bytes.fetch_max(live, Relaxed);
+}
+
+#[cfg(feature = "telemetry")]
+fn note_large_free(p: *mut u8, base: *mut u8, mapped: usize) {
+    use core::sync::atomic::Ordering::Relaxed;
+    heap::TELEMETRY.total_frees.fetch_add(1, Relaxed);
+    let user = p as usize - base as usize;
+    heap::TELEMETRY
+        .bytes_out
+        .fetch_add(mapped.saturating_sub(user) as u64, Relaxed);
+}
+
 /// Returns `(ptr, fresh)` where `fresh` means the memory is guaranteed
 /// OS-zero (a brand-new mapping rather than a recycled one).
 unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool) {
