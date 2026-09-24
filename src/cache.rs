@@ -228,6 +228,7 @@ impl ThreadCache {
                 len: 0,
             }; NUM_MEDIUM],
             mvirgin: [0; NUM_MEDIUM],
+            mactive: [ActiveMedium::empty(); NUM_MEDIUM],
             #[cfg(all(unix, feature = "std"))]
             bigbins: [Bin {
                 head: ptr::null_mut(),
@@ -527,8 +528,49 @@ impl ThreadCache {
         }
     }
 
+    #[inline]
+    unsafe fn active_medium_alloc(&mut self, mclass: usize) -> *mut u8 {
+        let block_size = MEDIUM_CLASSES[mclass];
+        let p = {
+            let active = &mut self.mactive[mclass];
+            let p = match pop_block(&mut active.head) {
+                Some(p) => p,
+                None => return ptr::null_mut(),
+            };
+            let below = active.len - 1;
+            active.len = below;
+            if below < active.virgin {
+                active.virgin -= 1;
+            }
+            p
+        };
+        self.cached_bytes -= block_size;
+        p
+    }
+
+    #[inline]
+    fn active_medium_contains(&self, p: *mut u8, mclass: usize) -> bool {
+        let active = &self.mactive[mclass];
+        !active.span.is_null()
+            && (p as usize) >= active.base
+            && (p as usize) < active.end
+    }
+
+    #[inline]
+    unsafe fn active_medium_dealloc(&mut self, p: *mut u8, mclass: usize) {
+        let active = &mut self.mactive[mclass];
+        push_block(&mut active.head, p);
+        active.len += 1;
+    }
+
     /// Medium fast-path allocation. Returns null only on OS exhaustion.
     pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
+        let p = self.active_medium_alloc(mclass);
+        if !p.is_null() {
+            #[cfg(feature = "telemetry")]
+            self.note_alloc_medium(mclass);
+            return p;
+        }
         let bin = &mut self.mbins[mclass];
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
