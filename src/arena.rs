@@ -302,6 +302,7 @@ impl Arena {
             holes.entries[idx] = (off, pages);
             holes.len = idx + 1;
             holes.bytes += bytes;
+            self.hole_count.store(holes.len, Ordering::Release);
         } else {
             self.abandoned.fetch_add(1, Ordering::Relaxed);
         }
