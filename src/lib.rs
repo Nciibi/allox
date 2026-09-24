@@ -1820,9 +1820,9 @@ mod large_cache_tests {
         let five = add_hot(&mut cache, 5);
         let four = add_hot(&mut cache, 4);
         cache.hot_exact[4] = 0;
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((four, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((four, 4, false)));
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
-        assert_eq!(cache.take_fit(5 * PAGE_SIZE), Some((five, 5)));
+        assert_eq!(cache.take_fit(5 * PAGE_SIZE), Some((five, 5, false)));
 
         let mut boundary = LargeRegionCache::new();
         let large = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32 + 1);
@@ -1832,13 +1832,13 @@ mod large_cache_tests {
         );
         assert_eq!(
             boundary.take_fit((LARGE_EXACT_MAX_PAGES as u32 + 1) as usize * PAGE_SIZE),
-            Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1))
+            Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1, false))
         );
         let indexed = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32);
         assert_eq!(boundary.hot_exact[LARGE_EXACT_MAX_PAGES], 0);
         assert_eq!(
             boundary.take_fit(LARGE_EXACT_MAX_PAGES * PAGE_SIZE),
-            Some((indexed, LARGE_EXACT_MAX_PAGES as u32))
+            Some((indexed, LARGE_EXACT_MAX_PAGES as u32, false))
         );
     }
 }
