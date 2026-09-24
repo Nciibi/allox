@@ -119,10 +119,11 @@ fn big_realloc_grows_and_shrinks() {
             }
             let np = realloc(p, nsize);
             assert!(!np.is_null());
-            eprintln!("realloc {} -> {} returned {:p}", size, nsize, np);
             check_pattern(np, size);
+            for i in size..nsize {
+                *np.add(i) = (i % 251) as u8;
+            }
             p = np;
-            eprintln!("usable {} byte70000 {}", allox::usable_size(p), *p.add(70000));
             size = nsize;
         }
         // Shrink within big stays usable with prefix intact.
