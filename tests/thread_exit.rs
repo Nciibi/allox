@@ -115,9 +115,12 @@ fn free_only_thread_flushes_cached_blocks() {
     allox::flush_current_thread();
     original.sort_unstable();
 
+    let original_addr = original.as_ptr() as usize;
     std::thread::scope(|scope| {
-        let ptrs = &original;
         scope.spawn(move || {
+            let ptrs = unsafe {
+                std::slice::from_raw_parts(original_addr as *const *mut u8, COUNT)
+            };
             for p in ptrs {
                 allox::free(*p);
             }
