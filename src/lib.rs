@@ -656,14 +656,7 @@ unsafe fn free_large(p: *mut u8) {
         }
     }
     #[cfg(feature = "telemetry")]
-    {
-        use core::sync::atomic::Ordering::Relaxed;
-        heap::TELEMETRY.total_frees.fetch_add(1, Relaxed);
-        let user = p as usize - base as usize;
-        heap::TELEMETRY
-            .bytes_out
-            .fetch_add(mapped.saturating_sub(user) as u64, Relaxed);
-    }
+    note_large_free(p, base, mapped);
 }
 
 #[cold]
