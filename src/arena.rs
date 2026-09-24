@@ -821,6 +821,21 @@ mod tests {
 
     #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
     #[test]
+    fn granule_commit_tracks_aligned_range_and_tail() {
+        let a = Arena::with_size(4 * ARENA_GRANULE_SIZE);
+        let pages = ARENA_GRANULE_MIN_PAGES + 1;
+        let (base, fresh) = unsafe { a.commit(pages) };
+        assert!(!base.is_null() && fresh);
+        assert_eq!(base as usize % ARENA_GRANULE_SIZE, 0);
+        let (tail, tail_fresh) = unsafe { a.commit(1) };
+        assert!(!tail.is_null() && !tail_fresh);
+        assert_eq!(tail, unsafe { base.add(pages * ARENA_ALIGN) });
+        assert_eq!(a.granule_stats(), (1, (4 * ARENA_GRANULE_SIZE) as u64));
+        unsafe { a.release(tail, 1) };
+    }
+
+    #[cfg_attr(miri, ignore = "raw mmap not available under Miri")]
+    #[test]
     fn medium_table_resolves_cross_page_blocks() {
         unsafe {
             let block = MEDIUM_CLASSES[0];
