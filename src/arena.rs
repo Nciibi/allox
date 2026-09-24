@@ -564,6 +564,14 @@ pub(crate) unsafe fn commit(pages: usize) -> (*mut u8, bool) {
     ARENA.commit(pages)
 }
 
+pub(crate) unsafe fn grow_frontier(
+    base: *mut u8,
+    old_pages: usize,
+    new_pages: usize,
+) -> bool {
+    ARENA.grow_frontier(base, old_pages, new_pages)
+}
+
 /// Return an arena slice; no-op-safe for any input (misuse still discards,
 /// which is always safe, then parks garbage the pop path can never match…
 /// callers must only pass arena-owned slices — enforced by [`contains`]).
