@@ -373,7 +373,7 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 /// Blocks moved from spans into a thread cache per slow-path take.
 /// 16 (64 measured & rejected 2026-09-23: mixed-all 13.6M → 10.6M —
 /// huge medium batches hoard cache budget and thrash trim/flush).
-pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
+pub(crate) const MEDIUM_REFILL_BATCH: u32 = crate::classes::TARGET_BLOCKS_PER_SPAN;
 
 pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
     let block = crate::classes::MEDIUM_CLASSES[mclass];
