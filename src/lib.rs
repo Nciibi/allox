@@ -792,7 +792,7 @@ unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
     // elsewhere map_any is already the optimal primitive.
     let (base, fresh) = map_large_region(mapped);
     if base.is_null() {
-        return (ptr::null_mut(), false);
+        return (ptr::null_mut(), false, false);
     }
     // Count the fresh mapping exactly once here: every success is one
     // kernel mapping op (`MAP_CALLS`); live virtual (`MAPPED_PAGES`) only
