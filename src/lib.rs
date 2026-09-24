@@ -949,7 +949,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         #[cfg(not(all(unix, feature = "std")))]
         {
             let (p, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !p.is_null() && !known_zeroed {
+            if !p.is_null() {
                 // Recycled region: dirtied by its previous life.
                 ptr::write_bytes(p, 0, size);
             }
@@ -958,7 +958,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         #[cfg(all(unix, feature = "std"))]
         if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
             let (p, _fresh, known_zeroed) = alloc_large_ex(size, align);
-            if !p.is_null() && !known_zeroed {
+            if !p.is_null() {
                 ptr::write_bytes(p, 0, size);
             }
             return p;
