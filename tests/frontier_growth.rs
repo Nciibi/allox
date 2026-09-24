@@ -1,6 +1,7 @@
 #![cfg(all(unix, feature = "std"))]
 
 use allox::Allox;
+use std::alloc::{GlobalAlloc, Layout};
 
 #[global_allocator]
 static GLOBAL: Allox = Allox;
