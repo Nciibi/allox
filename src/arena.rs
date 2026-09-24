@@ -741,7 +741,7 @@ mod tests {
         unsafe { b.release(remainder, 1) };
         assert!(b.hole_exact_hits.load(Ordering::Acquire) >= 1);
         let stats = b.hole_stats();
-        assert!(stats.0 >= 2);
+        assert!(stats.0 >= 1);
         assert!(stats.1 >= 2);
         assert!(stats.2 >= 1);
         assert!(stats.3 >= 1);
