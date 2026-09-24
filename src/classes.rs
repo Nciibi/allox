@@ -92,8 +92,8 @@ const MEDIUM_CHUNK_RESERVE: usize = 48;
 /// Largest medium block: biggest 12.5% step that still fits beside headers.
 pub(crate) const MEDIUM_BLOCK_CAP: usize = 65536 - MEDIUM_CHUNK_RESERVE;
 
-/// Blocks packed per span at carve time; spans are sized to hold at least
-/// this many, so one heap lock acquisition yields several thread-cache fills.
+/// Blocks packed per span at carve time. The current span-size heuristic is
+/// based on aggregate bytes; tests calculate the exact per-chunk capacity.
 pub(crate) const TARGET_BLOCKS_PER_SPAN: usize = 8;
 
 const fn medium_step(size: usize) -> usize {
