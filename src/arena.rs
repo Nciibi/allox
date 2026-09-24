@@ -158,10 +158,6 @@ pub(crate) struct Arena {
     hole_splits: AtomicUsize,
     #[cfg(feature = "telemetry")]
     hole_empty_fastpath: AtomicUsize,
-    #[cfg(feature = "telemetry")]
-    hole_coalesces: AtomicUsize,
-    #[cfg(feature = "telemetry")]
-    hole_coalesced_pages: AtomicUsize,
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
