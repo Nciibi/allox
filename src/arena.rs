@@ -408,6 +408,15 @@ impl Arena {
         )
     }
 
+    pub(crate) fn hole_stats(&self) -> (u64, u64, u64, u64) {
+        (
+            self.hole_scans.load(Ordering::Relaxed) as u64,
+            self.hole_hits.load(Ordering::Relaxed) as u64,
+            self.hole_splits.load(Ordering::Relaxed) as u64,
+            self.hole_empty_fastpath.load(Ordering::Relaxed) as u64,
+        )
+    }
+
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
