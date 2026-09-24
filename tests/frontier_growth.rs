@@ -27,5 +27,21 @@ fn large_realloc_grows_at_arena_frontier() {
         assert_eq!(*q.add(8 * 1024 * 1024 - 1), ((8 * 1024 * 1024 - 1) % 251) as u8);
         assert!(allox::usable_size(q) >= 16 * 1024 * 1024);
         allox::free(q);
+
+        let before = allox::__debug_arena_detail().1;
+        let old_layout = Layout::from_size_align(8 * 1024 * 1024, 16).unwrap();
+        let new_layout = Layout::from_size_align(16 * 1024 * 1024, 16).unwrap();
+        let p = GLOBAL.alloc(old_layout);
+        assert!(!p.is_null());
+        let after = allox::__debug_arena_detail().1;
+        if after <= before {
+            GLOBAL.dealloc(p, old_layout);
+            return;
+        }
+        *p = 0x5A;
+        let q = GLOBAL.realloc(p, old_layout, new_layout.size());
+        assert_eq!(q, p);
+        assert_eq!(*q, 0x5A);
+        GLOBAL.dealloc(q, new_layout);
     }
 }
