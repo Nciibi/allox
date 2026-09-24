@@ -63,7 +63,7 @@ const HOLE_CAP_BYTES: usize = 256 * 1024 * 1024;
 
 const ARENA_GRANULE_SIZE: usize = 2 * 1024 * 1024;
 const ARENA_GRANULE_MIN_PAGES: usize = ARENA_GRANULE_SIZE / ARENA_ALIGN;
-const ARENA_GRANULE_TRIGGER_PAGES: usize = 2 * ARENA_GRANULE_MIN_PAGES;
+const ARENA_GRANULE_TRIGGER_PAGES: usize = usize::MAX;
 
 const MAP_FIXED: i32 = 0x10; // Linux, macOS, *BSD agree on this value.
 const MAP_PRIVATE: i32 = 0x02;
