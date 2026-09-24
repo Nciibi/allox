@@ -568,6 +568,33 @@ mod tests {
     }
 
     #[test]
+    fn small_page_provisions_lazily() {
+        let (raw, layout) = unsafe { aligned_pages(1) };
+        let page = raw.cast::<PageHeader>();
+        unsafe {
+            (*page).init(0);
+            assert!((*page).free_head.is_null());
+            assert_eq!((*page).free_count, 0);
+            assert_eq!((*page).used, 0);
+            assert!((*page).flags & FLAG_VIRGIN != 0);
+            assert_eq!((*page).provision(4), 4);
+            assert_eq!((*page).free_count, 4);
+            let mut current = (*page).free_head;
+            let mut count = 0;
+            while !current.is_null() {
+                assert!(current as usize >= raw as usize + HEADER_SIZE);
+                assert!(current as usize + CLASSES[0] <= raw as usize + PAGE_SIZE);
+                count += 1;
+                current = *current.cast::<*mut u8>();
+            }
+            assert_eq!(count, 4);
+            assert_eq!((*page).provision(4), 4);
+            assert_eq!((*page).free_count, 8);
+        }
+        unsafe { aligned_free(raw, layout) };
+    }
+
+    #[test]
     fn owner_updates_are_atomic() {
         let (raw, layout) = unsafe { aligned_pages(1) };
         let page = raw.cast::<PageHeader>();
