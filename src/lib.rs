@@ -1341,6 +1341,13 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
+        #[cfg(all(unix, feature = "std"))]
+        if !p.is_null()
+            && (layout.align() > MIN_ALIGN || layout.size() > MAX_BIG_BLOCK)
+            && try_grow_large_frontier(p, new_size)
+        {
+            return p;
+        }
         let new_p = self.alloc(core::alloc::Layout::from_size_align_unchecked(
             new_size,
             layout.align(),
