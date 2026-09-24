@@ -482,8 +482,11 @@ mod tests {
         let (raw, layout) = unsafe { aligned_pages(1) };
         let page = raw.cast::<PageHeader>();
         unsafe { (*page).init(0) };
-        assert_eq!(core::mem::size_of::<PageHeader>(), 48);
-        assert_eq!(core::mem::size_of::<SpanMaster>(), 64);
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(core::mem::size_of::<PageHeader>(), 48);
+            assert_eq!(core::mem::size_of::<SpanMaster>(), 64);
+        }
         struct SharedPage(*mut PageHeader);
         unsafe impl Send for SharedPage {}
         unsafe impl Sync for SharedPage {}
