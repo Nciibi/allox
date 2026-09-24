@@ -1755,6 +1755,7 @@ mod large_cache_tests {
         let index = cache.len;
         let base = (0x1000 + index * PAGE_SIZE) as *mut u8;
         cache.entries[index] = (base, pages);
+        cache.hot_zeroed[index] = false;
         cache.len += 1;
         cache.bytes += pages as usize * PAGE_SIZE;
         cache.index_hot(index, pages as usize);
@@ -1765,6 +1766,7 @@ mod large_cache_tests {
         let index = cache.cold_len;
         let base = (0x200000 + index * PAGE_SIZE) as *mut u8;
         cache.cold[index] = (base, pages);
+        cache.cold_zeroed[index] = true;
         cache.cold_len += 1;
         cache.cold_bytes += pages as usize * PAGE_SIZE;
         cache.index_cold(index, pages as usize);
@@ -1779,12 +1781,12 @@ mod large_cache_tests {
         let cold_four = add_cold(&mut cache, 4);
         let cold_six = add_cold(&mut cache, 6);
 
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4, false)));
         let replacement = add_hot(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((replacement, 4)));
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((replacement, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4, true)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6, true)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8, false)));
         assert_eq!(cache.len, 0);
         assert_eq!(cache.bytes, 0);
         assert_eq!(cache.cold_len, 0);
@@ -1797,11 +1799,11 @@ mod large_cache_tests {
         let first = add_hot(&mut cache, 4);
         let second = add_hot(&mut cache, 4);
         let third = add_hot(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4, false)));
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4, false)));
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4, false)));
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
 
         let cold_first = add_cold(&mut cache, 4);
