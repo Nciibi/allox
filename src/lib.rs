@@ -614,6 +614,8 @@ unsafe fn free_large(p: *mut u8) {
         || (false, p as usize),
     );
     if stashed {
+        #[cfg(feature = "telemetry")]
+        note_large_free(p, base, mapped);
         return;
     }
 
