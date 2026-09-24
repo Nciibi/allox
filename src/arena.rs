@@ -498,6 +498,20 @@ pub(crate) unsafe fn large_table_set(
     }
 }
 
+pub(crate) unsafe fn medium_table_set(
+    base: *mut u8,
+    pages: u32,
+    master: *mut BigMaster,
+) {
+    let master = master.cast::<SpanMaster>();
+    for i in 0..pages as usize {
+        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
+            Some(idx) => BIG_MAP[idx].store(master as usize | MEDIUM_TABLE_TAG, Ordering::Release),
+            None => debug_assert!(false, "medium table set outside reservation"),
+        }
+    }
+}
+
 pub(crate) unsafe fn big_table_clear(base: *mut u8, pages: u32) {
     for i in 0..pages as usize {
         match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
