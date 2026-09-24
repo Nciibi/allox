@@ -12,6 +12,7 @@
 //! Run with: cargo bench
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
 //! Machine-readable output: BENCH_OUTPUT=json cargo bench
+//! Fresh-process JSONL: BENCH_FRESH=1 BENCH_OUTPUT=json cargo bench
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::{Duration, Instant};
