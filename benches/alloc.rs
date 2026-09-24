@@ -1453,9 +1453,6 @@ fn main() {
                 abandoned_delta: d1abnd.saturating_sub(d0abnd),
                 abandoned_total: d1abnd,
                 arena_high_water: d1hi,
-                coalesce_checks: d1cc.saturating_sub(d0cc),
-                coalesce_merges: d1cm.saturating_sub(d0cm),
-                coalesced_pages: d1cp.saturating_sub(d0cp),
                 probe,
             })
         } else {
