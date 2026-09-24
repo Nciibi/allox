@@ -25,6 +25,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Blocks moved from pages into a thread cache in one batch.
 pub(crate) const REFILL_BATCH: u32 = 64;
+const PAGE_PROVISION_BATCH: usize = 8;
 
 /// Fully-freed pages kept mapped per size class before unmapping.
 /// Avoids map/unmap syscalls on alloc/free churn; worst-case retention is
