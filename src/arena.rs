@@ -474,6 +474,7 @@ fn big_page_index(p: *mut u8) -> Option<usize> {
 }
 
 const LARGE_TABLE_TAG: usize = 1;
+const MEDIUM_TABLE_TAG: usize = 2;
 
 pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMaster) {
     for i in 0..pages as usize {
