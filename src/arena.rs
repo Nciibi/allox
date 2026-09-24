@@ -310,12 +310,18 @@ impl Arena {
                 self.hole_hits.fetch_add(1, Ordering::Relaxed);
                 if p > pages {
                     holes.entries[i] = (off + pages * ARENA_ALIGN, p - pages);
+                    holes.refresh_exact(p);
+                    let remainder = p - pages;
+                    if remainder <= EXACT_BUCKET_MAX {
+                        holes.exact[remainder] = i as u16;
+                    }
                     self.hole_splits.fetch_add(1, Ordering::Relaxed);
                 } else {
                     let last = holes.len - 1;
                     holes.entries[i] = holes.entries[last];
                     holes.entries[last] = (0, 0);
                     holes.len = last;
+                    holes.refresh_exact(p);
                 }
                 self.hole_count.store(holes.len, Ordering::Release);
                 (self.start.load(Ordering::Relaxed) + off) as *mut u8
