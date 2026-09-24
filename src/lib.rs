@@ -325,7 +325,7 @@ const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
 /// collapse). 8 shards x 512 x 16 B = 64 KiB static. Hot stays shallow
 /// (hot retention is mapped RSS, not virtual).
 const LARGE_COLD_SLOTS: usize = 512;
-const LARGE_EXACT_MAX_PAGES: usize = 64;
+const LARGE_EXACT_MAX_PAGES: usize = LARGE_COLD_CAP_BYTES / page::PAGE_SIZE;
 const EMPTY_LARGE_INDEX: u16 = u16::MAX;
 
 struct LargeRegionCache {
