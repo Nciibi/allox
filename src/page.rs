@@ -86,8 +86,7 @@ impl PageHeader {
         self.used = 0;
         self.class = class as u16;
         self.flags = FLAG_VIRGIN;
-        self.owner
-            .store(0, Ordering::Relaxed);
+        self.owner.store(0, Ordering::Relaxed);
     }
 }
 
@@ -188,8 +187,7 @@ impl SpanMaster {
         self.mclass = mclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self.owner
-            .store(0, Ordering::Relaxed);
+        self.owner.store(0, Ordering::Relaxed);
     }
 
     /// Byte size of the whole span mapping (for unmap).
@@ -277,8 +275,7 @@ impl BigMaster {
         self.bclass = bclass as u16;
         self.flags = FLAG_VIRGIN;
         self.npages = npages;
-        self.owner
-            .store(0, Ordering::Relaxed);
+        self.owner.store(0, Ordering::Relaxed);
     }
 
     /// Byte size of the whole span mapping (for unmap).
