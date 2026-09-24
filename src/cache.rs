@@ -274,7 +274,6 @@ impl ThreadCache {
         self.pending.ops += 1;
         self.pending.frees += 1;
         self.pending.bytes_out += CLASSES[class] as u64;
-        self.pending.per_class[class] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
@@ -298,7 +297,6 @@ impl ThreadCache {
         self.pending.ops += 1;
         self.pending.frees += 1;
         self.pending.bytes_out += MEDIUM_CLASSES[mclass] as u64;
-        self.pending.per_class[NUM_CLASSES + mclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
@@ -322,7 +320,6 @@ impl ThreadCache {
         self.pending.ops += 1;
         self.pending.frees += 1;
         self.pending.bytes_out += BIG_CLASSES[bclass] as u64;
-        self.pending.per_class[NUM_CLASSES + NUM_MEDIUM + bclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }

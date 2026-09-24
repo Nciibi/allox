@@ -5,6 +5,8 @@
 //! internal fragmentation bound of ~12.5% (the same bound used by
 //! mimalloc/tcmalloc-style designs).
 
+use crate::page::{PAGE_SIZE, SPAN_SUB_SIZE};
+
 /// Minimum block size; doubles as the maximum useful fundamental alignment.
 pub(crate) const MIN_ALIGN: usize = 16;
 /// Largest block size served from 64 KiB pages.
@@ -165,12 +167,33 @@ pub(crate) const MEDIUM_CLASSES: [usize; NUM_MEDIUM] = build_medium();
 /// Largest servable medium block (top of the generated table).
 pub(crate) const MAX_MEDIUM_BLOCK: usize = MEDIUM_CLASSES[NUM_MEDIUM - 1];
 
+/// Number of blocks carved from a medium span with the current geometry.
+pub(crate) const fn medium_capacity_for(block: usize, pages: usize) -> usize {
+    if pages == 0 {
+        return 0;
+    }
+    (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / block
+        + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / block)
+}
+
 /// Span length in 64 KiB pages for a medium block size. The current
 /// heuristic reserves the master header plus `TARGET_BLOCKS_PER_SPAN`
 /// aggregate blocks; exact capacity is validated per chunk in tests.
 pub(crate) const fn span_pages_for(block: usize) -> usize {
     let need = MEDIUM_CHUNK_RESERVE + TARGET_BLOCKS_PER_SPAN * block;
-    (need + 65536 - 1) / 65536
+    (need + PAGE_SIZE - 1) / PAGE_SIZE
+}
+
+pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
+    let capacity = medium_capacity_for(
+        MEDIUM_CLASSES[mclass],
+        span_pages_for(MEDIUM_CLASSES[mclass]),
+    );
+    if capacity < crate::heap::MEDIUM_REFILL_BATCH as usize {
+        capacity as u32
+    } else {
+        crate::heap::MEDIUM_REFILL_BATCH
+    }
 }
 
 /// Direct-mapped size -> medium-class table for

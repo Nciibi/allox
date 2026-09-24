@@ -474,9 +474,10 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
             return;
         }
     }
-    sys::unmap(base, mapped);
-    heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
-    heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    if sys::unmap(base, mapped) {
+        heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+        heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 #[cfg(feature = "telemetry")]
@@ -1207,9 +1208,26 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     if p.is_null() {
         return 0;
     }
-    // Large-offset check first: fault-safe for every live pointer (masked
-    // reads can dangle outside unaligned large regions — see dealloc_impl).
-    // Cold path, so the extra load on small/medium is irrelevant.
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(p, 1) {
+        let big = crate::arena::big_table_get(p);
+        if !big.is_null() {
+            if (*big).contains(p) {
+                return classes::BIG_CLASSES[(*big).bclass as usize];
+            }
+            return 0;
+        }
+        let base = p as usize & !PAGE_MASK;
+        if *(base as *const u64) == page::PAGE_MAGIC {
+            let page = base as *mut page::PageHeader;
+            return classes::CLASSES[(*page).class as usize];
+        }
+        let span = SpanMaster::of(p);
+        if !span.is_null() && (*span).contains(p) {
+            return classes::MEDIUM_CLASSES[(*span).mclass as usize];
+        }
+        return 0;
+    }
     if let Some((base, mapped)) = large_header_of(p) {
         return mapped - (p as usize - base as usize);
     }
@@ -1218,20 +1236,10 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         let page = base as *mut page::PageHeader;
         classes::CLASSES[(*page).class as usize]
     } else {
-        // Span before abort: a medium block's header-ward bytes must never be
-        // mistaken for a large header (checked with contains, not just magic).
         let span = SpanMaster::of(p);
         if !span.is_null() && (*span).contains(p) {
             classes::MEDIUM_CLASSES[(*span).mclass as usize]
         } else {
-            // Big spans (arena only): side-table lookup, validated.
-            #[cfg(all(unix, feature = "std"))]
-            {
-                let big = crate::arena::big_table_get(p);
-                if !big.is_null() && (*big).contains(p) {
-                    return classes::BIG_CLASSES[(*big).bclass as usize];
-                }
-            }
             0
         }
     }

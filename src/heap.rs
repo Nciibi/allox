@@ -344,10 +344,11 @@ impl GlobalHeap {
                         return;
                     }
                 }
-                sys::unmap(page.cast::<u8>(), PAGE_SIZE);
-                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-                SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                if sys::unmap(page.cast::<u8>(), PAGE_SIZE) {
+                    MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                    UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                    SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
     }
@@ -597,10 +598,11 @@ unsafe fn mact_fate(base: *mut u8, fate: SpanFate) {
                     return;
                 }
             }
-            sys::unmap(base, bytes);
-            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-            SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            if sys::unmap(base, bytes) {
+                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SPAN_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -991,10 +993,11 @@ unsafe fn bact_fate(base: *mut u8, fate: BigSpanFate) {
                 crate::arena::release(base, bytes / PAGE_SIZE);
                 return;
             }
-            sys::unmap(base, bytes);
-            MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-            UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-            BIG_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            if sys::unmap(base, bytes) {
+                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                BIG_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 }

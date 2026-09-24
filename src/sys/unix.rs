@@ -75,8 +75,8 @@ pub(crate) unsafe fn map(size: usize) -> *mut u8 {
     aligned as *mut u8
 }
 
-pub(crate) unsafe fn unmap(p: *mut u8, size: usize) {
-    let _ = munmap(p as *mut core::ffi::c_void, size);
+pub(crate) unsafe fn unmap(p: *mut u8, size: usize) -> bool {
+    munmap(p as *mut core::ffi::c_void, size) == 0
 }
 
 /// Map `size` bytes without alignment guarantees (kernel 4 KiB suffices).

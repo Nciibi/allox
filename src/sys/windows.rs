@@ -30,8 +30,8 @@ pub(crate) unsafe fn map(size: usize) -> *mut u8 {
     p as *mut u8
 }
 
-pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) {
-    let _ = VirtualFree(p as *mut core::ffi::c_void, 0, MEM_RELEASE);
+pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) -> bool {
+    VirtualFree(p as *mut core::ffi::c_void, 0, MEM_RELEASE) != 0
 }
 
 /// Tell the OS the range is no longer needed but keep it reserved: physical
