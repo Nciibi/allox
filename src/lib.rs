@@ -1821,6 +1821,12 @@ mod large_cache_tests {
             boundary.take_fit((LARGE_EXACT_MAX_PAGES as u32 + 1) as usize * PAGE_SIZE),
             Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1))
         );
+        let indexed = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32);
+        assert_eq!(boundary.hot_exact[LARGE_EXACT_MAX_PAGES], 0);
+        assert_eq!(
+            boundary.take_fit(LARGE_EXACT_MAX_PAGES * PAGE_SIZE),
+            Some((indexed, LARGE_EXACT_MAX_PAGES as u32))
+        );
     }
 }
 
