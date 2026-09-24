@@ -129,7 +129,7 @@ fn big_realloc_grows_and_shrinks() {
         check_pattern(sp, 70000);
         free(sp);
 
-        let mut cross = malloc(262145);
+        let cross = malloc(262145);
         assert!(!cross.is_null());
         fill_pattern(cross, 262145);
         let cross = realloc(cross, 524288);
