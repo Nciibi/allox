@@ -1799,7 +1799,7 @@ mod large_cache_tests {
         let mut boundary = LargeRegionCache::new();
         let large = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32 + 1);
         assert_eq!(
-            boundary.hot_exact[LARGE_EXACT_MAX_PAGES + 1],
+            boundary.hot_exact[LARGE_EXACT_MAX_PAGES],
             EMPTY_LARGE_INDEX
         );
         assert_eq!(
