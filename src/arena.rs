@@ -103,7 +103,7 @@ extern "C" {
 /// would not survive. Offsets (not absolute bases) keep the entries
 /// position-independent garbage on reset paths.
 const EXACT_BUCKET_MAX: usize = 64;
-const COALESCE_MIN_PAGES: usize = usize::MAX;
+const COALESCE_MIN_PAGES: usize = 16;
 const EMPTY_BUCKET: u16 = u16::MAX;
 
 struct HoleStore {
