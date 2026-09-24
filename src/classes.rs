@@ -184,17 +184,7 @@ pub(crate) const fn span_pages_for(block: usize) -> usize {
     (need + PAGE_SIZE - 1) / PAGE_SIZE
 }
 
-pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
-    let capacity = medium_capacity_for(
-        MEDIUM_CLASSES[mclass],
-        span_pages_for(MEDIUM_CLASSES[mclass]),
-    );
-    if capacity < crate::heap::MEDIUM_REFILL_BATCH as usize {
-        capacity as u32
-    } else {
-        crate::heap::MEDIUM_REFILL_BATCH
-    }
-}
+
 
 /// Direct-mapped size -> medium-class table for
 /// `size in (MAX_SMALL_SIZE, MAX_MEDIUM_BLOCK]`, slot `(size-MAX_SMALL-1)/16`.

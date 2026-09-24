@@ -7,7 +7,7 @@
 //! construction cannot happen while any thread still caches one of its
 //! blocks. No code path ever holds two class locks at once.
 
-use crate::classes::{span_pages_for, NUM_CLASSES, NUM_MEDIUM};
+use crate::classes::{medium_capacity_for, span_pages_for, NUM_CLASSES, NUM_MEDIUM};
 #[cfg(all(unix, feature = "std"))]
 use crate::classes::{big_span_pages_for, NUM_BIG};
 #[cfg(feature = "telemetry")]
@@ -375,6 +375,16 @@ pub(crate) static HEAP: GlobalHeap = GlobalHeap::new();
 /// huge medium batches hoard cache budget and thrash trim/flush).
 pub(crate) const MEDIUM_REFILL_BATCH: u32 = 16;
 
+pub(crate) const fn medium_refill_batch(mclass: usize) -> u32 {
+    let block = crate::classes::MEDIUM_CLASSES[mclass];
+    let capacity = medium_capacity_for(block, span_pages_for(block));
+    if capacity < MEDIUM_REFILL_BATCH as usize {
+        capacity as u32
+    } else {
+        MEDIUM_REFILL_BATCH
+    }
+}
+
 /// Fully-freed spans kept mapped per medium class before unmapping. Spans
 /// are large (up to ~16 pages); the cap is byte-scaled in release_blocks
 /// (see MAX_EMPTY_SPAN_BYTES) so small-medium classes keep several spans
@@ -649,7 +659,7 @@ impl MediumHeap {
 
         {
             let mut list = self.classes[mclass].lock();
-            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
 
             if count == 0 && !list.empty.is_null() {
                 let span = list.empty;
@@ -661,7 +671,7 @@ impl MediumHeap {
                     virgin = false;
                 }
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
             }
 
             if count == 0 && list.cold_len > 0 {
@@ -680,7 +690,7 @@ impl MediumHeap {
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
             }
         }
 
@@ -697,7 +707,7 @@ impl MediumHeap {
                 SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, MEDIUM_REFILL_BATCH);
+                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, medium_refill_batch(mclass));
             } else {
                 virgin = false;
             }
