@@ -1319,8 +1319,9 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
         }
         return 0;
     }
-    if let Some((base, mapped)) = large_header_of(p) {
-        return mapped - (p as usize - base as usize);
+    if legacy_large_contains(p) {
+        let hdr = (p as usize - LARGE_HEADER_SIZE) as *const LargeHeader;
+        return (*hdr).mapped_size - (p as usize - (*hdr).base as usize);
     }
     let base = p as usize & !PAGE_MASK;
     if *(base as *const u64) == page::PAGE_MAGIC {
