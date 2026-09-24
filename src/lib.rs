@@ -843,11 +843,28 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
-    // Large-offset check FIRST: it is in-bounds for every live pointer
-    // (headers sit 32 B below any large user pointer by construction), while
-    // masked reads can round down *outside* an unaligned large region into
-    // unmapped memory and fault. Small pages stay hot path second (one extra
-    // predictable branch); spans last.
+    #[cfg(all(unix, feature = "std"))]
+    if crate::arena::contains(p, 1) {
+        let big = crate::arena::big_table_get(p);
+        if !big.is_null() {
+            if (*big).contains(p) {
+                dealloc_big(p, big);
+                return;
+            }
+            corrupt_pointer();
+        }
+        let masked_magic = *((p as usize & !PAGE_MASK) as *const u64);
+        if masked_magic == page::PAGE_MAGIC {
+            dealloc_small(p);
+            return;
+        }
+        let span = SpanMaster::of(p);
+        if !span.is_null() && (*span).contains(p) {
+            dealloc_medium(p, span);
+            return;
+        }
+        corrupt_pointer();
+    }
     if large_header_of(p).is_some() {
         free_large(p);
         return;
@@ -861,18 +878,6 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if !span.is_null() && (*span).contains(p) {
         dealloc_medium(p, span);
         return;
-    }
-    // Big spans last: side-table lookup (arena only; data chunks carry no
-    // headers to mask). Costs two loads + one compare on paths that already
-    // missed everything else; small/medium hot paths gain one predictable
-    // branch. Every hit is validated by contains() before use.
-    #[cfg(all(unix, feature = "std"))]
-    {
-        let big = crate::arena::big_table_get(p);
-        if !big.is_null() && (*big).contains(p) {
-            dealloc_big(p, big);
-            return;
-        }
     }
     corrupt_pointer()
 }
