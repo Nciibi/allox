@@ -115,7 +115,8 @@ one medium class; per-thread refill batches (`MEDIUM_REFILL_BATCH = 16`);
 cold retention drops physical pages via `madvise(MADV_DONTNEED)` while keeping
 virtual. Big allocations (<= 262144, arena on unix+std) mirror medium with
 `BIG_REFILL_BATCH = 4` and a 2 MiB static side table for O(1) pointer ->
-span lookup (see `DESIGN_SPANS_BIG.md` for carving proofs).
+span lookup. Same-span refills stay in a per-class active span; mixed-span
+batches use the ordinary bin (see `DESIGN_SPANS_BIG.md` for carving proofs).
 
 Large / over-aligned allocations (>262144, or align > 16, or no arena):
 
@@ -160,7 +161,7 @@ alloc(size, align):
   size <= 16 KiB, align<=16 -> small: cache.bin[class].pop()  -- FAST PATH
                                on miss: heap.acquire_page + batch refill
   size <= 65472             -> medium: cache medium bin, MediumHeap spans
-  size <= 262144, arena     -> big: cache big bin, BigHeap spans (+ side table)
+  size <= 262144, arena     -> big: active big span/bin, BigHeap spans (+ side table)
   else (large, over-align,
         or no arena)        -> large: thread stash / sharded region cache
                                / arena commit, write LargeHeader
@@ -169,7 +170,8 @@ alloc(size, align):
 dealloc(p):
   large-header offset probe -> LARGE: unmap_or_return (stash/cache/hole)
   page-mask magic           -> small: cache.bin[class].push(p); trim on budget
-  span containment          -> medium/big: cache push; grouped flush
+  span containment          -> medium: active/bin push; big: active/bin push
+                                (active blocks return by range); grouped flush
   else                      -> abort (corrupt pointer)
 ```
 
