@@ -165,10 +165,9 @@ pub(crate) const MEDIUM_CLASSES: [usize; NUM_MEDIUM] = build_medium();
 /// Largest servable medium block (top of the generated table).
 pub(crate) const MAX_MEDIUM_BLOCK: usize = MEDIUM_CLASSES[NUM_MEDIUM - 1];
 
-/// Span length in 64 KiB pages for a medium block size: covers the master
-/// header plus `TARGET_BLOCKS_PER_SPAN` blocks, rounded up to whole pages.
-/// Carving skips 64 B (master) + 16 B per sub-page, so usable space always
-/// exceeds `TARGET_BLOCKS_PER_SPAN` blocks (asserted in tests).
+/// Span length in 64 KiB pages for a medium block size. The current
+/// heuristic reserves the master header plus `TARGET_BLOCKS_PER_SPAN`
+/// aggregate blocks; exact capacity is validated per chunk in tests.
 pub(crate) const fn span_pages_for(block: usize) -> usize {
     let need = MEDIUM_CHUNK_RESERVE + TARGET_BLOCKS_PER_SPAN * block;
     (need + 65536 - 1) / 65536
