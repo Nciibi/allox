@@ -139,10 +139,8 @@ pub(crate) const NUM_MEDIUM: usize = if geo_last_medium() < TOP_MEDIUM_BLOCK {
 };
 
 /// Explicit top class: the biggest block that still fits beside headers in
-/// a 64 KiB chunk (master chunk: 65536 - 64). One block per page, eight per
-/// span — same per-lock amortization as every other medium class. Without
-/// it, requests in (geo_last, 65472] would fall to the mmap large path;
-/// that ~6% tail of e.g. mixed-all dominated large-path syscalls.
+/// a 64 KiB chunk. Without it, requests above the geometric chain would
+/// fall to the large path.
 pub(crate) const TOP_MEDIUM_BLOCK: usize = 65536 - MEDIUM_CHUNK_RESERVE;
 
 const fn build_medium() -> [usize; NUM_MEDIUM] {
