@@ -31,7 +31,7 @@
 //! syscalls are hand-declared so the lib stays dependency-free). Everywhere
 //! else the callers use their legacy paths directly.
 
-use crate::page::BigMaster;
+use crate::page::{BigMaster, LargeHeader};
 use crate::sys::{discard, Mutex};
 use core::ptr;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
