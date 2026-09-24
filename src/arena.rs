@@ -570,6 +570,10 @@ pub(crate) fn hole_stats() -> (u64, u64, u64, u64) {
     ARENA.hole_stats()
 }
 
+pub(crate) fn granule_stats() -> (u64, u64) {
+    ARENA.granule_stats()
+}
+
 /// Reservation high-water in bytes (monotonic bump frontier). Hidden
 /// observability for reservation-sizing validation.
 pub(crate) fn high_water() -> u64 {
