@@ -228,11 +228,12 @@ pub(crate) const fn medium_class_for_size(size: usize) -> usize {
 // to the large path. Non-arena targets never reference this section.
 // ---------------------------------------------------------------------------
 
-/// Room a big block needs at the span base: the master header (`page::
-/// BIG_MASTER_SIZE`, kept literal here to avoid a module cycle; asserted
-/// equal in tests below). Data chunks reserve nothing.
-#[cfg(all(unix, feature = "std"))]
+/// Room a big block needs at the span base: the master header is 64 bytes on
+/// 64-bit and 48 bytes on narrower targets. Data chunks reserve nothing.
+#[cfg(all(target_pointer_width = "64", unix, feature = "std"))]
 const BIG_MASTER_RESERVE: usize = 64;
+#[cfg(all(not(target_pointer_width = "64"), unix, feature = "std"))]
+const BIG_MASTER_RESERVE: usize = 48;
 
 /// Largest big block (explicit top class, phase 1 cap). The 1T bench tail
 /// past 256 KiB stays on the large path; revisit with its own numbers.
