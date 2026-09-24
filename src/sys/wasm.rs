@@ -27,4 +27,6 @@ pub(crate) unsafe fn unmap(_p: *mut u8, _size: usize) -> bool {
 }
 
 /// No physical/virtual split exists in linear memory; same as unmap.
-pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) {}
+pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) -> bool {
+    false
+}

@@ -101,8 +101,8 @@ pub(crate) unsafe fn map_any(size: usize) -> *mut u8 {
 /// Drop physical pages but keep the virtual reservation: the range faults
 /// back (zero-filled) on next access. Best-effort — failure just means the
 /// caller must treat the range as still dirty.
-pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
-    let _ = madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED);
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
+    madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED) == 0
 }
 
 // ---------------------------------------------------------------------------

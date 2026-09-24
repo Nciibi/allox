@@ -858,6 +858,7 @@ unsafe fn free_large(p: *mut u8) {
         if c.len < LARGE_SHARD_SLOTS && c.bytes + mapped <= LARGE_SHARD_CAP_BYTES {
             let idx = c.len;
             c.entries[idx] = (base, pages);
+            c.hot_zeroed[idx] = false;
             c.len = idx + 1;
             c.bytes += mapped;
             c.index_hot(idx, pages as usize);
@@ -870,7 +871,7 @@ unsafe fn free_large(p: *mut u8) {
             c.cold_len = idx + 1;
             c.cold_bytes += mapped;
             c.index_cold(idx, pages as usize);
-            sys::discard(base, mapped);
+            c.cold_zeroed[idx] = sys::discard(base, mapped);
             Fate::Kept
         } else {
             Fate::Unmap

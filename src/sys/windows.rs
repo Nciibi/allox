@@ -36,13 +36,14 @@ pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) -> bool {
 
 /// Tell the OS the range is no longer needed but keep it reserved: physical
 /// pages are dropped, the virtual reservation survives for reuse.
-pub(crate) unsafe fn discard(p: *mut u8, size: usize) {
-    let _ = VirtualAlloc(
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
+    !VirtualAlloc(
         p as *mut core::ffi::c_void,
         size,
         MEM_RESET,
         PAGE_READWRITE,
-    );
+    )
+    .is_null()
 }
 
 // ---------------------------------------------------------------------------
