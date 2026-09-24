@@ -1134,11 +1134,12 @@ fn run_fresh_processes() {
         if !workload_filter.is_empty() && !workload.name.contains(&workload_filter) {
             continue;
         }
-        for allocator in &allocator_names {
-            if !allocator_filter.is_empty() && !allocator.contains(&allocator_filter) {
-                continue;
-            }
-            for _ in 0..reps {
+        for repetition in 0..reps {
+            for offset in 0..allocator_names.len() {
+                let allocator = allocator_names[(offset + repetition) % allocator_names.len()];
+                if !allocator_filter.is_empty() && !allocator.contains(&allocator_filter) {
+                    continue;
+                }
                 let output = std::process::Command::new(&exe)
                     .env("BENCH_CHILD", "1")
                     .env("BENCH_FRESH", "0")
