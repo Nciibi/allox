@@ -826,7 +826,10 @@ mod tests {
         let pages = ARENA_GRANULE_MIN_PAGES + 1;
         let (base, fresh) = unsafe { a.commit(pages) };
         assert!(!base.is_null() && fresh);
-        assert_eq!(base as usize % ARENA_GRANULE_SIZE, 0);
+        assert_eq!(
+            (base as usize - a.start.load(Ordering::Acquire)) % ARENA_GRANULE_SIZE,
+            0
+        );
         let (tail, tail_fresh) = unsafe { a.commit(1) };
         assert!(!tail.is_null() && !tail_fresh);
         assert_eq!(tail, unsafe { base.add(pages * ARENA_ALIGN) });
