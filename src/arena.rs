@@ -175,6 +175,7 @@ impl Arena {
             hole_count: AtomicUsize::new(0),
             hole_scans: AtomicUsize::new(0),
             hole_hits: AtomicUsize::new(0),
+            hole_exact_hits: AtomicUsize::new(0),
             hole_splits: AtomicUsize::new(0),
             hole_empty_fastpath: AtomicUsize::new(0),
             commits: AtomicUsize::new(0),
