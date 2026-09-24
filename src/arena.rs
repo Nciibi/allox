@@ -430,6 +430,28 @@ impl Arena {
             self.holes_give(reuse, pages);
             return (ptr::null_mut(), false);
         }
+        if pages >= ARENA_GRANULE_MIN_PAGES {
+            if let Some((base, total_pages, prefix_pages)) = self.granule_take(pages) {
+                let total_len = total_pages * ARENA_ALIGN;
+                if prefix_pages > 0 {
+                    self.holes_give(
+                        base.sub(prefix_pages * ARENA_ALIGN),
+                        prefix_pages,
+                    );
+                }
+                if self.commit_range(base as usize, total_len) {
+                    self.granule_commits.fetch_add(1, Ordering::Relaxed);
+                    self.granule_bytes.fetch_add(total_len, Ordering::Relaxed);
+                    self.commits.fetch_add(1, Ordering::Relaxed);
+                    if total_pages > pages {
+                        self.holes_give(base.add(len), total_pages - pages);
+                    }
+                    return (base, true);
+                }
+                self.holes_give(base, total_pages);
+                return (ptr::null_mut(), false);
+            }
+        }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
         let start = self.start.load(Ordering::Relaxed);
         loop {
