@@ -1284,7 +1284,7 @@ fn main() {
             header.push_str(&format!(" {:>11}", allocators[allocator_index].0.trim()));
         }
         header.push_str(&format!(
-            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>16}",
+            " {:>9} {:>10} {:>10} {:>10} {:>10} {:>26}",
             "a/talc", "rssKiB", "peakRSS", "mapcalls", "unmaps", "arena"
         ));
         println!("{}", header);
@@ -1447,7 +1447,7 @@ fn main() {
                 row.push_str(&format_optional(medians[allocator_index]));
             }
             row.push_str(&format!(
-                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>16}",
+                " {:>8.2}x {:>10} {:>10} {:>10} {:>10} {:>26}",
                 ratio,
                 current_rss_kib(),
                 peak_rss_kib(),
