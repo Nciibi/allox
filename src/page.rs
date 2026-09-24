@@ -133,6 +133,10 @@ impl SpanMaster {
     /// all dispatch paths so this never misclassifies small blocks.
     #[inline]
     pub(crate) unsafe fn of(p: *mut u8) -> *mut SpanMaster {
+        #[cfg(all(unix, feature = "std"))]
+        if crate::arena::contains(p, 1) {
+            return crate::arena::medium_table_get(p);
+        }
         let base = p as usize & !PAGE_MASK;
         if *(base as *const u64) == SPAN_MAGIC {
             return base as *mut SpanMaster;
