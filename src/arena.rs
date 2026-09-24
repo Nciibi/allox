@@ -61,10 +61,6 @@ const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
 const HOLE_CAP_BYTES: usize = 256 * 1024 * 1024;
 
-const ARENA_GRANULE_SIZE: usize = 2 * 1024 * 1024;
-const ARENA_GRANULE_MIN_PAGES: usize = ARENA_GRANULE_SIZE / ARENA_ALIGN;
-const ARENA_GRANULE_TRIGGER_PAGES: usize = usize::MAX;
-
 const MAP_FIXED: i32 = 0x10; // Linux, macOS, *BSD agree on this value.
 const MAP_PRIVATE: i32 = 0x02;
 const PROT_READ_WRITE: i32 = 0x03;
@@ -159,8 +155,6 @@ pub(crate) struct Arena {
     commits: AtomicUsize,
     reuses: AtomicUsize,
     abandoned: AtomicUsize,
-    granule_commits: AtomicUsize,
-    granule_bytes: AtomicUsize,
     /// Reservation size for this instance (global uses `ARENA_SIZE`).
     size: usize,
 }
@@ -187,8 +181,6 @@ impl Arena {
             commits: AtomicUsize::new(0),
             reuses: AtomicUsize::new(0),
             abandoned: AtomicUsize::new(0),
-            granule_commits: AtomicUsize::new(0),
-            granule_bytes: AtomicUsize::new(0),
             size,
         }
     }
@@ -365,38 +357,6 @@ impl Arena {
         }
     }
 
-    fn granule_take(&self, pages: usize) -> Option<(*mut u8, usize, usize)> {
-        let requested = pages.checked_mul(ARENA_ALIGN)?;
-        let total = requested
-            .checked_add(ARENA_GRANULE_SIZE - 1)?
-            & !(ARENA_GRANULE_SIZE - 1);
-        loop {
-            let off = self.bump.load(Ordering::Relaxed);
-            let start = off
-                .checked_add(ARENA_GRANULE_SIZE - 1)?
-                & !(ARENA_GRANULE_SIZE - 1);
-            let end = start.checked_add(total)?;
-            if end > self.size {
-                return None;
-            }
-            match self.bump.compare_exchange(
-                off,
-                end,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    return Some((
-                        (self.start.load(Ordering::Relaxed) + start) as *mut u8,
-                        total / ARENA_ALIGN,
-                        (start - off) / ARENA_ALIGN,
-                    ));
-                }
-                Err(_) => core::hint::spin_loop(),
-            }
-        }
-    }
-
     /// Commit `pages` (64 KiB units, nonzero) and return `(base, fresh)`:
     /// `base` is null when unavailable — reservation failed, bump exhausted,
     /// or the commit itself failed. Null is never OOM-by-itself: callers
@@ -430,28 +390,6 @@ impl Arena {
             }
             self.holes_give(reuse, pages);
             return (ptr::null_mut(), false);
-        }
-        if pages >= ARENA_GRANULE_TRIGGER_PAGES {
-            if let Some((base, total_pages, prefix_pages)) = self.granule_take(pages) {
-                let total_len = total_pages * ARENA_ALIGN;
-                if prefix_pages > 0 {
-                    self.holes_give(
-                        base.sub(prefix_pages * ARENA_ALIGN),
-                        prefix_pages,
-                    );
-                }
-                if self.commit_range(base as usize, total_len) {
-                    self.granule_commits.fetch_add(1, Ordering::Relaxed);
-                    self.granule_bytes.fetch_add(total_len, Ordering::Relaxed);
-                    self.commits.fetch_add(1, Ordering::Relaxed);
-                    if total_pages > pages {
-                        self.holes_give(base.add(len), total_pages - pages);
-                    }
-                    return (base, true);
-                }
-                self.holes_give(base, total_pages);
-                return (ptr::null_mut(), false);
-            }
         }
         // Bump: lock-free CAS claim, commit after (exclusive by construction).
         let start = self.start.load(Ordering::Relaxed);
@@ -528,13 +466,6 @@ impl Arena {
         )
     }
 
-    pub(crate) fn granule_stats(&self) -> (u64, u64) {
-        (
-            self.granule_commits.load(Ordering::Relaxed) as u64,
-            self.granule_bytes.load(Ordering::Relaxed) as u64,
-        )
-    }
-
     /// Monotonic reservation high-water in bytes (the bump frontier only
     /// advances). Compare against the reservation size to validate headroom.
     pub(crate) fn high_water(&self) -> u64 {
@@ -569,10 +500,6 @@ pub(crate) fn stats() -> (u64, u64, u64) {
 
 pub(crate) fn hole_stats() -> (u64, u64, u64, u64) {
     ARENA.hole_stats()
-}
-
-pub(crate) fn granule_stats() -> (u64, u64) {
-    ARENA.granule_stats()
 }
 
 /// Reservation high-water in bytes (monotonic bump frontier). Hidden
