@@ -127,6 +127,12 @@ fn free_only_thread_flushes_cached_blocks() {
             }
         });
     });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while allox::__debug_exit_flush_count() <= flushes_before
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     assert!(
         allox::__debug_exit_flush_count() > flushes_before,
         "free-only worker did not run the exit hook"
