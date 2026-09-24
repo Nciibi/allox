@@ -160,16 +160,20 @@ fn global_realloc_large_grows_without_copy_loss() {
 #[test]
 fn malloc_free_all_sizes_roundtrip() {
     unsafe {
-        let mut ptrs = Vec::new();
-        for size in 1..=64 * 1024usize {
-            let p = malloc(size);
-            assert!(!p.is_null(), "size {}", size);
-            core::ptr::write_bytes(p, 0xAB, size);
-            assert_eq!(*p.add(size - 1), 0xAB);
-            ptrs.push((p, size));
-        }
-        for (p, _) in ptrs {
-            free(p);
+        for batch_start in (1..=64 * 1024usize).step_by(256) {
+            let batch_end = (batch_start + 256).min(64 * 1024 + 1);
+            let mut ptrs = Vec::with_capacity(batch_end - batch_start);
+            for size in batch_start..batch_end {
+                let p = malloc(size);
+                assert!(!p.is_null(), "size {}", size);
+                core::ptr::write_bytes(p, 0xAB, size);
+                assert_eq!(*p.add(size - 1), 0xAB);
+                ptrs.push((p, size));
+            }
+            for (p, size) in ptrs {
+                assert_eq!(*p.add(size - 1), 0xAB);
+                free(p);
+            }
         }
     }
 }
