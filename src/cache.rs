@@ -914,7 +914,7 @@ impl ThreadCache {
             self.trim();
         }
         if self.tier_cached_bytes > tier_cache_budget() {
-            self.trim_big();
+            self.trim();
         }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
         if chain.is_null() {
