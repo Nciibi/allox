@@ -709,11 +709,12 @@ pub(crate) unsafe fn medium_table_set(
 }
 
 pub(crate) unsafe fn big_table_clear(base: *mut u8, pages: u32) {
-    for i in 0..pages as usize {
-        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
-            Some(idx) => BIG_MAP[idx].store(0, Ordering::Release),
-            None => debug_assert!(false, "big table clear outside reservation"),
+    if let Some(start) = big_page_range(base, pages) {
+        for i in 0..pages as usize {
+            BIG_MAP[start + i].store(0, Ordering::Release);
         }
+    } else {
+        debug_assert!(false, "big table clear outside reservation");
     }
 }
 
