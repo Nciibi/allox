@@ -17,8 +17,8 @@ Constraints (assumed, plain language):
   vs mimalloc 18.6M (0.65x)** — per-op gap remains (REMAINING_PLAN §6);
   hit-rate/syscall gap closed by spans + arena (was 0.04x system).
 * `large-only 8T (32K-256K)`: **now 9.06M vs mimalloc 13.5M (0.67x)**
-  after big spans (was 0.05x); unmaps 0 in probe. The 512 KiB big-cap
-  extension keeps this guard in-band and improves the 1T tail; >524288
+  after big spans (was 0.05x); unmaps 0 in probe. The 1 MiB big-cap
+  extension keeps this guard in-band and improves the 1T tail; >1 MiB
   remains large-path by design.
 * `ecs 8T` still loses to system (≈0.07×) because glibc grows via
   `mremap` (zero-copy); allox realloc copies — mremap trial was flat for
