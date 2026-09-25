@@ -104,7 +104,7 @@ fn telemetry_accounting() {
             *p = allox::aligned_alloc(32, 1);
             assert!(!p.is_null());
         }
-        let reused = allox::malloc(1 << 20);
+        let reused = allox::malloc(LARGE_SIZE);
         assert!(!reused.is_null());
         for p in drain {
             allox::free(p);
@@ -118,10 +118,10 @@ fn telemetry_accounting() {
     assert_eq!(delta(&after, &before, |t| t.total_frees), 18);
     assert_eq!(
         delta(&after, &before, |t| t.allocated_bytes),
-        10 * (1 << 20) + 8
+        10 * LARGE_SIZE + 8
     );
     assert_eq!(
         delta(&after, &before, |t| t.freed_bytes),
-        10 * (1 << 20) + 8
+        10 * LARGE_SIZE + 8
     );
 }
