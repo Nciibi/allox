@@ -3,9 +3,9 @@
 //! DESIGN.md §4.5 explains why the allocator's own TLS carries no
 //! destructor. This module adds a single OS key (pthread_key / FlsAlloc)
 //! whose destructor retires the exiting thread's cache into a bounded queue.
-//! Later allocator slow paths reclaim queued caches; oversized or overflow
-//! caches fall back to the normal blocking flush. Hooks fire only for threads
-//! that armed them, so threads that never allocate never pay.
+//! Later allocator slow paths adopt or reclaim queued caches; oversized or
+//! overflow caches fall back to the normal blocking flush. Hooks fire only for
+//! threads that armed them, so threads that never allocate never pay.
 //!
 #[cfg(all(feature = "std", any(unix, windows)))]
 static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
