@@ -152,13 +152,10 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
-
-        pub(crate) unsafe fn retire() {
-            with(|c| c.flush_all(), || {});
-        }
     }
 
     pub(crate) use imp::flush;
+    #[cfg(all(feature = "std", any(unix, windows)))]
     pub(crate) use imp::retire;
     pub(crate) use imp::with;
 }
