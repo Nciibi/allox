@@ -811,6 +811,7 @@ impl ThreadCache {
             (p, zeroed)
         };
         self.cached_bytes -= block_size;
+        self.big_cached_bytes = self.big_cached_bytes.saturating_sub(block_size);
         (p, zeroed)
     }
 
