@@ -639,6 +639,9 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            self.tier_cached_bytes = self
+                .tier_cached_bytes
+                .saturating_sub(MEDIUM_CLASSES[mclass]);
             if below < self.mvirgin[mclass] {
                 self.mvirgin[mclass] -= 1;
             }
@@ -667,6 +670,9 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            self.tier_cached_bytes = self
+                .tier_cached_bytes
+                .saturating_sub(MEDIUM_CLASSES[mclass]);
             let zeroed = below < self.mvirgin[mclass];
             if zeroed {
                 self.mvirgin[mclass] -= 1;
@@ -729,6 +735,7 @@ impl ThreadCache {
             bin.head = rest;
             bin.len = count - 1;
             self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+            self.tier_cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
             self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
             return (first, virgin);
         }
@@ -780,6 +787,7 @@ impl ThreadCache {
             bin.len += 1;
         }
         self.cached_bytes += MEDIUM_CLASSES[mclass];
+        self.tier_cached_bytes += MEDIUM_CLASSES[mclass];
         if foreign {
             self.foreign_bytes += MEDIUM_CLASSES[mclass];
         }
@@ -1072,6 +1080,9 @@ impl ThreadCache {
             tail = *tail.cast::<*mut u8>();
         }
         self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
+        self.tier_cached_bytes = self
+            .tier_cached_bytes
+            .saturating_sub(block_size * len as usize);
         {
             let active = &mut self.mactive[mclass];
             active.span = ptr::null_mut();
