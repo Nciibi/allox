@@ -76,11 +76,6 @@ fn thread_cache_budget() -> usize {
     DEFAULT_THREAD_CACHE_BUDGET
 }
 
-#[inline]
-fn tier_cache_budget() -> usize {
-    thread_cache_budget().saturating_mul(2)
-}
-
 #[cfg(feature = "std")]
 pub(crate) fn set_budget(bytes: usize) {
     CACHE_BUDGET.store(
@@ -1084,7 +1079,7 @@ impl ThreadCache {
         if self.small_cached_bytes() > self.budget / 2 {
             self.trim();
         }
-        if self.tier_cached_bytes > tier_cache_budget() {
+        if self.tier_cached_bytes > self.budget.saturating_mul(2) {
             self.trim();
         }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
