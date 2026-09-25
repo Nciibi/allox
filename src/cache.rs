@@ -585,8 +585,7 @@ impl ThreadCache {
         #[cfg(feature = "telemetry")]
         self.note_free(class);
         if self.should_shed() {
-            self.trim();
-            self.foreign_bytes = 0;
+            self.shed();
         }
     }
 
@@ -786,8 +785,7 @@ impl ThreadCache {
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
         if self.should_shed() {
-            self.trim();
-            self.foreign_bytes = 0;
+            self.shed();
         }
     }
 
@@ -997,8 +995,7 @@ impl ThreadCache {
         #[cfg(all(feature = "telemetry", unix, feature = "std"))]
         self.note_free_big(bclass);
         if self.should_shed() {
-            self.trim();
-            self.foreign_bytes = 0;
+            self.shed();
         }
     }
 
