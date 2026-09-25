@@ -1,10 +1,11 @@
 # Design: spans for big sizes (past the 65472 block cap)
 
-Status: **IMPLEMENTED 2026-09-23** (plan §4 option 2 / REMAINING_PLAN
-large-only option 2). Landed as `BigMaster` + `BigHeap` + arena `BIG_MAP`
-side table + cache `bigbins` + dispatch routing (`alloc_impl` /
-`dealloc_impl`), with `tests/big_spans.rs`, Kani proofs (P1/P2/P3/P6 +
-medium packing in `src/page.rs::kani_proofs`), and CI coverage.
+Status: **IMPLEMENTED 2026-09-23; 1 MiB CAP EXTENDED 2026-09-25** (plan §4
+option 2 / REMAINING_PLAN large-only option 2). Landed as `BigMaster` +
+`BigHeap` + arena `BIG_MAP` side table + cache `bigbins` + dispatch routing
+(`alloc_impl` / `dealloc_impl`), with `tests/big_spans.rs`, Kani proofs
+(P1/P2/P3/P6 + medium packing in `src/page.rs::kani_proofs`), and CI
+coverage.
 
 Validation (2026-09-23, Ryzen 5 1600, 2 s × 3 interleaved medians, full
 14-workload matrix): **large-only 8T** 9.06M ops/s vs mimalloc 13.51M
@@ -21,6 +22,14 @@ Phase-2 validation (2026-09-24, capped 2 s × 2 A/B): raising the big cap to
 RSS moved from 23.3 MiB to 23.8 MiB. `mixed-all 1T` was flat within noise;
 `large-only 8T` remained within the noisy guard band, and all new boundary,
 `calloc`, realloc, and multithreaded big-span tests passed.
+
+Phase-3 validation (2026-09-25, bounded 1 s smoke): the cap now reaches
+1 MiB, with a 129-page top span and exact 1 MiB/1 MiB+1 boundary coverage.
+The focused `large-only 1T` sample measured Allox at 0.80× mimalloc; the
+low-memory `mixed-all 1T` guard measured 1.87× mimalloc. These samples are
+directional only: the shared benchmark process can retain gigabytes, so the
+required repeated 2 s × 3 RSS-controlled comparison remains pending.
+Boundary, release, telemetry-enabled, and no_std checks are green.
 
 ## 1. Problem
 
