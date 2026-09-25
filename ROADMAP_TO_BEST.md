@@ -284,21 +284,21 @@ Two real bugs found along the way (both caught by the new tests):
 
 What shipped: `src/thread_exit.rs` now retires armed TLS caches into a bounded
 fixed-slot queue instead of flushing every cache on the exiting thread.
-`src/cache.rs` reclaims at most one queued cache per worker generation on
-allocator slow paths; oversized or overflow caches use the synchronous path.
-Small-page exit flushing also passes known tails, batches same-class releases,
-and lazily reinitializes fully-free pages.
+`src/cache.rs` lets an empty worker adopt one queued cache directly, with
+post-adoption small/medium/big bin checks; oversized or overflow caches use the
+synchronous path. Small-page exit flushing also passes known tails, batches
+same-class releases, and lazily reinitializes fully-free pages.
 
-* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **4.65M vs
-  13.62M mimalloc** (0.34x), up from 2.61M vs 13.74M at the isolated baseline;
-  peak RSS 17.6 MiB vs 19.4 MiB.
-* `spawn-empty` remains allocator-independent; `mixed-all 8T` and
-  `mixed-small 8T` remain wins in capped checks. Full debug integration and
-  thread-exit convergence tests pass.
+* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **17.25M vs
+  13.78M mimalloc** (1.25x), up from 2.61M vs 13.74M at the isolated baseline;
+  peak RSS 19.1 MiB vs 19.4 MiB.
+* `spawn-empty` remains allocator-independent; `mixed-all 8T`, `prodcons 8T`,
+  `medium-only 8T`, and `large-only 8T` remain wins in capped checks. Full
+  debug integration, telemetry, release, and thread-exit convergence tests pass.
 
-The remaining spawn gap is shared-page bookkeeping and first-touch work; the
-next experiment should reduce per-cache block scanning, not guess another
-refill/flush constant.
+The remaining lifecycle work is first-touch cost for workers that cannot adopt
+a cache; the next experiment should target that, not guess another refill/flush
+constant.
 
 ## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
 

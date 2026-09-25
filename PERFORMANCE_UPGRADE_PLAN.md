@@ -502,12 +502,13 @@ The current spawn workload explicitly frees all remaining blocks, so it does not
 
 ## 4.4 Status — deferred retirement landed
 
-The fixed-slot queue, lazy page reinitialization, and tail-aware grouped small
-flushes are implemented. `spawn-churn` improved from 2.61M to 4.65M ops/s in
-the capped production matrix, while `spawn-empty` and steady-state mixed
-workloads remain flat. The remaining gap is the per-cache block scan and
-first-touch cost; a future maintenance worker or cheaper ownership bookkeeping
-must preserve the bounded queue and synchronous overflow fallback.
+The fixed-slot queue, lazy page reinitialization, tail-aware grouped small
+flushes, and direct cache adoption are implemented. `spawn-churn` improved
+from 2.61M to 17.25M ops/s in the capped production matrix, exceeding mimalloc
+at 13.78M, while `spawn-empty` and steady-state workloads remain healthy. The
+remaining lifecycle work is first-touch cost for workers that cannot adopt a
+cache; future changes must preserve the bounded queue and synchronous overflow
+fallback.
 
 ---
 
