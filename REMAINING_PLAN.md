@@ -1,10 +1,11 @@
 # Remaining plan — from big-spans-validated to 0.2
 
 State at fork-off: **big spans DONE 2026-09-23; 512 KiB big-cap phase
-DONE 2026-09-24; 1 MiB big-cap extension IMPLEMENTED 2026-09-25**. The
-focused boundary, release, telemetry-enabled, and no_std checks pass; a
-repeated RSS-controlled large-workload comparison remains pending. The
-1T tail above 1 MiB is still on the large path.
+DONE 2026-09-24; 1 MiB big-cap extension DONE 2026-09-25**. The tier-aware
+cache allowance and bounded benchmark matrix are validated: `large-only 1T`
+2.88× mimalloc, `large-only 8T` 1.32×, and `mixed-all 1T` 2.90× on the
+2 s × 3 safe fresh-process run. The 1T tail above 1 MiB is still on the
+large path.
 **Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
 mimalloc). Full 14-workload matrix: ~9–10/14 win-or-tie vs the best
 comparator on Linux x86-64 (json/request beat mimalloc; ecs beats every
