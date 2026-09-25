@@ -310,6 +310,7 @@ impl ThreadCache {
             #[cfg(all(unix, feature = "std"))]
             bactive: [ActiveBig::empty(); NUM_BIG],
             exit_armed: false,
+            retired_reclaimed: false,
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
             large_bytes: 0,
