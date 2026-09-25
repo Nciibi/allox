@@ -1398,6 +1398,9 @@ impl ThreadCache {
             tail = *tail.cast::<*mut u8>();
         }
         self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
+        self.big_cached_bytes = self
+            .big_cached_bytes
+            .saturating_sub(block_size * len as usize);
         self.bactive[bclass] = ActiveBig::empty();
         crate::heap::BIG_HEAP.release_blocks(span, head, len);
     }
