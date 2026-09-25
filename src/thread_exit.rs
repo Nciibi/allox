@@ -55,14 +55,6 @@ mod imp {
                 let _ = pthread_setspecific(*k, core::ptr::null());
             }
         }
-        // Blocking flush: at thread exit no allocator locks are held (all
-        // critical sections are scoped and user-code-free), so waiting on a
-        // class lock can only stall behind another bounded critical section
-        // — never deadlock. pthread-key destructors hold no locks that heap
-        // locks could cycle with. Try-only flushing was measured to abandon
-        // ~everything when several threads exit at once (thundering herd on
-        // try_lock); blocking serializes the herd and actually reclaims.
-        // Panic-free by construction (bounded loops, atomics, syscalls only).
         super::record_flush();
         crate::tls_retire();
     }
