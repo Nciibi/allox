@@ -182,7 +182,7 @@ fn big_realloc_grows_and_shrinks() {
 fn big_global_alloc_paths() {
     unsafe {
         let a = allox::Allox;
-        for size in [65500usize, 100000, 262144, 300000, 524288] {
+        for size in [65500usize, 100000, 262144, 300000, 600000, BIG_TOP] {
             let l = Layout::from_size_align(size, 16).unwrap();
             let p = a.alloc(l);
             assert!(!p.is_null(), "size {}", size);
