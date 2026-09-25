@@ -584,7 +584,7 @@ fn large_shard(mapped_pages: usize, salt: usize) -> usize {
 }
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
-    alloc_large_ex(size, align, false).0
+    alloc_large_ex(size, align, false, 0).0
 }
 
 #[inline]
@@ -734,14 +734,21 @@ unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut Larg
 
 /// Returns `(ptr, fresh, known_zeroed)` where `fresh` distinguishes new
 /// virtual memory and `known_zeroed` permits calloc to skip its memset.
+///
+/// `slack` reserves extra address space past the requested `size` (the
+/// header still records `size` as the request, so `usable_size` and the
+/// in-place growth path both see the reserve). Slack pages are untouched
+/// anonymous pages: reserved virtual only, faulted on first write.
 unsafe fn alloc_large_ex(
     size: usize,
     align: usize,
     zeroed_requested: bool,
+    slack: usize,
 ) -> (*mut u8, bool, bool) {
     let total = match size
         .checked_add(align)
         .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
+        .and_then(|v| v.checked_add(slack))
     {
         Some(t) => t,
         None => return (ptr::null_mut(), false, false),
@@ -1056,13 +1063,13 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         // this is the large path.
         #[cfg(not(all(unix, feature = "std")))]
         {
-            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true);
+            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
             zero_large_allocation(p, size, known_zeroed);
             return p;
         }
         #[cfg(all(unix, feature = "std"))]
         if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
-            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true);
+            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
             zero_large_allocation(p, size, known_zeroed);
             return p;
         }
