@@ -505,7 +505,8 @@ The current spawn workload explicitly frees all remaining blocks, so it does not
 
 ## 5.1 Adaptive cache sizing
 
-The current default budget is 32 MiB per thread at `src/cache.rs:29-33`, plus a separate large stash.
+The current default base budget is 32 MiB per thread at `src/cache.rs:29-33`,
+with a separate 2x medium/big allowance and large stash.
 
 Adopt ideas from tcmalloc:
 
