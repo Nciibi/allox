@@ -646,6 +646,25 @@ fn big_page_index(p: *mut u8) -> Option<usize> {
     Some(idx)
 }
 
+fn big_page_range(base: *mut u8, pages: u32) -> Option<usize> {
+    let pages = pages as usize;
+    if pages == 0 || ARENA.state.load(Ordering::Acquire) != 1 {
+        return None;
+    }
+    let start = ARENA.start.load(Ordering::Relaxed);
+    let end = ARENA.end.load(Ordering::Relaxed);
+    let offset = (base as usize).checked_sub(start)?;
+    let last = offset.checked_add((pages - 1).checked_mul(ARENA_ALIGN)?)?;
+    if last >= end - start {
+        return None;
+    }
+    let idx = offset / ARENA_ALIGN;
+    if idx >= BIG_MAP_SLOTS || pages > BIG_MAP_SLOTS - idx {
+        return None;
+    }
+    Some(idx)
+}
+
 const LARGE_TABLE_TAG: usize = 1;
 const MEDIUM_TABLE_TAG: usize = 2;
 
