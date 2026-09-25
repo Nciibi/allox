@@ -432,14 +432,7 @@ impl ThreadCache {
 
     #[inline]
     fn small_cached_bytes(&self) -> usize {
-        #[cfg(all(unix, feature = "std"))]
-        {
-            self.cached_bytes.saturating_sub(self.tier_cached_bytes)
-        }
-        #[cfg(not(all(unix, feature = "std")))]
-        {
-            self.cached_bytes
-        }
+        self.cached_bytes.saturating_sub(self.tier_cached_bytes)
     }
 
     /// True when this cache is under enough pressure that foreign frees
