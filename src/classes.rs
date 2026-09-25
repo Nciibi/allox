@@ -34,6 +34,7 @@ const fn build_classes() -> [usize; NUM_CLASSES] {
 }
 
 pub(crate) const CLASSES: [usize; NUM_CLASSES] = build_classes();
+pub(crate) static CLASSES_RUNTIME: [usize; NUM_CLASSES] = build_classes();
 
 /// Direct-mapped size -> class table: index by `(size + 15) / 16`.
 /// One kilobyte of read-mostly data; turns class lookup into a shift,
