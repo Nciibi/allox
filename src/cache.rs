@@ -449,6 +449,8 @@ impl ThreadCache {
             if self.cached_bytes == 0 && self.large_len == 0 {
                 if let Some(adopted) = take_one() {
                     let current_armed = self.exit_armed;
+                    let current_budget = self.budget;
+                    let current_epoch = self.budget_epoch;
                     let old = core::mem::replace(self, adopted);
                     #[cfg(feature = "telemetry")]
                     let mut old = old;
@@ -457,6 +459,8 @@ impl ThreadCache {
                     #[cfg(not(feature = "telemetry"))]
                     let _ = old;
                     self.exit_armed = current_armed;
+                    self.budget = current_budget;
+                    self.budget_epoch = current_epoch;
                     self.retired_reclaimed = true;
                     return;
                 }
