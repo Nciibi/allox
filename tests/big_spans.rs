@@ -221,11 +221,11 @@ fn big_churn_multithreaded() {
                         // medium/large neighbors to cross the boundaries).
                         let r = (next_rng() % 100) as usize;
                         let size = if r < 70 {
-                            65536 + (next_rng() as usize) % (524288 - 65536)
+                            65536 + (next_rng() as usize) % (BIG_TOP - 65536)
                         } else if r < 85 {
                             32768 + (next_rng() as usize) % 32704
                         } else {
-                            524289 + (next_rng() as usize) % 524288
+                            BIG_TOP_PLUS_ONE + (next_rng() as usize) % BIG_TOP
                         };
                         let p = unsafe { malloc(size) };
                         assert!(!p.is_null(), "size {}", size);

@@ -1,7 +1,7 @@
 #![no_main]
 
 //! Sequences that deliberately cross the small / medium / big / large tier
-//! boundaries (16 KiB, 65472, 262144, 524288) with mixed alignment, verifying
+//! boundaries (16 KiB, 65472, 262144, 524288, 1 MiB) with mixed alignment, verifying
 //! contents and usable_size routing. Complements `alloc_seq`, which samples
 //! sizes broadly but rarely hits exact class edges.
 
@@ -10,7 +10,7 @@ use libfuzzer_sys::fuzz_target;
 /// Exact tier edges plus neighbors: n-1, n, n+1 for each boundary.
 const EDGES: &[usize] = &[
     16, 4096, 16384, 16385, 32768, 65471, 65472, 65473, 131072, 262143, 262144, 262145, 524288,
-    524289,
+    524289, 1_048_575, 1_048_576, 1_048_577,
 ];
 
 fn pick(data: &[u8], i: usize) -> usize {
