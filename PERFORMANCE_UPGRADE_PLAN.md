@@ -67,7 +67,7 @@ Additional requirements:
 - Count allocation, free, realloc, zeroed, and aligned operations separately.
 - Measure current RSS after drain, peak RSS, VSZ, VMA count, minor faults, and syscalls independently.
 
-The comparator wrappers currently forward only `alloc` and `dealloc` at `benches/alloc.rs:31-81`, while Allox overrides `realloc` and `alloc_zeroed` at `src/lib.rs:888-961`. JSON and ECS results therefore do not represent equivalent native implementations.
+The comparator wrappers forward `alloc`, `dealloc`, `realloc`, and `alloc_zeroed` at `benches/alloc.rs:31-81`, so the method surfaces are equivalent. ECS still differs because Allox's big-span realloc growth copies while the system allocator can use kernel growth primitives.
 
 ## 0.2 Add allocation counters
 
