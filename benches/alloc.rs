@@ -1473,16 +1473,20 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.abandoned_total,
         diagnostics.arena_high_water,
     ));
-    // Only non-zero counters: the full set is 25 fields and most are zero on
-    // any given workload, which would drown the signal in JSONL output.
-    for (index, (name, value)) in diagnostics.volume.iter().enumerate() {
+    // Only non-zero counters: the full set is two dozen fields and most are
+    // zero on any given workload, which would drown the signal in JSONL
+    // output. Separators follow what was actually written, not the field
+    // index, or a leading zero counter would emit a leading comma.
+    let mut written = false;
+    for (name, value) in &diagnostics.volume {
         if *value == 0 {
             continue;
         }
-        if index != 0 {
+        if written {
             output.push(',');
         }
         output.push_str(&format!("\"{}\":{}", name, value));
+        written = true;
     }
     output.push_str("},\"timing_ns\":");
     match &diagnostics.timing_ns {

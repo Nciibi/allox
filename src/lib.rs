@@ -1106,6 +1106,14 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     if size == 0 {
         return align.max(1) as *mut u8;
     }
+    // Small tier first, and as one test: it is the overwhelmingly common
+    // case, and every comparison it saves is on the hot path (this
+    // function measured 7.6% of a process-global application profile, the
+    // single largest allocator entry point). The tier tests below are then
+    // all off the hot path.
+    if size <= MAX_SMALL_SIZE && align <= MIN_ALIGN {
+        return alloc_small(class_for_size(size));
+    }
     // Big spans exist only in the arena (unix + std): elsewhere sizes past
     // the medium cap route straight to large, and the big machinery below
     // doesn't exist (gated out, so no dead code either).

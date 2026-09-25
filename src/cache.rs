@@ -165,6 +165,19 @@ struct Bin {
     len: u32,
 }
 
+/// Small-tier bin. The virgin count lives here, in what would otherwise be
+/// struct padding, instead of in a parallel `ThreadCache::virgin` array: the
+/// fast path reads and writes `head`, `len` and `virgin` together, and two
+/// separate arrays meant two cache lines touched per allocation.
+#[derive(Clone, Copy)]
+struct SmallBin {
+    head: *mut u8,
+    len: u32,
+    /// Blocks at the *bottom* of this bin that came from never-used pages:
+    /// popping one needs no zeroing. Reset by flushes and refills.
+    virgin: u32,
+}
+
 #[derive(Clone, Copy)]
 struct ActiveMedium {
     span: *mut SpanMaster,
@@ -214,7 +227,7 @@ impl ActiveBig {
 }
 
 pub(crate) struct ThreadCache {
-    bins: [Bin; NUM_CLASSES],
+    bins: [SmallBin; NUM_CLASSES],
     cached_bytes: usize,
     tier_cached_bytes: usize,
     budget: usize,
@@ -227,11 +240,8 @@ pub(crate) struct ThreadCache {
     /// Cleared on every `trim`/`flush_all`; heuristic only (never read for
     /// correctness). Shed batch via `trim` once ≥ budget/[`FOREIGN_SHED_DIV`].
     foreign_bytes: usize,
-    /// Per class: number of guaranteed-OS-zero blocks currently at the
-    /// *bottom* of the bin (from refills of virgin pages). A pop is zeroed
-    /// iff the remaining length drops below this count.
-    virgin: [u32; NUM_CLASSES],
-    /// Medium bins (multi-page spans), same discipline as small bins.
+    /// Medium bins (multi-page spans), same discipline as small bins (the
+    /// virgin count lives in `SmallBin::virgin` for the small tier).
     mbins: [Bin; NUM_MEDIUM],
     mvirgin: [u32; NUM_MEDIUM],
     mactive: [ActiveMedium; NUM_MEDIUM],
@@ -312,10 +322,12 @@ impl Pending {
 
 
 impl ThreadCache {
-    pub(crate) const fn new() -> Self {        ThreadCache {
-            bins: [Bin {
+    pub(crate) const fn new() -> Self {
+        ThreadCache {
+            bins: [SmallBin {
                 head: ptr::null_mut(),
                 len: 0,
+                virgin: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
             tier_cached_bytes: 0,
@@ -324,7 +336,6 @@ impl ThreadCache {
             budget_epoch: 0,
             tid: 0,
             foreign_bytes: 0,
-            virgin: [0; NUM_CLASSES],
             mbins: [Bin {
                 head: ptr::null_mut(),
                 len: 0,
@@ -664,8 +675,8 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= CLASSES_RUNTIME[class];
-            if below < self.virgin[class] {
-                self.virgin[class] -= 1;
+            if below < bin.virgin {
+                bin.virgin -= 1;
             }
             #[cfg(feature = "telemetry")]
             self.note_alloc(class);
@@ -687,9 +698,9 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= CLASSES_RUNTIME[class];
-            let zeroed = below < self.virgin[class];
+            let zeroed = below < bin.virgin;
             if zeroed {
-                self.virgin[class] -= 1;
+                bin.virgin -= 1;
             }
             #[cfg(feature = "telemetry")]
             self.note_alloc(class);
@@ -716,9 +727,9 @@ impl ThreadCache {
                 let below = bin.len - 1;
                 bin.len = below;
                 self.cached_bytes -= CLASSES_RUNTIME[class];
-                let zeroed = below < self.virgin[class];
+                let zeroed = below < bin.virgin;
                 if zeroed {
-                    self.virgin[class] -= 1;
+                    bin.virgin -= 1;
                 }
                 return (p, zeroed);
             }
@@ -753,7 +764,7 @@ impl ThreadCache {
         self.cached_bytes += CLASSES_RUNTIME[class] * (count - 1) as usize;
         // Refill only happens on an empty bin, so the whole batch sits at the
         // bottom; the block we returned was part of it.
-        self.virgin[class] = if virgin { count - 1 } else { 0 };
+        bin.virgin = if virgin { count - 1 } else { 0 };
         (first, virgin)
     }
 
@@ -1523,7 +1534,7 @@ impl ThreadCache {
             .saturating_sub(block_size * len as usize);
         self.bins[class].head = ptr::null_mut();
         self.bins[class].len = 0;
-        self.virgin[class] = 0;
+        self.bins[class].virgin = 0;
         let chunks = unsafe {
             core::slice::from_raw_parts_mut(
                 groups.as_mut_ptr() as *mut PageReleaseChunk,
@@ -1559,8 +1570,8 @@ impl ThreadCache {
                 };
                 let below = bin.len - 1;
                 bin.len = below;
-                if below < self.virgin[class] {
-                    self.virgin[class] -= 1;
+                if below < bin.virgin {
+                    bin.virgin -= 1;
                 }
                 popped += 1;
                 self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
@@ -1843,7 +1854,9 @@ impl ThreadCache {
         self.retired_reclaimed = false;
         // Keep `tid` stable across flushes: it identifies this OS thread for
         // the drift-cap owner heuristic, not a cache generation.
-        self.virgin = [0; NUM_CLASSES];
+        for bin in &mut self.bins {
+            bin.virgin = 0;
+        }
         self.mvirgin = [0; NUM_MEDIUM];
         self.mactive = [ActiveMedium::empty(); NUM_MEDIUM];
         #[cfg(all(unix, feature = "std"))]
