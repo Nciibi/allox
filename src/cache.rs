@@ -523,7 +523,7 @@ impl ThreadCache {
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         // Under aggregate pressure, shed some cache before asking for more.
-        if self.cached_bytes > thread_cache_budget() / 2 {
+        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
@@ -687,7 +687,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.cached_bytes > thread_cache_budget() / 2 {
+        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
@@ -900,7 +900,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.cached_bytes > thread_cache_budget() / 2 {
+        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
