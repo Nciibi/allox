@@ -22,11 +22,14 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   reuse and graceful legacy fallback. Large `calloc` skips redundant zeroing
   only after a successful discard, and arena-frontier large realloc can grow
   in place without copying.
-- Thread-exit flush (pthread key / FlsAlloc); contention-parking mutexes
-  (SRWLock on Windows, pthread on unix). Pressure-gated remote-free drift
-  cap: under cache pressure, frees of blocks owned by another thread are
-  counted and shed in batch via the existing chunked trim (never a
-  lock-per-free release); ownership is a performance heuristic only.
+- Thread-exit retirement (pthread key / FlsAlloc) uses a bounded fixed-slot
+  queue; later allocator slow paths reclaim queued caches, with synchronous
+  flush fallback for oversized/overflow caches. Small-page exit flushes use
+  tail-aware grouped release and reinitialize fully-free pages lazily.
+  Contention-parking mutexes (SRWLock on Windows, pthread on unix). Pressure-
+  gated remote-free drift cap: under cache pressure, frees of blocks owned by
+  another thread are counted and shed in batch via the existing chunked trim
+  (never a lock-per-free release); ownership is a performance heuristic only.
 - C ABI (`malloc`/`calloc`/`realloc`/`free`/`aligned_alloc`, zero sizes
   return null), `GlobalAlloc` impl with layout-routed free, `usable_size`,
   debug double-free/corrupt-pointer validation.
