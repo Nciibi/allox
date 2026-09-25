@@ -124,6 +124,8 @@ The direct comparison uses the system allocator for harness bookkeeping.
 Use `BENCH_OUTPUT=json` for machine-readable samples. Use
 `BENCH_FRESH=1` to run every allocator/workload/repetition in a fresh
 process; fresh-process output is JSONL and gives per-process RSS values.
+Use `BENCH_SAFE_LIVE=1` with a memory cgroup for large runs to bound the
+benchmark's transient live set to 16 operations per drain check.
 
 ## Design
 
