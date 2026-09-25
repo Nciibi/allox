@@ -848,6 +848,7 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= BIG_CLASSES[bclass];
+            self.big_cached_bytes = self.big_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
             if below < self.bvirgin[bclass] {
                 self.bvirgin[bclass] -= 1;
             }
@@ -877,6 +878,7 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= BIG_CLASSES[bclass];
+            self.big_cached_bytes = self.big_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
             let zeroed = below < self.bvirgin[bclass];
             if zeroed {
                 self.bvirgin[bclass] -= 1;
