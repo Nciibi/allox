@@ -118,10 +118,10 @@ fn telemetry_accounting() {
     assert_eq!(delta(&after, &before, |t| t.total_frees), 18);
     assert_eq!(
         delta(&after, &before, |t| t.allocated_bytes),
-        10 * LARGE_SIZE + 8
+        10 * LARGE_SIZE as u64 + 8
     );
     assert_eq!(
         delta(&after, &before, |t| t.freed_bytes),
-        10 * LARGE_SIZE + 8
+        10 * LARGE_SIZE as u64 + 8
     );
 }
