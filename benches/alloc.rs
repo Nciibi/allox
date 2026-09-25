@@ -412,6 +412,11 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
     let threads = wl.threads;
     let size_range = wl.size_range;
     let free_pct = wl.free_pct;
+    let live_batch = if std::env::var_os("BENCH_SAFE_LIVE").is_some() {
+        16
+    } else {
+        10_000
+    };
 
     let handles: Vec<_> = (0..threads)
         .map(|t| {
@@ -483,6 +488,11 @@ fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
     let threads = wl.threads;
     let size_range = wl.size_range;
     let free_pct = wl.free_pct;
+    let live_batch = if std::env::var_os("BENCH_SAFE_LIVE").is_some() {
+        16
+    } else {
+        10_000
+    };
 
     let handles: Vec<_> = (0..threads)
         .map(|t| {
