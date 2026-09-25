@@ -429,8 +429,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
                     let mut live_bytes = 0usize;
                     let mut ops = 0u64;
                     while Instant::now() < stop {
-                        for _ in 0..10_000 {
-                            for _ in 0..16 {
+                        for _ in 0..live_batch {
                             let size = if size_range.0 == size_range.1 {
                                 size_range.0
                             } else {
@@ -505,8 +504,7 @@ fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
                     let mut live_bytes = 0usize;
                     let mut ops = 0u64;
                     while Instant::now() < stop {
-                        for _ in 0..10_000 {
-                            for _ in 0..16 {
+                        for _ in 0..live_batch {
                             let size = if size_range.0 == size_range.1 {
                                 size_range.0
                             } else {
