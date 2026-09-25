@@ -255,6 +255,8 @@ impl ThreadCache {
                 len: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
+            #[cfg(all(unix, feature = "std"))]
+            big_cached_bytes: 0,
             tid: 0,
             foreign_bytes: 0,
             virgin: [0; NUM_CLASSES],
