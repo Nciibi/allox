@@ -66,6 +66,7 @@ static CACHE_BUDGET: core::sync::atomic::AtomicUsize =
 #[cfg(feature = "std")]
 static CACHE_BUDGET_EPOCH: AtomicU32 = AtomicU32::new(0);
 
+#[cfg(feature = "std")]
 #[inline]
 fn thread_cache_budget() -> usize {
     #[cfg(feature = "std")]
@@ -214,6 +215,7 @@ pub(crate) struct ThreadCache {
     cached_bytes: usize,
     tier_cached_bytes: usize,
     budget: usize,
+    #[cfg(feature = "std")]
     budget_epoch: u32,
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
@@ -293,6 +295,7 @@ impl ThreadCache {
             cached_bytes: 0,
             tier_cached_bytes: 0,
             budget: DEFAULT_THREAD_CACHE_BUDGET,
+            #[cfg(feature = "std")]
             budget_epoch: 0,
             tid: 0,
             foreign_bytes: 0,
@@ -450,6 +453,7 @@ impl ThreadCache {
                 if let Some(adopted) = take_one() {
                     let current_armed = self.exit_armed;
                     let current_budget = self.budget;
+                    #[cfg(feature = "std")]
                     let current_epoch = self.budget_epoch;
                     let old = core::mem::replace(self, adopted);
                     #[cfg(feature = "telemetry")]
@@ -460,7 +464,10 @@ impl ThreadCache {
                     let _ = old;
                     self.exit_armed = current_armed;
                     self.budget = current_budget;
-                    self.budget_epoch = current_epoch;
+                    #[cfg(feature = "std")]
+                    {
+                        self.budget_epoch = current_epoch;
+                    }
                     self.retired_reclaimed = true;
                     return;
                 }
