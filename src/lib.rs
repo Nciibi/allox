@@ -763,12 +763,13 @@ unsafe fn alloc_large_ex(
         let region_size = pages as usize * page::PAGE_SIZE;
         let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
         if ret + size <= base as usize + region_size {
+            let known_zeroed = zeroed_requested && sys::discard(base, region_size);
             let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
             init_large_header(hdr, base, region_size, size);
             register_large_region(base, region_size, hdr);
             #[cfg(feature = "telemetry")]
             note_large_alloc(size);
-            return (ret as *mut u8, false, false);
+            return (ret as *mut u8, false, known_zeroed);
         }
         // Alignment made the cached region unusable; drop it (arena-owned
         // slices park in holes, legacy ones truly unmap — counters follow).
