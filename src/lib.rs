@@ -584,7 +584,7 @@ fn large_shard(mapped_pages: usize, salt: usize) -> usize {
 }
 
 unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
-    alloc_large_ex(size, align).0
+    alloc_large_ex(size, align, false).0
 }
 
 #[inline]
@@ -734,7 +734,11 @@ unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut Larg
 
 /// Returns `(ptr, fresh, known_zeroed)` where `fresh` distinguishes new
 /// virtual memory and `known_zeroed` permits calloc to skip its memset.
-unsafe fn alloc_large_ex(size: usize, align: usize) -> (*mut u8, bool, bool) {
+unsafe fn alloc_large_ex(
+    size: usize,
+    align: usize,
+    zeroed_requested: bool,
+) -> (*mut u8, bool, bool) {
     let total = match size
         .checked_add(align)
         .and_then(|v| v.checked_add(LARGE_HEADER_SIZE))
