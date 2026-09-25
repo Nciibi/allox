@@ -37,29 +37,36 @@ fn big_boundary_routing() {
         let b0 = malloc(medium_top + 1);
         assert!(!b0.is_null());
         let u0 = allox::usable_size(b0);
-        assert!(u0 >= 65473 && u0 <= 524288, "usable {}", u0);
+        assert!(u0 >= 65473 && u0 <= BIG_TOP, "usable {}", u0);
         fill_pattern(b0, 65473);
         check_pattern(b0, 65473);
         free(b0);
 
         let b1 = malloc(524288);
         assert!(!b1.is_null());
-        #[cfg(all(unix, feature = "std"))]
-        assert_eq!(allox::usable_size(b1), 524288);
         assert!(allox::usable_size(b1) >= 524288);
         free(b1);
 
-        let l = malloc(524289);
-        assert!(!l.is_null());
-        assert!(allox::usable_size(l) >= 524289);
-        free(l);
+        let top = malloc(BIG_TOP);
+        assert!(!top.is_null());
+        #[cfg(all(unix, feature = "std"))]
+        assert_eq!(allox::usable_size(top), BIG_TOP);
+        assert!(allox::usable_size(top) >= BIG_TOP);
+        free(top);
+
+        let above = malloc(BIG_TOP_PLUS_ONE);
+        assert!(!above.is_null());
+        assert!(allox::usable_size(above) >= BIG_TOP_PLUS_ONE);
+        free(above);
     }
 }
 
 #[test]
 fn big_roundtrip_contents() {
     unsafe {
-        for size in [70000usize, 100000, 150000, 200000, 262144, 300000, 400000, 524288] {
+        for size in [
+            70000usize, 100000, 150000, 200000, 262144, 300000, 400000, 600000, 800000, BIG_TOP,
+        ] {
             let p = malloc(size);
             assert!(!p.is_null(), "size {}", size);
             fill_pattern(p, size);
@@ -75,7 +82,7 @@ fn big_roundtrip_contents() {
 #[test]
 fn big_calloc_is_zeroed() {
     unsafe {
-        for size in [70000usize, 131072, 262144, 300000, 524288] {
+        for size in [70000usize, 131072, 262144, 300000, 600000, BIG_TOP] {
             let p = allox::calloc(1, size);
             assert!(!p.is_null(), "size {}", size);
             for i in [0, size / 2, size - 1] {
@@ -90,16 +97,16 @@ fn big_calloc_is_zeroed() {
 fn big_active_reuse_preserves_calloc_zeroing() {
     unsafe {
         for _ in 0..32 {
-            let p = allox::calloc(1, 524288);
+            let p = allox::calloc(1, BIG_TOP);
             assert!(!p.is_null());
-            for i in (0..524288).step_by(4096) {
+            for i in (0..BIG_TOP).step_by(4096) {
                 *p.add(i) = 0xA5;
             }
             free(p);
 
-            let q = allox::calloc(1, 524288);
+            let q = allox::calloc(1, BIG_TOP);
             assert!(!q.is_null());
-            for i in (0..524288).step_by(4096) {
+            for i in (0..BIG_TOP).step_by(4096) {
                 assert_eq!(*q.add(i), 0, "offset {}", i);
             }
             free(q);
