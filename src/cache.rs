@@ -439,17 +439,8 @@ impl ThreadCache {
     /// should be counted for a batched shed (see [`DRIFT_GATE_DIV`]).
     #[inline]
     fn drift_gate_open(&self) -> bool {
-        let tier_pressure = {
-            #[cfg(all(unix, feature = "std"))]
-            {
-                self.tier_cached_bytes > tier_cache_budget() / DRIFT_GATE_DIV
-            }
-            #[cfg(not(all(unix, feature = "std")))]
-            {
-                false
-            }
-        };
-        self.small_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV || tier_pressure
+        self.small_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
+            || self.tier_cached_bytes > tier_cache_budget() / DRIFT_GATE_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
