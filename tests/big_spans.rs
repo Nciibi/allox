@@ -246,3 +246,20 @@ fn big_churn_multithreaded() {
         h.join().unwrap();
     }
 }
+
+#[test]
+fn cache_budget_probe() {
+    unsafe {
+        for i in 0..1000usize {
+            let size = 32768 + (i * 7919) % (1_048_576 - 32768);
+            let p = malloc(size);
+            assert!(!p.is_null());
+            free(p);
+        }
+        let (cached, tier) = allox::__debug_cache_bytes();
+        println!("cached={cached} tier={tier}");
+        assert!(tier <= cached);
+        allox::flush_current_thread();
+        assert_eq!(allox::__debug_cache_bytes(), (0, 0));
+    }
+}
