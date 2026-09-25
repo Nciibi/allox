@@ -300,6 +300,17 @@ The remaining lifecycle work is first-touch cost for workers that cannot adopt
 a cache; the next experiment should target that, not guess another refill/flush
 constant.
 
+## P1g results — hot-path table and large-cache follow-up (2026-09-25)
+
+* A runtime static class-size table removes a compiler-materialized 512-byte
+  table copy from every small free. Fresh `tight-small 8T` is now 168.9 M/s
+  versus 162.6 M/s for mimalloc.
+* Zeroed-large recycled regions are discarded while exclusively owned before
+  reuse, avoiding full memsets; adaptive large stash/shard caps and range-based
+  side-table writes improve the 5–8 MiB path.
+* `zeroed-large 1T` reaches 188.7 K/s and `huge-only 1T` 1.55 M/s in capped
+  probes. ECS remains the known structural big-span realloc/copy gap.
+
 ## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
 
 What shipped: `sys::map_any` (plain 4 KiB `mmap`, unix-only; alias to `map`
