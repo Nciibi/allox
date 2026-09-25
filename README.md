@@ -149,14 +149,19 @@ p50/p90/p99/p99.9 (clock-pair cost calibrated out; measured within noise of
 an unsampled run). On `mixed-all 8T` that reads allox p99 **670 ns** versus
 mimalloc 1080, system 3330 and snmalloc 4740.
 
-`allox::__diagnostics::volume()` exposes 24 always-on counters (refills,
+`allox::__diagnostics::volume()` exposes 23 always-on counters (refills,
 flushes, trims, owner probes, remote frees, zeroed bytes, purges, arena
-fallbacks, realloc relocations and copied bytes, ...). They only live on
-slow paths, or batch through thread-local accumulators, so a normal build
-reports them for free — but a *new* counter's cost is worth measuring on a
-multi-threaded workload first: a shared atomic per `realloc` cost 20% of
-throughput here before it was batched. `telemetry::timing()` adds
-nanosecond lock-wait, purge and exit-flush totals.
+fallbacks, realloc relocations and copied bytes, ...). They accumulate in
+per-thread batches and publish every 8192 events, so a normal build reports
+them for a measured 0–3.6% (most on the counter-densest workloads, zero on
+the rest). `telemetry::timing()` adds nanosecond lock-wait, purge and
+exit-flush totals.
+
+That batching is not a detail: the first version used one shared atomic per
+event and cost **33% on `mixed-all 8T` and 36% on `large-only 8T`** — at 4M
+trims/s and 12M owner probes/s, threads ping-pong one cache line faster
+than the work being counted. If you add a counter, check its event rate
+before you check its position in the source.
 
 ### Process-global application benchmark
 

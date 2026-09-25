@@ -380,14 +380,55 @@ neutral (`mixed-all 8T` 29.6 vs 29.6, `large-only 8T` 20.6 vs 20.2,
 speedup on the allocator loops — the honest summary is "cheaper hot path,
 same measured throughput there".
 
-**Instrumentation lesson (the important part):** the first version of these
-counters used one shared atomic per `realloc`, which cost **20%** of
-process-global throughput at 4 threads (233k → 194k docs/s) because four
-threads ping-pong one cache line tens of millions of times per second — the
-benchmark was measuring its own instrumentation. Relocations now accumulate
-in the thread-local `Pending` batch and publish every 8192 operations.
-Measure any new counter's cost on a multi-threaded workload before trusting
-the number it produces.
+**Instrumentation lesson (the important part, and it cost real money):** the
+first version of these counters incremented a *shared atomic per event*.
+That is not a small tax, it is a structural one, and it shipped as a
+regression before it was caught:
+
+| counter | event rate (mixed-all 8T) | measured cost |
+|---|---:|---:|
+| `realloc_relocations` / `realloc_copy_bytes` | ~10M/s | −20% process-global app, 4T |
+| `trims` | ~4M/s | −11% mixed-all 8T |
+| `owner_probes` / `remote_frees` | ~12M/s | −24% mixed-all 8T, −20% large-only 8T |
+| `heap_lock_acquisitions` (one global, inside all 64 class locks) | per lock | could not be batched; removed |
+
+Cumulatively that was **−33.7% on `mixed-all 8T`** and **−35.6% on
+`large-only 8T`** against the pre-session build — invisible in the
+single-workload spot checks, obvious in a paired A/B. All volume counters
+now accumulate in the owning thread's `Pending` batch and publish every
+8192 events (one thread-local add per event); only per-syscall and
+per-thread events (purges, exit flushes, retired/adopted caches, software
+zeroing) keep a direct atomic. The lock counter is gone entirely:
+`telemetry::timing()` keeps lock-wait, and `flushes`/`*_refills` proxy the
+traffic.
+
+Paired A/B, pre-session `v0.0.1266` vs `v0.0.1273`, order-alternating
+pairs on the same box (the box had ~2 cores of foreign load, so only paired
+comparisons mean anything):
+
+| workload | v0.0.1266 | v0.0.1273 | delta |
+|---|---:|---:|---:|
+| tight-small 8T | 245.2 | 239.7 | −2.3% |
+| mixed-small 8T | 190.5 | 190.7 | +0.1% |
+| mixed-all 8T | 46.8 | 45.8 | −2.0% |
+| request 8T | 403.9 | 393.2 | −2.7% |
+| prodcons 8T | 41.3 | 39.8 | −3.6% |
+| large-only 8T | 32.4 | 32.1 | −1.1% |
+| json-ish 8T | 248.4 | 250.5 | +0.9% |
+| ecs 8T | 94.3 | 93.9 | −0.4% |
+| app 1T / 4T (docs/s) | 75.3k / 239.7k | 76.1k / 237.6k | +1% / flat |
+
+So the instrumentation ends up costing **0–3.6%**, concentrated where the
+counters are densest (prodcons, request, tight-small) and zero elsewhere.
+That is the honest price of the visibility, and it is a cost on *every*
+workload rather than a win on one and a loss on another.
+
+**Rule this establishes:** a counter's cost is a property of its event rate,
+not of where it sits. Before believing any benchmark that a change helped,
+run the *paired* A/B against the previous build on several workloads at
+once — three of today's apparent findings (prodcons −9%, mixed-all −27%,
+request −4%) were measurement artifacts, and one (mixed-all −33%) was a
+real regression that only the paired view exposed.
 
 ## 5. spawn-churn per-op + exit latency (1.33x mimalloc — ADOPTION LANDED)
 
