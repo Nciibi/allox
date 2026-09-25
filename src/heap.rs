@@ -239,43 +239,56 @@ unsafe fn release_inner(
     (*page).free_count += n;
     (*page).used -= n;
     if (*page).used == 0 {
-        unlink_partial(&mut list.head, page);
-        if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
-            // Delayed reclamation: keep the page mapped for reuse.
-            (*page).next = list.empty;
-            list.empty = page;
-            list.empty_count += 1;
-            PageFate::Keep
-        } else if (list.cold_len as usize) < MAX_COLD_PAGE_SLOTS
-            && list.cold_bytes + PAGE_SIZE <= MAX_COLD_PAGE_BYTES_PER_CLASS
-        {
-            // Cold: drop physical, keep virtual. Array-stored base so the
-            // discard can't destroy the linkage. Re-carved on reuse.
-            //
-            // The discard runs UNDER the lock: the page is exclusively
-            // ours (used==0 observed above, unlinked from every list, and
-            // the cold entry is not visible until unlock), so no concurrent
-            // pop can hand out blocks mid-discard and lose user writes.
-            // Discarding after unlock raced exactly so: a taker could pop,
-            // re-carve, and hand out the page before our discard landed,
-            // zeroing live blocks and headers (use-after-discard leading to
-            // short free lists, magic mismatches, and wild splices).
-            // Same discipline as medium spans and large regions.
-            let idx = list.cold_len as usize;
-            list.cold[idx] = page;
-            list.cold_len += 1;
-            list.cold_bytes += PAGE_SIZE;
-            sys::discard(page.cast::<u8>(), PAGE_SIZE);
-            PageFate::Cold
-        } else {
-            PageFate::Unmap
-        }
+        park_empty_page(list, page)
     } else {
         if (*page).flags & FLAG_IN_PARTIAL == 0 {
             link_partial(&mut list.head, page);
         }
         PageFate::Keep
     }
+}
+
+unsafe fn park_empty_page(list: &mut ListHead, page: *mut PageHeader) -> PageFate {
+    unlink_partial(&mut list.head, page);
+    if list.empty_count < EMPTY_PAGE_CACHE_PER_CLASS {
+        // Delayed reclamation: keep the page mapped for reuse.
+        (*page).next = list.empty;
+        list.empty = page;
+        list.empty_count += 1;
+        PageFate::Keep
+    } else if (list.cold_len as usize) < MAX_COLD_PAGE_SLOTS
+        && list.cold_bytes + PAGE_SIZE <= MAX_COLD_PAGE_BYTES_PER_CLASS
+    {
+        // Cold: drop physical, keep virtual. Array-stored base so the
+        // discard can't destroy the linkage. Re-carved on reuse.
+        //
+        // The discard runs UNDER the lock: the page is exclusively
+        // ours (used==0 observed above, unlinked from every list, and
+        // the cold entry is not visible until unlock), so no concurrent
+        // pop can hand out blocks mid-discard and lose user writes.
+        // Discarding after unlock raced exactly so: a taker could pop,
+        // re-carve, and hand out the page before our discard landed,
+        // zeroing live blocks and headers (use-after-discard leading to
+        // short free lists, magic mismatches, and wild splices).
+        // Same discipline as medium spans and large regions.
+        let idx = list.cold_len as usize;
+        list.cold[idx] = page;
+        list.cold_len += 1;
+        list.cold_bytes += PAGE_SIZE;
+        sys::discard(page.cast::<u8>(), PAGE_SIZE);
+        PageFate::Cold
+    } else {
+        PageFate::Unmap
+    }
+}
+
+unsafe fn retire_page_inner(list: &mut ListHead, page: *mut PageHeader) -> PageFate {
+    (*page).flags &= !FLAG_VIRGIN;
+    (*page).flags |= FLAG_NEEDS_REINIT;
+    (*page).free_head = ptr::null_mut();
+    (*page).free_count = 0;
+    (*page).used = 0;
+    park_empty_page(list, page)
 }
 
 unsafe fn act_page_fate(page: *mut PageHeader, fate: PageFate) {
