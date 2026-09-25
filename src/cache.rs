@@ -1012,6 +1012,7 @@ impl ThreadCache {
         push_block(&mut bin.head, p);
         bin.len += 1;
         self.cached_bytes += BIG_CLASSES[bclass];
+        self.tier_cached_bytes += BIG_CLASSES[bclass];
         if foreign {
             self.foreign_bytes += BIG_CLASSES[bclass];
         }
