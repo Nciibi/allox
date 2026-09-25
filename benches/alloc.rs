@@ -458,6 +458,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
                             }
                         }
+                        }
                     }
                     for (p, s) in live {
                         unsafe { alloc.dealloc(p, layout_for(s)) };
