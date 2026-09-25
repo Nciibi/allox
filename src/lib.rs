@@ -163,13 +163,10 @@ mod tls {
     pub(crate) use imp::with;
 }
 
-/// Full flush of the calling thread's cache (may block on heap locks).
-/// Used by the OS thread-exit hook, where blocking is safe (no allocator
-/// locks are ever held at thread exit, and heap locks never cycle with OS
-/// teardown locks). Panic-free by construction.
+/// Retire the calling thread's cache at OS thread exit.
 #[cfg(all(feature = "std", any(unix, windows)))]
-pub(crate) unsafe fn tls_flush_full() {
-    tls::flush();
+pub(crate) unsafe fn tls_retire() {
+    tls::retire();
 }
 
 #[inline]
