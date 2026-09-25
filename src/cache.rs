@@ -15,7 +15,7 @@ use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
-use crate::classes::{CLASSES, NUM_CLASSES};
+use crate::classes::{CLASSES_RUNTIME, NUM_CLASSES};
 use crate::heap::{MEDIUM_HEAP, PageReleaseChunk, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
 use crate::heap::BIG_HEAP;
@@ -366,7 +366,7 @@ impl ThreadCache {
     fn note_alloc(&mut self, class: usize) {
         self.pending.ops += 1;
         self.pending.allocs += 1;
-        self.pending.bytes_in += CLASSES[class] as u64;
+        self.pending.bytes_in += CLASSES_RUNTIME[class] as u64;
         self.pending.per_class[class] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
@@ -378,7 +378,7 @@ impl ThreadCache {
     fn note_free(&mut self, class: usize) {
         self.pending.ops += 1;
         self.pending.frees += 1;
-        self.pending.bytes_out += CLASSES[class] as u64;
+        self.pending.bytes_out += CLASSES_RUNTIME[class] as u64;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
@@ -389,7 +389,7 @@ impl ThreadCache {
     fn note_alloc_medium(&mut self, mclass: usize) {
         self.pending.ops += 1;
         self.pending.allocs += 1;
-        self.pending.bytes_in += MEDIUM_CLASSES[mclass] as u64;
+        self.pending.bytes_in += MEDIUM_CLASSES_RUNTIME[mclass] as u64;
         self.pending.per_class[NUM_CLASSES + mclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
@@ -401,7 +401,7 @@ impl ThreadCache {
     fn note_free_medium(&mut self, mclass: usize) {
         self.pending.ops += 1;
         self.pending.frees += 1;
-        self.pending.bytes_out += MEDIUM_CLASSES[mclass] as u64;
+        self.pending.bytes_out += MEDIUM_CLASSES_RUNTIME[mclass] as u64;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
@@ -412,7 +412,7 @@ impl ThreadCache {
     fn note_alloc_big(&mut self, bclass: usize) {
         self.pending.ops += 1;
         self.pending.allocs += 1;
-        self.pending.bytes_in += BIG_CLASSES[bclass] as u64;
+        self.pending.bytes_in += BIG_CLASSES_RUNTIME[bclass] as u64;
         self.pending.per_class[NUM_CLASSES + NUM_MEDIUM + bclass] += 1;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
@@ -424,7 +424,7 @@ impl ThreadCache {
     fn note_free_big(&mut self, bclass: usize) {
         self.pending.ops += 1;
         self.pending.frees += 1;
-        self.pending.bytes_out += BIG_CLASSES[bclass] as u64;
+        self.pending.bytes_out += BIG_CLASSES_RUNTIME[bclass] as u64;
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
         }
@@ -593,7 +593,7 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= CLASSES[class];
+            self.cached_bytes -= CLASSES_RUNTIME[class];
             if below < self.virgin[class] {
                 self.virgin[class] -= 1;
             }
@@ -616,7 +616,7 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= CLASSES[class];
+            self.cached_bytes -= CLASSES_RUNTIME[class];
             let zeroed = below < self.virgin[class];
             if zeroed {
                 self.virgin[class] -= 1;
@@ -645,7 +645,7 @@ impl ThreadCache {
                 let p = pop_block(&mut bin.head).unwrap();
                 let below = bin.len - 1;
                 bin.len = below;
-                self.cached_bytes -= CLASSES[class];
+                self.cached_bytes -= CLASSES_RUNTIME[class];
                 let zeroed = below < self.virgin[class];
                 if zeroed {
                     self.virgin[class] -= 1;
@@ -678,7 +678,7 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
         bin.head = rest;
         bin.len += count - 1;
-        self.cached_bytes += CLASSES[class] * (count - 1) as usize;
+        self.cached_bytes += CLASSES_RUNTIME[class] * (count - 1) as usize;
         // Refill only happens on an empty bin, so the whole batch sits at the
         // bottom; the block we returned was part of it.
         self.virgin[class] = if virgin { count - 1 } else { 0 };
@@ -710,9 +710,9 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
         push_block(&mut bin.head, p);
         bin.len += 1;
-        self.cached_bytes += CLASSES[class];
+        self.cached_bytes += CLASSES_RUNTIME[class];
         if foreign {
-            self.foreign_bytes += CLASSES[class];
+            self.foreign_bytes += CLASSES_RUNTIME[class];
         }
         #[cfg(feature = "telemetry")]
         self.note_free(class);
@@ -723,7 +723,7 @@ impl ThreadCache {
 
     #[inline]
     unsafe fn active_medium_alloc(&mut self, mclass: usize) -> (*mut u8, bool) {
-        let block_size = MEDIUM_CLASSES[mclass];
+        let block_size = MEDIUM_CLASSES_RUNTIME[mclass];
         let (p, zeroed) = {
             let active = &mut self.mactive[mclass];
             let p = match pop_block(&mut active.head) {
@@ -770,10 +770,10 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            self.cached_bytes -= MEDIUM_CLASSES_RUNTIME[mclass];
             self.tier_cached_bytes = self
                 .tier_cached_bytes
-                .saturating_sub(MEDIUM_CLASSES[mclass]);
+                .saturating_sub(MEDIUM_CLASSES_RUNTIME[mclass]);
             if below < self.mvirgin[mclass] {
                 self.mvirgin[mclass] -= 1;
             }
@@ -801,10 +801,10 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= MEDIUM_CLASSES[mclass];
+            self.cached_bytes -= MEDIUM_CLASSES_RUNTIME[mclass];
             self.tier_cached_bytes = self
                 .tier_cached_bytes
-                .saturating_sub(MEDIUM_CLASSES[mclass]);
+                .saturating_sub(MEDIUM_CLASSES_RUNTIME[mclass]);
             let zeroed = below < self.mvirgin[mclass];
             if zeroed {
                 self.mvirgin[mclass] -= 1;
@@ -836,10 +836,10 @@ impl ThreadCache {
             if let Some(p) = pop_block(&mut bin.head) {
                 let below = bin.len - 1;
                 bin.len = below;
-                self.cached_bytes -= MEDIUM_CLASSES[mclass];
+                self.cached_bytes -= MEDIUM_CLASSES_RUNTIME[mclass];
                 self.tier_cached_bytes = self
                     .tier_cached_bytes
-                    .saturating_sub(MEDIUM_CLASSES[mclass]);
+                    .saturating_sub(MEDIUM_CLASSES_RUNTIME[mclass]);
                 let zeroed = below < self.mvirgin[mclass];
                 if zeroed {
                     self.mvirgin[mclass] -= 1;
@@ -888,8 +888,8 @@ impl ThreadCache {
             debug_assert!(bin.head.is_null());
             bin.head = rest;
             bin.len = count - 1;
-            self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
-            self.tier_cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+            self.cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass] * (count - 1) as usize;
+            self.tier_cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass] * (count - 1) as usize;
             self.mvirgin[mclass] = if virgin { count - 1 } else { 0 };
             return (first, virgin);
         }
@@ -903,8 +903,8 @@ impl ThreadCache {
         active.head = rest;
         active.len = count - 1;
         active.virgin = if virgin { count - 1 } else { 0 };
-        self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
-        self.tier_cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+        self.cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass] * (count - 1) as usize;
+        self.tier_cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass] * (count - 1) as usize;
         self.mvirgin[mclass] = 0;
         (first, virgin)
     }
@@ -941,10 +941,10 @@ impl ThreadCache {
             push_block(&mut bin.head, p);
             bin.len += 1;
         }
-        self.cached_bytes += MEDIUM_CLASSES[mclass];
-        self.tier_cached_bytes += MEDIUM_CLASSES[mclass];
+        self.cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass];
+        self.tier_cached_bytes += MEDIUM_CLASSES_RUNTIME[mclass];
         if foreign {
-            self.foreign_bytes += MEDIUM_CLASSES[mclass];
+            self.foreign_bytes += MEDIUM_CLASSES_RUNTIME[mclass];
         }
         #[cfg(feature = "telemetry")]
         self.note_free_medium(mclass);
@@ -956,7 +956,7 @@ impl ThreadCache {
     #[cfg(all(unix, feature = "std"))]
     #[inline]
     unsafe fn active_big_alloc(&mut self, bclass: usize) -> (*mut u8, bool) {
-        let block_size = BIG_CLASSES[bclass];
+        let block_size = BIG_CLASSES_RUNTIME[bclass];
         let (p, zeroed) = {
             let active = &mut self.bactive[bclass];
             let p = match pop_block(&mut active.head) {
@@ -1011,8 +1011,8 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= BIG_CLASSES[bclass];
-            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
+            self.cached_bytes -= BIG_CLASSES_RUNTIME[bclass];
+            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES_RUNTIME[bclass]);
             if below < self.bvirgin[bclass] {
                 self.bvirgin[bclass] -= 1;
             }
@@ -1041,8 +1041,8 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
-            self.cached_bytes -= BIG_CLASSES[bclass];
-            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
+            self.cached_bytes -= BIG_CLASSES_RUNTIME[bclass];
+            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES_RUNTIME[bclass]);
             let zeroed = below < self.bvirgin[bclass];
             if zeroed {
                 self.bvirgin[bclass] -= 1;
@@ -1076,10 +1076,10 @@ impl ThreadCache {
             if let Some(p) = pop_block(&mut bin.head) {
                 let below = bin.len - 1;
                 bin.len = below;
-                self.cached_bytes -= BIG_CLASSES[bclass];
+                self.cached_bytes -= BIG_CLASSES_RUNTIME[bclass];
                 self.tier_cached_bytes = self
                     .tier_cached_bytes
-                    .saturating_sub(BIG_CLASSES[bclass]);
+                    .saturating_sub(BIG_CLASSES_RUNTIME[bclass]);
                 let zeroed = below < self.bvirgin[bclass];
                 if zeroed {
                     self.bvirgin[bclass] -= 1;
@@ -1134,15 +1134,15 @@ impl ThreadCache {
             active.head = rest;
             active.len = count - 1;
             active.virgin = if virgin { count - 1 } else { 0 };
-            self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
-            self.tier_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.cached_bytes += BIG_CLASSES_RUNTIME[bclass] * (count - 1) as usize;
+            self.tier_cached_bytes += BIG_CLASSES_RUNTIME[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = 0;
         } else {
             let bin = &mut self.bigbins[bclass];
             bin.head = rest;
             bin.len += count - 1;
-            self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
-            self.tier_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.cached_bytes += BIG_CLASSES_RUNTIME[bclass] * (count - 1) as usize;
+            self.tier_cached_bytes += BIG_CLASSES_RUNTIME[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
         }
         (first, virgin)
@@ -1166,10 +1166,10 @@ impl ThreadCache {
 
         if self.active_big_contains(p, bclass, span) {
             self.active_big_dealloc(p, bclass);
-            self.cached_bytes += BIG_CLASSES[bclass];
-            self.tier_cached_bytes += BIG_CLASSES[bclass];
+            self.cached_bytes += BIG_CLASSES_RUNTIME[bclass];
+            self.tier_cached_bytes += BIG_CLASSES_RUNTIME[bclass];
             if foreign {
-                self.foreign_bytes += BIG_CLASSES[bclass];
+                self.foreign_bytes += BIG_CLASSES_RUNTIME[bclass];
             }
             #[cfg(all(feature = "telemetry", unix, feature = "std"))]
             self.note_free_big(bclass);
@@ -1182,10 +1182,10 @@ impl ThreadCache {
         let bin = &mut self.bigbins[bclass];
         push_block(&mut bin.head, p);
         bin.len += 1;
-        self.cached_bytes += BIG_CLASSES[bclass];
-        self.tier_cached_bytes += BIG_CLASSES[bclass];
+        self.cached_bytes += BIG_CLASSES_RUNTIME[bclass];
+        self.tier_cached_bytes += BIG_CLASSES_RUNTIME[bclass];
         if foreign {
-            self.foreign_bytes += BIG_CLASSES[bclass];
+            self.foreign_bytes += BIG_CLASSES_RUNTIME[bclass];
         }
         #[cfg(all(feature = "telemetry", unix, feature = "std"))]
         self.note_free_big(bclass);
@@ -1245,7 +1245,7 @@ impl ThreadCache {
     }
 
     unsafe fn flush_active_medium(&mut self, mclass: usize) {
-        let block_size = MEDIUM_CLASSES[mclass];
+        let block_size = MEDIUM_CLASSES_RUNTIME[mclass];
         let (span, head, len) = {
             let active = &self.mactive[mclass];
             (active.span, active.head, active.len)
@@ -1388,7 +1388,7 @@ impl ThreadCache {
             self.flush_bin(class, 0);
             return;
         }
-        let block_size = CLASSES[class];
+        let block_size = CLASSES_RUNTIME[class];
         let chain = self.bins[class].head;
         let mut groups: [MaybeUninit<PageReleaseChunk>; MAX_FLUSH_GROUPS] =
             unsafe { MaybeUninit::uninit().assume_init() };
@@ -1442,7 +1442,7 @@ impl ThreadCache {
     /// blocks to their owning pages in chunked, grouped batches so each page
     /// needs only one lock acquisition per chunk.
     unsafe fn flush_bin(&mut self, class: usize, floor_blocks: u32) {
-        let block_size = CLASSES[class];
+        let block_size = CLASSES_RUNTIME[class];
         let bin = &mut self.bins[class];
 
         while bin.len > floor_blocks {
@@ -1512,7 +1512,7 @@ impl ThreadCache {
     unsafe fn flush_mbin(&mut self, mclass: usize, floor_blocks: u32) {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
-        let block_size = MEDIUM_CLASSES[mclass];
+        let block_size = MEDIUM_CLASSES_RUNTIME[mclass];
         let bin = &mut self.mbins[mclass];
 
         while bin.len > floor_blocks {
@@ -1601,7 +1601,7 @@ impl ThreadCache {
 
     #[cfg(all(unix, feature = "std"))]
     unsafe fn flush_active_big(&mut self, bclass: usize) {
-        let block_size = BIG_CLASSES[bclass];
+        let block_size = BIG_CLASSES_RUNTIME[bclass];
         let (span, head, len) = {
             let active = &self.bactive[bclass];
             (active.span, active.head, active.len)
@@ -1630,7 +1630,7 @@ impl ThreadCache {
     unsafe fn flush_bbin(&mut self, bclass: usize, floor_blocks: u32) {
         const BFLUSH_CHUNK: u32 = 64;
         const MAX_BFLUSH_GROUPS: usize = BFLUSH_CHUNK as usize + 4;
-        let block_size = BIG_CLASSES[bclass];
+        let block_size = BIG_CLASSES_RUNTIME[bclass];
         let bin = &mut self.bigbins[bclass];
 
         while bin.len > floor_blocks {
@@ -1850,7 +1850,7 @@ unsafe fn debug_validate_free(p: *mut u8) {
         invalid("allox: dealloc of pointer outside allocator pages");
     }
     let class = (*page).class as usize;
-    let block_size = CLASSES[class];
+    let block_size = CLASSES_RUNTIME[class];
     let offset = p as usize - base;
     if offset < HEADER_SIZE || (offset - HEADER_SIZE) % block_size != 0 {
         invalid("allox: dealloc of misaligned interior pointer");
@@ -1877,7 +1877,7 @@ unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
         invalid("allox: medium dealloc of null");
     }
     let mclass = (*span).mclass as usize;
-    let block_size = MEDIUM_CLASSES[mclass];
+    let block_size = MEDIUM_CLASSES_RUNTIME[mclass];
     let base = span as usize;
     let npages = (*span).npages as usize;
     if p as usize <= base || p as usize >= base + npages * PAGE_SIZE {
@@ -1945,7 +1945,7 @@ unsafe fn debug_validate_free_big(p: *mut u8, span: *mut BigMaster) {
         invalid("allox: big dealloc of null");
     }
     let bclass = (*span).bclass as usize;
-    let block_size = BIG_CLASSES[bclass];
+    let block_size = BIG_CLASSES_RUNTIME[bclass];
     let base = span as usize;
     let npages = (*span).npages as usize;
     if p as usize <= base || p as usize >= base + npages * crate::page::PAGE_SIZE {
