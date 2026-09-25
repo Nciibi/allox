@@ -14,7 +14,10 @@ refreshed from that run). The last structural loss is gone: `ecs 8T` used
 to be 0.06× the system allocator because glibc grows with zero-copy
 `mremap` while allox copied every step of a doubling chain — the promotion
 in §4c makes it 1.20–1.23×. Full suite + telemetry + no_std + release
-green and warning-free. Contra remaining gaps below, each
+green and warning-free. **The direct-call matrix is not the whole story:
+§4d (2026-09-25) adds a process-global application benchmark, and there
+allox is 0.88× mimalloc / 0.85× snmalloc on a realloc-heavy app shape —
+the first mode where it is not ahead.** Contra remaining gaps below, each
 capable of closing independently, ordered by ROI. Methodology everywhere:
 ≥2 s × 3 reps, `__debug_map_split` + `peakRSS` probe columns,
 sensitivity-checked tests (disable-the-feature must fail), one point
@@ -315,6 +318,76 @@ after having settled in place; the reserve is up to 8× the requested
 bytes (bounded by the arena's own caps and by the big cap), which is
 virtual-only but does consume arena reservation. No `mremap` wrapper is
 involved — none is needed.
+
+## 4d. Process-global app shape: the first workload allox loses (OPEN)
+
+The direct-call matrix (`benches/alloc.rs`) measures allocator loops. The
+process-global app benchmark (`examples/app_workload.rs`, one binary per
+allocator via `--features app-allox|app-system|...`, driven by
+`scripts/app_bench.sh`) measures what an application does: `String`/`Vec`
+growth, `HashMap` churn, recursive tree build + bulk drop, and the harness's
+own allocations. It is the first mode where allox is **not** ahead.
+
+Measured (4 threads, 4 s, fresh process per backend, Ryzen 5 1600):
+
+| backend | docs/s | ns/document | peak RSS |
+|---|---:|---:|---:|
+| allox | 238,944 | 4,185 | 3.9 MiB |
+| system | 203,072 | 4,924 | 3.2 MiB |
+| mimalloc | 270,352 | 3,699 | 3.8 MiB |
+| snmalloc | 279,504 | 3,578 | 6.9 MiB |
+| talc | 12,272 | 81,486 | 2.7 MiB |
+
+allox is 1.18× system but **0.88× mimalloc / 0.85× snmalloc**. Single
+threaded the three fast allocators tie (allox 72.1k, mimalloc 72.9k,
+snmalloc 72.7k docs/s), so the gap is entirely scaling: allox 2.90× from 1
+to 4 threads, mimalloc 3.59×, snmalloc 3.87×.
+
+Where it goes (`perf`, same binary/workload, 4T): allox spends **25.6%** of
+samples in allocator code against mimalloc's **18.6%** — `alloc_impl` 7.6%
+(≈6.4 ns/call vs mimalloc's ≈3.6 ns), `ThreadCache::dealloc` 6.1%,
+`memmove` 5.6% vs 4.4%. The volume counters say why the copies are there:
+**31.1M relocating `realloc`s copying 1.03 GB** in the same run, ~33 bytes
+each, 76% of all `realloc` calls. App containers double, and every doubling
+crosses a size class, so each growth is a full alloc + copy + free.
+
+Candidate levers, in measured order of promise:
+
+1. **Grow in place into the adjacent block** (what mimalloc/snmalloc do with
+   a per-page free bitmap). allox's pages are one class per 64 KiB, but the
+   free list is intrusive through the blocks and class-locked, so checking
+   and unlinking the neighbour is O(free blocks) under a lock — which is
+   exactly why DESIGN.md records it as "rejected: expected net loss". Making
+   it O(1) needs a per-page free **bitmap** (64 KiB page of 32 B blocks =
+   2048 bits = 256 B of page metadata) or a doubly-linked free list. This is
+   a real structural change to the small tier and is the only lever that
+   attacks the 5.6% memmove directly.
+2. **Cheaper relocation round trip**: the generic path does two TLS visits
+   (one for alloc, one for free) plus both budget checks around what is
+   net-zero bookkeeping. One `with_cache` covering alloc+copy+free, with the
+   checks folded, is a contained change; expected a few percent.
+3. Fast-path diet (already partly done, see below): `alloc_impl` tier order
+   and one-cache-line bins.
+
+Landed while measuring this (v0.0.1270): the virgin count moved from a
+parallel `ThreadCache::virgin` array into the small `Bin` (it fits the
+struct's existing padding), so a small alloc/dealloc touches one cache line
+instead of two; `alloc_impl` now tests the small tier first, as one
+comparison, before any tier routing. Interleaved A/B against `v0.0.1269`:
+app benchmark +2.5% at 1 thread / +1.3% at 4 threads, direct-call matrix
+neutral (`mixed-all 8T` 29.6 vs 29.6, `large-only 8T` 20.6 vs 20.2,
+`medium-only 8T` 31.5 vs 32.1 M/s). Full suite green. Not claimed as a
+speedup on the allocator loops — the honest summary is "cheaper hot path,
+same measured throughput there".
+
+**Instrumentation lesson (the important part):** the first version of these
+counters used one shared atomic per `realloc`, which cost **20%** of
+process-global throughput at 4 threads (233k → 194k docs/s) because four
+threads ping-pong one cache line tens of millions of times per second — the
+benchmark was measuring its own instrumentation. Relocations now accumulate
+in the thread-local `Pending` batch and publish every 8192 operations.
+Measure any new counter's cost on a multi-threaded workload before trusting
+the number it produces.
 
 ## 5. spawn-churn per-op + exit latency (1.33x mimalloc — ADOPTION LANDED)
 

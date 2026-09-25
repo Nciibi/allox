@@ -142,6 +142,43 @@ process; fresh-process output is JSONL and gives per-process RSS values.
 Use `BENCH_SAFE_LIVE=1` with a memory cgroup for large runs to bound the
 benchmark's transient live set to 16 operations per drain check.
 
+### Latency and diagnostics
+
+`BENCH_P99=1024` samples 1-in-1024 allocator calls and reports per-call
+p50/p90/p99/p99.9 (clock-pair cost calibrated out; measured within noise of
+an unsampled run). On `mixed-all 8T` that reads allox p99 **670 ns** versus
+mimalloc 1080, system 3330 and snmalloc 4740.
+
+`allox::__diagnostics::volume()` exposes 24 always-on counters (refills,
+flushes, trims, owner probes, remote frees, zeroed bytes, purges, arena
+fallbacks, realloc relocations and copied bytes, ...). They only live on
+slow paths, or batch through thread-local accumulators, so a normal build
+reports them for free — but a *new* counter's cost is worth measuring on a
+multi-threaded workload first: a shared atomic per `realloc` cost 20% of
+throughput here before it was batched. `telemetry::timing()` adds
+nanosecond lock-wait, purge and exit-flush totals.
+
+### Process-global application benchmark
+
+The table above measures allocator loops. `examples/app_workload.rs`
+measures the other thing: a `String`/`Vec`/`HashMap` application workload
+with the allocator installed as the process `#[global_allocator]`, one
+binary per allocator and one fresh process per run:
+
+```text
+scripts/app_bench.sh                    # all backends
+APP_SECS=10 APP_THREADS=8 scripts/app_bench.sh
+APP_P99=1024 scripts/app_bench.sh       # per-call latency
+```
+
+This is where allox is **not** ahead: 238.9k docs/s against mimalloc's
+270.4k and snmalloc's 279.5k (system 203.1k, talc 12.3k) — 0.88× mimalloc.
+Single-threaded the three tie; the gap is scaling plus the fact that 76% of
+this workload's `realloc` calls relocate (containers double, every doubling
+crosses a size class). See REMAINING_PLAN §4d for the profile and the
+candidate fixes. It is reported here because a scoreboard that only
+contains the flattering mode is not a scoreboard.
+
 ## Design
 
 mimalloc-inspired, adapted for Rust's world:

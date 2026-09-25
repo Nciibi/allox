@@ -28,6 +28,14 @@ Constraints (assumed, plain language):
   19.7 → 12.2 MiB, and 1.20× system in a 2 s × 5 confirmation. The
   earlier legacy-only `mremap` trial was flat because arena-backed traffic
   never hit that path; it was reverted and is still unnecessary.
+* **Process-global app shapes (NEW, 2026-09-25):** the direct-call matrix
+  says 20/20 win-or-tie, but with the allocator installed as the process
+  `#[global_allocator]` and a `String`/`Vec`/`HashMap`-shaped workload
+  (`examples/app_workload.rs`), allox is 0.88× mimalloc / 0.85× snmalloc
+  (1.18× system). Single-threaded the three tie; the gap is scaling plus
+  76% of `realloc` calls relocating (~33 B copied each). See REMAINING_PLAN
+  §4d for the profile and the candidate levers (per-page free bitmap for
+  in-place growth first).
 * Historical bullets that motivated the original plan (all fixed by
   P0–P1): single global LARGE_CACHE spinlock + O(N) best-fit; per-page
   mmap+trim tax; 4214-page dead-thread leak; 0.04× mixed-all.

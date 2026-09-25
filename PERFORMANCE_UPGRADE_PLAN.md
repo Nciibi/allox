@@ -669,12 +669,38 @@ Implemented in the first implementation pass:
 - Trusted arena/legacy large-allocation metadata dispatch, including fallback deallocation, forged-header resistance, symmetric requested-byte telemetry, and WASM unmap accounting.
 - Producer-consumer shutdown/drain correctness and a direct exit-hook flush regression probe.
 
-Deferred to the next Phase 0 slice:
+Deferred to the next Phase 0 slice → **all three measurement items landed
+2026-09-25**, see "Phase 0.1 slice" below. Still deferred:
 
-- Per-operation p99 sampling without timing overhead in throughput runs.
-- Full lock-wait, purge, and realloc-copy counters.
-- Process-global application benchmark binaries.
 - A real bare-metal memory backend.
+
+### Phase 0.1 slice (2026-09-25) — measurement completed
+
+- **Per-operation p99 sampling** (`BENCH_P99=<every>`, sampled 1-in-N with
+  a calibrated clock-pair cost subtracted). Implemented as a `GlobalAlloc`
+  wrapper so no workload runner changed. The first version used a shared
+  atomic for the sampling decision and cost 3x throughput on `mixed-all 8T`
+  (40.8M → 12.0M ops/s); the decision is now a thread-local tick plus a
+  power-of-two mask, measured within noise of an unsampled run (27.9/27.8/
+  28.2 vs 28.2/27.8/27.5 M/s) while reporting p50/p90/p99/p99.9. First
+  result on `mixed-all 8T`: allox p99 670 ns vs mimalloc 1080, system 3330,
+  snmalloc 4740.
+- **Diagnostic counters** (`src/counters.rs`): 24 always-on volume counters
+  (refills, flushes, trims, owner probes, remote frees, retired/adopted
+  caches, zeroed bytes, purges, arena fallbacks/parks, realloc relocations
+  and copied bytes) plus telemetry-only nanosecond timings (lock wait, purge,
+  exit flush). Always-on counters sit only on slow paths; the realloc ones
+  batch through the thread-local `Pending` because a shared atomic per
+  `realloc` measured -20% at 4 threads.
+- **Process-global application benchmark** (`examples/app_workload.rs` +
+  `scripts/app_bench.sh`): one binary per allocator (cargo feature selects
+  the installed `#[global_allocator]`, so there is no runtime dispatch),
+  one fresh process per run. A runtime-dispatch proxy was tried first and
+  rejected: one relaxed atomic load per call cost allox 11% and talc 3% on
+  the same workload.
+
+It immediately found a real gap the direct-call harness cannot see: allox
+0.88x mimalloc on app-shaped realloc churn (REMAINING_PLAN §4d).
 
 ## Phase 1 implementation status
 
