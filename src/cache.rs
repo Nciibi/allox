@@ -16,7 +16,7 @@ use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::classes::{CLASSES, NUM_CLASSES};
-use crate::heap::{MEDIUM_HEAP, REFILL_BATCH, ReleaseChunk};
+use crate::heap::{MEDIUM_HEAP, PageReleaseChunk, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
 use crate::heap::BIG_HEAP;
 use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
@@ -94,15 +94,7 @@ pub(crate) const LARGE_STASH_CAP_BYTES: usize = 8 * 1024 * 1024;
 const FLUSH_CHUNK: u32 = 2048;
 const MAX_FLUSH_GROUPS: usize = FLUSH_CHUNK as usize + 8;
 
-#[derive(Clone, Copy)]
-struct Group {
-    page: *mut PageHeader,
-    head: *mut u8,
-    tail: *mut u8,
-    n: u16,
-}
-
-/// One span's share of a medium flush chunk (mirrors [`Group`]).
+/// One span's share of a medium flush chunk (mirrors [`PageReleaseChunk`]).
 #[derive(Clone, Copy)]
 struct MGroup {
     master: *mut SpanMaster,
