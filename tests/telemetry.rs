@@ -9,6 +9,8 @@ static GLOBAL: allox::Allox = allox::Allox;
 
 use allox::telemetry::{snapshot, Telemetry};
 
+const LARGE_SIZE: usize = (1 << 20) + 1;
+
 fn delta(after: &Telemetry, before: &Telemetry, f: impl Fn(&Telemetry) -> u64) -> u64 {
     f(after).saturating_sub(f(before))
 }
@@ -74,7 +76,7 @@ fn telemetry_accounting() {
     allox::flush_current_thread();
     let before = snapshot();
     unsafe {
-        let p = allox::malloc(1 << 20);
+        let p = allox::malloc(LARGE_SIZE);
         assert!(!p.is_null());
         allox::flush_current_thread();
         let mid = snapshot();
@@ -91,7 +93,7 @@ fn telemetry_accounting() {
     unsafe {
         let mut regions = [core::ptr::null_mut(); 9];
         for p in &mut regions {
-            *p = allox::malloc(1 << 20);
+            *p = allox::malloc(LARGE_SIZE);
             assert!(!p.is_null());
         }
         for p in regions {
