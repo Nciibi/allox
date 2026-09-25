@@ -68,7 +68,6 @@ fn thread_cache_budget() -> usize {
     DEFAULT_THREAD_CACHE_BUDGET
 }
 
-#[cfg(all(unix, feature = "std"))]
 #[inline]
 fn tier_cache_budget() -> usize {
     thread_cache_budget().saturating_mul(2)
@@ -178,7 +177,6 @@ impl ActiveBig {
 pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
-    #[cfg(all(unix, feature = "std"))]
     tier_cached_bytes: usize,
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
@@ -255,7 +253,6 @@ impl ThreadCache {
                 len: 0,
             }; NUM_CLASSES],
             cached_bytes: 0,
-            #[cfg(all(unix, feature = "std"))]
             tier_cached_bytes: 0,
             tid: 0,
             foreign_bytes: 0,
