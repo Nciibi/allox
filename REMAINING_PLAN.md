@@ -280,19 +280,19 @@ storm, and a flush-dominated exit path.
   rebuilding every free-list link.
 - OS thread-exit hooks move bounded caches into eight fixed retirement slots;
   later allocator slow paths reclaim at most one retired cache per cache
-  generation. Caches over 8 MiB or a full queue use the synchronous flush path.
+  generation. A worker with an empty cache adopts the queued cache directly,
+  avoiding the scan and heap round-trip; post-adoption bin checks cover small,
+  medium, and big tiers. Caches over 8 MiB or a full queue use synchronous flush.
 - `spawn-churn` production runs (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup)
-  reached **4.65M Allox vs 13.62M mimalloc ops/s** (0.34x), with peak RSS
-  17.6 MiB vs 19.4 MiB. The deferred work overlaps worker execution and removes
-  most exit-time lock serialization, but does not eliminate the shared-page
-  scan/first-touch cost; the remaining gap is still material.
+  reached **17.25M Allox vs 13.78M mimalloc ops/s** (1.25x), with peak RSS
+  19.1 MiB vs 19.4 MiB. The adoption path removes most exit-time scanning and
+  lock serialization for the common all-freed thread pattern.
 
 Correctness coverage includes the full debug integration suite and
 `tests/thread_exit.rs`; the deferred queue is bounded and falls back to the
 original blocking flush. Re-measure the ratio on a quiet host before using it
-as a release gate. The next possible lever is cheaper page-touch/ownership
-bookkeeping so retirement need not scan each cached block, not another refill
-or flush-size guess.
+as a release gate. The next possible lever is reducing first-touch cost for
+workers that cannot adopt a cache, not another refill or flush-size guess.
 
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
