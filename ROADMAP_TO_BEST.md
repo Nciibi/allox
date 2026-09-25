@@ -280,6 +280,26 @@ Two real bugs found along the way (both caught by the new tests):
 * No regressions: `tight-small 1T` 44.6M, `mixed-small 1T` 28.9M.
   Full suite green (11 binaries incl. new `thread_exit`).
 
+## P1f results — deferred thread-exit retirement (2026-09-25)
+
+What shipped: `src/thread_exit.rs` now retires armed TLS caches into a bounded
+fixed-slot queue instead of flushing every cache on the exiting thread.
+`src/cache.rs` reclaims at most one queued cache per worker generation on
+allocator slow paths; oversized or overflow caches use the synchronous path.
+Small-page exit flushing also passes known tails, batches same-class releases,
+and lazily reinitializes fully-free pages.
+
+* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **4.16M vs
+  12.22M mimalloc** (0.34x), up from 2.61M vs 13.74M at the isolated baseline;
+  peak RSS 17.9 MiB vs 19.4 MiB.
+* `spawn-empty` remains allocator-independent; `mixed-all 8T` and
+  `mixed-small 8T` remain wins in capped checks. Full debug integration and
+  thread-exit convergence tests pass.
+
+The remaining spawn gap is shared-page bookkeeping and first-touch work; the
+next experiment should reduce per-cache block scanning, not guess another
+refill/flush constant.
+
 ## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
 
 What shipped: `sys::map_any` (plain 4 KiB `mmap`, unix-only; alias to `map`
