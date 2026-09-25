@@ -1,21 +1,11 @@
-//! Best-effort thread-exit flush without TLS destructors.
+//! Best-effort thread-exit retirement without TLS destructors.
 //!
 //! DESIGN.md §4.5 explains why the allocator's own TLS carries no
-//! destructor. This module adds the missing half: a single OS key
-//! (pthread_key / FlsAlloc) whose destructor flushs the exiting thread's
-//! cache with the normal blocking flush. Blocking is safe here — no
-//! allocator locks are ever held at thread exit, heap critical sections are
-//! bounded and user-code-free, and neither pthread-key destructors nor Fls
-//! callbacks hold a lock our heap could cycle with — while try-only
-//! flushing was measured to abandon nearly everything when several threads
-//! exit at once. Anything still unreleasable degrades to today's leak.
-//!
-//! Hooks fire only for threads that armed them (allocator slow paths and
-//! cached frees set a per-thread flag and a nonzero key value; OS destructors
-//! ignore threads with no value). Threads that never allocate never pay,
-//! non-allocator threads are untouched, and the main thread on
-//! return-from-main keeps today's behavior (process exit reclaims
-//! everything).
+//! destructor. This module adds a single OS key (pthread_key / FlsAlloc)
+//! whose destructor retires the exiting thread's cache into a bounded queue.
+//! Later allocator slow paths reclaim queued caches; oversized or overflow
+//! caches fall back to the normal blocking flush. Hooks fire only for threads
+//! that armed them, so threads that never allocate never pay.
 //!
 #[cfg(all(feature = "std", any(unix, windows)))]
 static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
