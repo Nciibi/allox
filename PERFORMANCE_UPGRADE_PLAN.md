@@ -320,14 +320,16 @@ Instrument scan length before changing the data structure. The current code has 
 
 ## 2.4 Raise or parameterize the big-tier cap
 
-The 512 KiB phase is implemented: `src/classes.rs:258-261` now serves the
-big tier through 524288 bytes. Capped A/B measured `large-only 1T` at
-193K ops/s versus 152K before the extension (+27%), with `mixed-all 1T`
-flat within noise and `large-only 8T` within its noisy guard band.
+The 1 MiB phase is implemented: `src/classes.rs:258-261` now serves the
+big tier through 1048576 bytes. The focused 1-second `large-only 1T` smoke
+measured Allox at 0.80x mimalloc on this host, while the 512 KiB phase
+measured 193K ops/s versus 152K before that extension. Boundary, release,
+telemetry-enabled, and no_std checks pass; repeated 2 s × 3 large-workload
+validation remains required because the shared benchmark process can retain
+large amounts of virtual and resident memory.
 
-Prototype next:
+Next candidates:
 
-- Big classes through 1 MiB.
 - Optional 2 MiB classes.
 - A second large-page geometry similar to rpmalloc's 64 KiB/1 MiB/4 MiB/16 MiB tiers.
 
