@@ -750,6 +750,7 @@ impl ThreadCache {
         active.len = count - 1;
         active.virgin = if virgin { count - 1 } else { 0 };
         self.cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
+        self.tier_cached_bytes += MEDIUM_CLASSES[mclass] * (count - 1) as usize;
         self.mvirgin[mclass] = 0;
         (first, virgin)
     }
