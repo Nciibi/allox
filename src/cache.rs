@@ -1513,6 +1513,8 @@ impl ThreadCache {
             }
         }
         self.cached_bytes = 0;
+        #[cfg(all(unix, feature = "std"))]
+        self.big_cached_bytes = 0;
         self.foreign_bytes = 0;
         // Keep `tid` stable across flushes: it identifies this OS thread for
         // the drift-cap owner heuristic, not a cache generation.
