@@ -9,12 +9,12 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   (discarded-physical) page retention, virgin-page zero-init fast path.
 - Medium allocations (up to 65472 B): multi-page spans with sharded
   span heap, exact-fit selection, cold-span retention.
-- Big allocations (65473–524288 B, arena-backed on unix+std): multi-page
+- Big allocations (65473–1 MiB, arena-backed on unix+std): multi-page
   spans with one meta chunk + pure data chunks (contiguous blocks across
   64 KiB boundaries), per-class sharded heap, page-indexed side-table
   lookup, cold-span retention, and a per-class active-span fast path for
   same-span refills. Non-arena targets fall back to the large path. (Sizes
-  past 524288 B and over-aligned requests stay on the large path.)
+  past 1 MiB and over-aligned requests stay on the large path.)
 - Large/over-aligned: sharded exact-fit-first region caches with cold
   tier, per-thread stash, virtual-memory arena backing (unix) with hole
   reuse and graceful legacy fallback. Large `calloc` skips redundant zeroing
