@@ -578,6 +578,8 @@ impl ThreadCache {
     #[inline]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
+        #[cfg(all(feature = "std", any(unix, windows)))]
+        reclaim_one();
         // Under aggregate pressure, shed some cache before asking for more.
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
