@@ -249,7 +249,7 @@ impl SpanMaster {
 
 // ---------------------------------------------------------------------------
 // Big spans: contiguous runs of 64 KiB pages carved into blocks of one big
-// class (65472 B, 524288 B]. Layout is one meta chunk (BigMaster, 64 B)
+// class (65472 B, 1 MiB]. Layout is one meta chunk (BigMaster, 64 B)
 // plus pure data chunks: blocks are carved contiguously from base + 64 and
 // freely cross chunk boundaries, because data chunks carry no headers.
 // Lookup therefore cannot mask (a masked base inside a data chunk is user
