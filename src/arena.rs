@@ -683,11 +683,13 @@ pub(crate) unsafe fn large_table_set(
     pages: u32,
     header: *mut LargeHeader,
 ) {
-    for i in 0..pages as usize {
-        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
-            Some(idx) => BIG_MAP[idx].store(header as usize | LARGE_TABLE_TAG, Ordering::Release),
-            None => debug_assert!(false, "large table set outside reservation"),
+    if let Some(start) = big_page_range(base, pages) {
+        let value = header as usize | LARGE_TABLE_TAG;
+        for i in 0..pages as usize {
+            BIG_MAP[start + i].store(value, Ordering::Release);
         }
+    } else {
+        debug_assert!(false, "large table set outside reservation");
     }
 }
 
