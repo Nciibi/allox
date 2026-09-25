@@ -107,12 +107,12 @@ fn growth_then_shrink_round_trips() {
     unsafe {
         let a = allox::Allox;
         let mut size = 65536usize;
-        let layout = Layout::from_size_align(size, 16).unwrap();
+        let mut layout = Layout::from_size_align(size, 16).unwrap();
         let mut p = a.alloc(layout);
         assert!(!p.is_null());
         fill(p, size);
 
-        for _ in 0..4 {
+        while size < BIG_TOP {
             let nsize = (size * 2).min(BIG_TOP);
             let np = a.realloc(p, layout, nsize);
             assert!(!np.is_null());
@@ -122,12 +122,10 @@ fn growth_then_shrink_round_trips() {
             }
             p = np;
             size = nsize;
-            if size == BIG_TOP {
-                break;
-            }
+            layout = Layout::from_size_align(size, 16).unwrap();
         }
         // Shrink hard; the prefix must survive and the result must be freeable.
-        let sp = a.realloc(p, Layout::from_size_align(size, 16).unwrap(), 70000);
+        let sp = a.realloc(p, layout, 70000);
         assert!(!sp.is_null());
         check(sp, 70000);
         a.dealloc(sp, Layout::from_size_align(70000, 16).unwrap());
