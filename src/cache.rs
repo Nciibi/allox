@@ -468,6 +468,17 @@ impl ThreadCache {
             || self.tier_cached_bytes > tier_cache_budget() / DRIFT_GATE_DIV
     }
 
+    #[inline]
+    fn drift_gate_open_small(&self) -> bool {
+        self.cached_bytes > thread_cache_budget() / DRIFT_GATE_DIV
+    }
+
+    #[inline]
+    fn should_shed_small(&self) -> bool {
+        self.cached_bytes > thread_cache_budget()
+            || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
+    }
+
     /// True when either the total budget or the foreign-byte shed limit is
     /// exceeded — caller should `trim` (batched, page-grouped) and clear
     /// `foreign_bytes`.
