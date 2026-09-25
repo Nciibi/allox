@@ -1270,11 +1270,10 @@ impl ThreadCache {
                 }
             }
 
-            for i in 0..ng {
-                let g = unsafe { groups[i].assume_init() };
-                debug_assert!((*g.tail.cast::<*mut u8>()).is_null());
-                crate::heap::HEAP.release_blocks_with_tail(g.page, g.head, g.tail, g.n);
-            }
+            let chunks = unsafe {
+                core::slice::from_raw_parts(groups.as_ptr() as *const PageReleaseChunk, ng)
+            };
+            crate::heap::HEAP.release_many(class, chunks);
             if popped == 0 {
                 break;
             }
