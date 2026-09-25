@@ -402,26 +402,38 @@ zeroing) keep a direct atomic. The lock counter is gone entirely:
 `telemetry::timing()` keeps lock-wait, and `flushes`/`*_refills` proxy the
 traffic.
 
-Paired A/B, pre-session `v0.0.1266` vs `v0.0.1273`, order-alternating
+**Fixed (v0.0.1275):** the batched counters are now **telemetry-gated**, like
+every other per-op counter in this crate. A default build compiles the
+diagnostics out entirely and pays zero; `cargo bench --features telemetry`
+turns them on when you want the numbers. Only genuinely cold counters stay
+always-on — purges (one per `madvise`), exit flushes / retired / adopted
+caches (one per thread), software zeroing (one per memset that had to run).
+
+Paired A/B, pre-session `v0.0.1266` vs the final tree, order-alternating
 pairs on the same box (the box had ~2 cores of foreign load, so only paired
 comparisons mean anything):
 
-| workload | v0.0.1266 | v0.0.1273 | delta |
+| workload | v0.0.1266 | final | delta |
 |---|---:|---:|---:|
-| tight-small 8T | 245.2 | 239.7 | −2.3% |
-| mixed-small 8T | 190.5 | 190.7 | +0.1% |
-| mixed-all 8T | 46.8 | 45.8 | −2.0% |
-| request 8T | 403.9 | 393.2 | −2.7% |
-| prodcons 8T | 41.3 | 39.8 | −3.6% |
-| large-only 8T | 32.4 | 32.1 | −1.1% |
-| json-ish 8T | 248.4 | 250.5 | +0.9% |
-| ecs 8T | 94.3 | 93.9 | −0.4% |
-| app 1T / 4T (docs/s) | 75.3k / 239.7k | 76.1k / 237.6k | +1% / flat |
+| tight-small 8T | 236.4 | 244.2 | **+3.3%** |
+| prodcons 8T | 39.0 | 39.6 | +1.6% (spread ±15%, noise) |
+| mixed-all 8T | 46.4 | 46.1 | −0.6% |
+| large-only 8T | 32.4 | 32.1 | −1.0% |
+| request 8T | 403.4 | 385.6 | **−4.4%** |
 
-So the instrumentation ends up costing **0–3.6%**, concentrated where the
-counters are densest (prodcons, request, tight-small) and zero elsewhere.
-That is the honest price of the visibility, and it is a cost on *every*
-workload rather than a win on one and a loss on another.
+With the counters compiled out, `tight-small 8T` +3.3%, `request 8T`
+−4.4%, everything else flat. That is the whole remaining delta, and it is
+the fast-path change (`SmallBin::virgin` + small-tier-first in
+`alloc_impl`) — the only source of movement left, and a provably smaller
+one (one cache line instead of two per small alloc, two fewer branches on
+the hot path). At ±3-4% on a single workload, code layout explains as much
+as the change does, and the two rows move in *opposite* directions.
+
+**If the rule is "no workload may regress", the honest move is to revert
+the fast-path change**: it buys +3.3% on `tight-small 8T` and ~+1% on the
+app shape, and costs ~4% on `request 8T`. Both rows are scoreboard-critical
+(0.96× system and 0.94× snmalloc as measured on 2026-09-25), so this is a
+genuine small trade rather than a clear win.
 
 **Rule this establishes:** a counter's cost is a property of its event rate,
 not of where it sits. Before believing any benchmark that a change helped,

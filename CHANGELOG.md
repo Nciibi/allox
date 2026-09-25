@@ -47,12 +47,14 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 - Layout-routed frees derive size class from the layout LUT instead of
   loading a page/span header (~48% of free-path cycles on mixed-all
   before the change — `perf annotate`).
-- Diagnostic counters (`__diagnostics::volume()`, always compiled): thread-cache
-  refills and flushes, trims, ownership probes, remote frees, retired/adopted
-  caches, software zeroing, discards (purges), arena fallbacks and parks, and
-  realloc relocations with copied bytes. Slow-path counters cost two relaxed
-  adds; the realloc ones batch through thread-local accumulators because a
-  shared atomic per realloc measured -20% at four threads.
+- Diagnostic counters (`__diagnostics::volume()`): thread-cache refills and
+  flushes, trims, ownership probes, remote frees, software zeroing, arena
+  fallbacks and parks, and realloc relocations with copied bytes. The
+  per-event counters are telemetry-gated and batched per thread (one
+  thread-local add per event, published every 8192); only the cold ones —
+  purges, exit flushes, retired/adopted caches — are always on. This gating
+  is load-bearing: a shared atomic per event cost 33% on `mixed-all 8T` and
+  36% on `large-only 8T`.
 - `telemetry::timing()` (telemetry builds only, since it needs a clock):
   cumulative lock-wait, discard and thread-exit-flush nanoseconds.
 - Small-tier fast path: the virgin count moved into the per-class `Bin`
