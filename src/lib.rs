@@ -1430,19 +1430,26 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
-        // First cross-class big growth: relocate once into a slack reserve so
-        // the rest of the doubling chain runs in place (see
-        // `try_promote_big_grow`). Arena targets only.
+        // Big/large growth. Two cases share this size range:
+        //  - a packed big block crossing classes: promote once into a slack
+        //    reserve so the rest of the doubling chain runs in place;
+        //  - an already-promoted (large) block whose requested size still sits
+        //    in the big range: grow it in place inside its reserve.
+        // Arena targets only; elsewhere these sizes are large-routed and the
+        // frontier path below handles them.
         #[cfg(all(unix, feature = "std"))]
         if !p.is_null()
             && layout.align() <= MIN_ALIGN
             && layout.size() > MAX_MEDIUM_BLOCK
-            && layout.size() <= MAX_BIG_BLOCK
             && new_size > MAX_MEDIUM_BLOCK
-            && new_size <= MAX_BIG_BLOCK
         {
-            if let Some(np) = try_promote_big_grow(p, new_size, layout.align()) {
-                return np;
+            if new_size <= MAX_BIG_BLOCK && layout.size() <= MAX_BIG_BLOCK {
+                if let Some(np) = try_promote_big_grow(p, new_size, layout.align()) {
+                    return np;
+                }
+            }
+            if try_grow_large_frontier(p, new_size) {
+                return p;
             }
         }
         #[cfg(all(unix, feature = "std"))]
