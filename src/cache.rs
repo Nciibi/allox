@@ -1276,8 +1276,11 @@ impl ThreadCache {
     /// the largest bin. Fixed-size passes over small, medium, and big bins; no allocation.
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
-        let tier_allowance = self.tier_cached_bytes.min(tier_cache_budget());
-        let target = thread_cache_budget() / 2 + tier_allowance;
+        self.refresh_budget();
+        let tier_allowance = self
+            .tier_cached_bytes
+            .min(self.budget.saturating_mul(2));
+        let target = self.budget / 2 + tier_allowance;
         while self.cached_bytes > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
