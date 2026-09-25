@@ -112,7 +112,15 @@ mod tls {
         }
 
         pub(crate) fn flush() {
+            crate::cache::reclaim_all();
             with(|c| unsafe { c.flush_all() }, || {});
+        }
+
+        pub(crate) unsafe fn retire() {
+            let _ = CACHE.try_with(|c| {
+                let cache = core::ptr::read(c.get());
+                crate::cache::retire(cache);
+            });
         }
     }
 
@@ -144,9 +152,14 @@ mod tls {
         pub(crate) fn flush() {
             with(|c| unsafe { c.flush_all() }, || {});
         }
+
+        pub(crate) unsafe fn retire() {
+            with(|c| c.flush_all(), || {});
+        }
     }
 
     pub(crate) use imp::flush;
+    pub(crate) use imp::retire;
     pub(crate) use imp::with;
 }
 
