@@ -265,7 +265,7 @@ hi359MiB); **mixed-all 8T 13.57M = 0.72× mimalloc / 1.02× system**
 (flat vs prior 0.74×; abnd 0/s, unmaps 0). Docs updated: CHANGELOG,
 ROADMAP order item 4, DESIGN ownership rule, README table.
 
-## 5. spawn-churn per-op + exit latency (1.25x mimalloc — ADOPTION LANDED)
+## 5. spawn-churn per-op + exit latency (1.33x mimalloc — ADOPTION LANDED)
 
 The isolated baseline was 2.61M Allox vs 13.74M mimalloc ops/s (0.19x;
 host variance across the initial runs was 0.19–0.23x). `spawn-empty` remained
