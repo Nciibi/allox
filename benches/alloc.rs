@@ -1240,7 +1240,6 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.abandoned_delta,
         diagnostics.abandoned_total,
         diagnostics.arena_high_water,
-        diagnostics.exit_flush_ns,
     ));
     append_json_sample(output, diagnostics.probe);
     output.push('}');
