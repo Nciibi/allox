@@ -380,7 +380,6 @@ struct AlloxDiagnostics {
     abandoned_delta: u64,
     abandoned_total: u64,
     arena_high_water: u64,
-    exit_flush_ns: u64,
     probe: RunSample,
 }
 
