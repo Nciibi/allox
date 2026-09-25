@@ -928,6 +928,61 @@ unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
     }
 }
 
+/// Upper bound on the reserve a promoted big block may claim, as a multiple
+/// of the size it is being grown to. The big chain tops out at
+/// `MAX_BIG_BLOCK`, so any first growth into the upper half of the big range
+/// reserves the whole cap and never needs a second relocation.
+#[cfg(all(unix, feature = "std"))]
+const BIG_GROW_SLACK_FACTOR: usize = 8;
+
+/// Growable-extent promotion for packed big blocks (arena targets).
+///
+/// Big blocks are carved contiguously out of a shared span, so a cross-class
+/// `realloc` growth cannot extend in place: the span's neighbours are live
+/// data. The generic path therefore allocates a fresh block and copies. On the
+/// *first* cross-class growth we instead move the block once into a large
+/// region that reserves slack up to the big cap. Every later big growth then
+/// fits the existing mapping and is served in place by
+/// `try_grow_large_frontier` — no copy, no syscall, no span traffic.
+///
+/// The reserve is virtual-only (untouched anonymous pages, faulted on first
+/// write), so RSS still tracks live demand. It is bounded to
+/// `BIG_GROW_SLACK_FACTOR` x the new size and never exceeds the big cap, and
+/// any failure falls back to the ordinary alloc-copy-free path.
+#[cfg(all(unix, feature = "std"))]
+#[inline]
+unsafe fn try_promote_big_grow(
+    p: *mut u8,
+    big: *mut BigMaster,
+    new_size: usize,
+    align: usize,
+) -> Option<*mut u8> {
+    debug_assert!(crate::arena::contains(p, 1));
+    let bclass = (*big).bclass as usize;
+    if bclass >= classes::NUM_BIG {
+        return None;
+    }
+    let old_usable = classes::BIG_CLASSES[bclass];
+    // Only a real growth: same-class (and shrink) requests are handled by the
+    // identity fast path, never by moving the block.
+    if new_size <= old_usable {
+        return None;
+    }
+    let reserve = new_size
+        .saturating_mul(BIG_GROW_SLACK_FACTOR)
+        .min(classes::MAX_BIG_BLOCK);
+    if reserve <= new_size {
+        return None;
+    }
+    let (np, _fresh, _known_zeroed) = alloc_large_ex(new_size, align, false, reserve - new_size);
+    if np.is_null() {
+        return None;
+    }
+    ptr::copy_nonoverlapping(p, np, old_usable.min(new_size));
+    dealloc_impl(p);
+    Some(np)
+}
+
 unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
@@ -1539,6 +1594,13 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
                 && big_class_for_size(size) == old_bclass
             {
                 return p;
+            }
+            // First cross-class growth: relocate once into a slack reserve so
+            // the rest of the doubling chain runs entirely in place.
+            if size > classes::MAX_MEDIUM_BLOCK && size <= classes::MAX_BIG_BLOCK {
+                if let Some(np) = try_promote_big_grow(p, big, size, pointer_alignment(p)) {
+                    return np;
+                }
             }
         }
     }
