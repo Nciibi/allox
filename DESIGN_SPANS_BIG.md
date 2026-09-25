@@ -263,13 +263,13 @@ P6 (no clobber): carving writes stay within `[base, base+npages*64K)`
 
 ## 9. Open questions (resolved during implementation 2026-09-23)
 
-1. Exact class top for phase 2: **524288** (as designed). The 1T tail
-   above 512 KiB remains on the large path; the focused upper-tail probe
-   measured ~95K ops/s, so a future 1 MiB extension needs its own RSS
-   and retention budget rather than an implicit cap increase.
+1. Exact class top for phase 3: **1 MiB** (1048576 bytes). The tail above
+   1 MiB remains on the large path; the top span requires 129 pages and
+   the existing retention caps remain unchanged pending RSS-controlled
+   repeated measurements.
 2. `BIG_REFILL_BATCH`: **4** shipped (measure-don't-assume noted in
-   `heap.rs`; 4 × up to 512 KiB ≈ 2 MiB per refill, budget-sane). Tune
-   2/8 only if large-only 8T refill shows up in a future profile.
+   `heap.rs`; 4 × up to 1 MiB ≈ 4 MiB per refill, budget-sane). Tune
+   2/8 only if large-only profiling shows refill cost as the bottleneck.
 3. Cold/empty byte caps: **shipped at medium-scaled starts**
    (empty 8 MiB/class, cold 256 MiB/class 64-bit / 16 MiB 32-bit, 256
    slots). Bench shows RSS sane (large-only 8T peak ~5.2 GiB VmHWM with
