@@ -465,6 +465,8 @@ impl ThreadCache {
                     old.publish();
                     #[cfg(not(feature = "telemetry"))]
                     let _ = old;
+                    #[cfg(debug_assertions)]
+                    self.validate_cache_chains();
                     self.exit_armed = current_armed;
                     self.tid = current_tid;
                     self.retired_reclaimed = true;
