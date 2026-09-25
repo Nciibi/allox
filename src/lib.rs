@@ -1897,11 +1897,10 @@ pub fn __debug_arena_hole_stats() -> (u64, u64, u64, u64) {
 /// compiled and always updated — a production build without the
 /// `telemetry` feature still reports them. Nanosecond *timings* need a
 /// clock read and therefore require the feature; see
-/// [`crate::telemetry::timing`].
+/// `telemetry::timing` (a telemetry build).
 ///
-/// Hidden: not semver-covered, may change or vanish. Field names come
-/// from [`crate::counters::VOLUME_FIELDS`] so a consumer can label
-/// [`volume_raw`] columns.
+/// Hidden: not semver-covered, may change or vanish. `VOLUME_FIELDS` names
+/// the columns of `volume_raw` in order, so a consumer can label them.
 #[doc(hidden)]
 pub mod __diagnostics {
     pub use crate::counters::{volume, volume_raw, Volume, VOLUME_FIELDS};
