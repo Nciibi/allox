@@ -1304,6 +1304,7 @@ impl ThreadCache {
                 }
                 popped += 1;
                 self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
+                self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(block_size);
 
                 let master = SpanMaster::of(b);
                 debug_assert!(!master.is_null());
