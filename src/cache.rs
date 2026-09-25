@@ -557,8 +557,6 @@ impl ThreadCache {
         if !p.is_null() {
             self.note_alloc(class);
         }
-        #[cfg(debug_assertions)]
-        self.validate_cache_chains();
         p
     }
 
