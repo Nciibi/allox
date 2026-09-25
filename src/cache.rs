@@ -433,20 +433,6 @@ impl ThreadCache {
         }
     }
 
-    #[cfg(debug_assertions)]
-    fn validate_cache_chains(&self) {
-        for bin in self.bins.iter() {
-            let mut cursor = bin.head;
-            let mut steps = bin.len;
-            while steps > 0 {
-                assert!(!cursor.is_null());
-                cursor = unsafe { *cursor.cast::<*mut u8>() };
-                steps -= 1;
-            }
-            assert!(cursor.is_null());
-        }
-    }
-
     #[inline]
     fn reclaim_retired(&mut self) {
         #[cfg(all(feature = "std", any(unix, windows)))]
