@@ -1644,6 +1644,75 @@ impl ThreadCache {
     }
 }
 
+#[cfg(all(feature = "std", any(unix, windows)))]
+pub(crate) fn retire(mut cache: ThreadCache) {
+    let bytes = cache.cached_bytes.saturating_add(cache.large_bytes);
+    if bytes == 0 {
+        return;
+    }
+    if bytes > RETIRED_SLOT_BYTES {
+        unsafe { cache.flush_all() };
+        return;
+    }
+    for slot in &RETIRED_SLOTS {
+        if slot
+            .state
+            .compare_exchange(
+                RETIRED_EMPTY,
+                RETIRED_WRITING,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            unsafe { (*slot.cache.get()).write(cache) };
+            slot.state.store(RETIRED_READY, Ordering::Release);
+            RETIRED_READY_COUNT.fetch_add(1, Ordering::AcqRel);
+            return;
+        }
+    }
+    unsafe { cache.flush_all() };
+}
+
+#[cfg(not(all(feature = "std", any(unix, windows))))]
+pub(crate) unsafe fn retire(mut cache: ThreadCache) {
+    cache.flush_all();
+}
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+pub(crate) fn reclaim_one() -> bool {
+    if RETIRED_READY_COUNT.load(Ordering::Acquire) == 0 {
+        return false;
+    }
+    for slot in &RETIRED_SLOTS {
+        if slot
+            .state
+            .compare_exchange(
+                RETIRED_READY,
+                RETIRED_TAKING,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            let cache = unsafe { (*slot.cache.get()).assume_init_read() };
+            slot.state.store(RETIRED_EMPTY, Ordering::Release);
+            RETIRED_READY_COUNT.fetch_sub(1, Ordering::AcqRel);
+            unsafe { cache.flush_all() };
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+pub(crate) fn reclaim_all() {
+    while reclaim_one() {}
+}
+
+#[cfg(not(all(feature = "std", any(unix, windows))))]
+pub(crate) fn reclaim_all() {}
+
 /// Debug-build validation that `p` is a live-looking block of its page:
 /// correct magic, inside the block area, class-aligned, and not already on
 /// the page free list (double-free detection). Runs under the heap lock so
