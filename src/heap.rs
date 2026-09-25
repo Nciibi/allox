@@ -420,13 +420,17 @@ impl GlobalHeap {
                 let mut list = self.classes[class].lock();
                 for (i, chunk) in batch.iter().enumerate() {
                     debug_assert_eq!((*chunk.page).class as usize, class);
-                    fates[i] = release_inner(
-                        &mut list,
-                        chunk.page,
-                        chunk.head,
-                        chunk.tail,
-                        chunk.n,
-                    );
+                    fates[i] = if chunk.n == (*chunk.page).used {
+                        retire_page_inner(&mut list, chunk.page)
+                    } else {
+                        release_inner(
+                            &mut list,
+                            chunk.page,
+                            chunk.head,
+                            chunk.tail,
+                            chunk.n,
+                        )
+                    };
                 }
             }
             for (chunk, fate) in batch.iter().zip(fates.iter()) {
