@@ -951,13 +951,15 @@ const BIG_GROW_SLACK_FACTOR: usize = 8;
 /// any failure falls back to the ordinary alloc-copy-free path.
 #[cfg(all(unix, feature = "std"))]
 #[inline]
-unsafe fn try_promote_big_grow(
-    p: *mut u8,
-    big: *mut BigMaster,
-    new_size: usize,
-    align: usize,
-) -> Option<*mut u8> {
-    debug_assert!(crate::arena::contains(p, 1));
+unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Option<*mut u8> {
+    if !crate::arena::contains(p, 1) {
+        return None;
+    }
+    let big = crate::arena::big_table_get(p);
+    if big.is_null() {
+        return None;
+    }
+    let big = big.cast::<BigMaster>();
     let bclass = (*big).bclass as usize;
     if bclass >= classes::NUM_BIG {
         return None;
@@ -1428,6 +1430,21 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
+        // First cross-class big growth: relocate once into a slack reserve so
+        // the rest of the doubling chain runs in place (see
+        // `try_promote_big_grow`). Arena targets only.
+        #[cfg(all(unix, feature = "std"))]
+        if !p.is_null()
+            && layout.align() <= MIN_ALIGN
+            && layout.size() > MAX_MEDIUM_BLOCK
+            && layout.size() <= MAX_BIG_BLOCK
+            && new_size > MAX_MEDIUM_BLOCK
+            && new_size <= MAX_BIG_BLOCK
+        {
+            if let Some(np) = try_promote_big_grow(p, new_size, layout.align()) {
+                return np;
+            }
+        }
         #[cfg(all(unix, feature = "std"))]
         if !p.is_null()
             && (layout.align() > MIN_ALIGN || layout.size() > MAX_BIG_BLOCK)
@@ -1598,7 +1615,7 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
             // First cross-class growth: relocate once into a slack reserve so
             // the rest of the doubling chain runs entirely in place.
             if size > classes::MAX_MEDIUM_BLOCK && size <= classes::MAX_BIG_BLOCK {
-                if let Some(np) = try_promote_big_grow(p, big, size, pointer_alignment(p)) {
+                if let Some(np) = try_promote_big_grow(p, size, pointer_alignment(p)) {
                     return np;
                 }
             }
