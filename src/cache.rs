@@ -692,6 +692,8 @@ impl ThreadCache {
         if self.should_shed_small() {
             self.shed();
         }
+        #[cfg(debug_assertions)]
+        self.validate_cache_chains();
     }
 
     #[inline]
