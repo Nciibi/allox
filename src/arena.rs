@@ -669,11 +669,12 @@ const LARGE_TABLE_TAG: usize = 1;
 const MEDIUM_TABLE_TAG: usize = 2;
 
 pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMaster) {
-    for i in 0..pages as usize {
-        match big_page_index((base as usize + i * ARENA_ALIGN) as *mut u8) {
-            Some(idx) => BIG_MAP[idx].store(master as usize, Ordering::Release),
-            None => debug_assert!(false, "big table set outside reservation"),
+    if let Some(start) = big_page_range(base, pages) {
+        for i in 0..pages as usize {
+            BIG_MAP[start + i].store(master as usize, Ordering::Release);
         }
+    } else {
+        debug_assert!(false, "big table set outside reservation");
     }
 }
 
