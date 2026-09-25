@@ -119,16 +119,13 @@ kill (§1 measured it). No.
 ### 5.1 Size classes and span sizing
 
 New `BIG_CLASSES` table in `src/classes.rs`: ~12.5% geometric steps from
-the first step past 65472 up to and including 524288 (about 17 classes;
-generate, don't hand-list). `BIG_REFILL_BATCH` = 4 (4 × 512 KiB = 2 MiB
-per refill keeps thread-cache budgets sane; measure 2/4/8 during
-implementation). Span length per class covers the master header plus
-`TARGET_BIG_BLOCKS_PER_SPAN` = 8 blocks, rounded up to whole pages
-(same formula shape as `span_pages_for`; an 8×512 KiB span is ~4 MiB —
-retention caps in §5.4 are sized for this).
-
-Out of scope for phase 2: 512K–1M (stays large-path; revisit with its own
-numbers after phase 2 validates).
+the first step past 65472 up to and including 1 MiB (generate, don't
+hand-list). `BIG_REFILL_BATCH` = 4 (4 × up to 1 MiB = ~4 MiB per refill
+keeps thread-cache budgets sane; measure 2/4/8 during implementation).
+Span length per class covers the master header plus
+`TARGET_BIG_BLOCKS_PER_SPAN` = 8 blocks, rounded up to whole pages (same
+formula shape as `span_pages_for`; the 1 MiB top span is 129 pages and
+~8 MiB — retention caps in §5.4 are sized for this).
 
 ### 5.2 Span layout: one meta chunk + pure data chunks
 
