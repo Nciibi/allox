@@ -214,17 +214,19 @@ enum PageFate {
     Unmap,
 }
 
-/// Splice `chain` (n blocks of `page`) back onto the page. Lock-only core;
-/// syscalls happen in the caller, outside the lock.
-unsafe fn release_inner(list: &mut ListHead, page: *mut PageHeader, chain: *mut u8, n: u16) -> PageFate {
+/// Splice `head..=tail` (n blocks of `page`) back onto the page. Lock-only
+/// core; syscalls happen in the caller, outside the lock.
+unsafe fn release_inner(
+    list: &mut ListHead,
+    page: *mut PageHeader,
+    head: *mut u8,
+    tail: *mut u8,
+    n: u16,
+) -> PageFate {
     // Freed blocks are dirty by definition.
     (*page).flags &= !FLAG_VIRGIN;
-    let mut tail = chain;
-    while !(*tail.cast::<*mut u8>()).is_null() {
-        tail = *tail.cast::<*mut u8>();
-    }
     *tail.cast::<*mut u8>() = (*page).free_head;
-    (*page).free_head = chain;
+    (*page).free_head = head;
     (*page).free_count += n;
     (*page).used -= n;
     if (*page).used == 0 {
