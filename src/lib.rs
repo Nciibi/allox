@@ -1811,10 +1811,10 @@ pub mod telemetry {
     }
 }
 
-/// Set the per-thread cache retention budget in bytes (default 32 MiB).
+/// Set the base per-thread cache retention budget in bytes (default 32 MiB).
 ///
-/// Threads may each retain up to this many freed bytes before trimming
-/// starts. Lower it to trade some allocation speed for resident memory on
+/// Medium and big tiers receive a separate allowance that scales with this
+/// value. Lower it to trade allocation speed for resident memory on
 /// many-threaded servers. Must be called before spawning worker threads;
 /// reads are atomic so it is safe at any time, but mid-flight threads pick
 /// the new value up lazily.
