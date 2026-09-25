@@ -208,10 +208,19 @@ unsafe fn fill_from_list(
 
 /// Post-lock fate of a released page: kept (nothing to do), parked cold
 /// (caller discards outside the lock), or over caps (caller unmaps).
+#[derive(Clone, Copy)]
 enum PageFate {
     Keep,
     Cold,
     Unmap,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PageReleaseChunk {
+    pub(crate) page: *mut PageHeader,
+    pub(crate) head: *mut u8,
+    pub(crate) tail: *mut u8,
+    pub(crate) n: u16,
 }
 
 /// Splice `head..=tail` (n blocks of `page`) back onto the page. Lock-only
@@ -266,6 +275,27 @@ unsafe fn release_inner(
             link_partial(&mut list.head, page);
         }
         PageFate::Keep
+    }
+}
+
+unsafe fn act_page_fate(page: *mut PageHeader, fate: PageFate) {
+    match fate {
+        PageFate::Keep => {}
+        PageFate::Cold => {}
+        PageFate::Unmap => {
+            #[cfg(all(unix, feature = "std"))]
+            {
+                if crate::arena::contains(page.cast::<u8>(), PAGE_SIZE) {
+                    crate::arena::release(page.cast::<u8>(), 1);
+                    return;
+                }
+            }
+            if sys::unmap(page.cast::<u8>(), PAGE_SIZE) {
+                MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
+                UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+                SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 }
 
