@@ -1596,8 +1596,6 @@ impl ThreadCache {
     /// Return all cached blocks (used at explicit shutdown/flush requests,
     /// and by the OS thread-exit hook).
     pub(crate) unsafe fn flush_all(&mut self) {
-        #[cfg(all(feature = "std", feature = "telemetry", any(unix, windows)))]
-        let flush_started = std::time::Instant::now();
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
                 self.flush_bin_exit(class);
