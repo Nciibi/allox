@@ -452,6 +452,10 @@ impl ThreadCache {
     /// `foreign_bytes`.
     #[inline]
     fn should_shed(&self) -> bool {
+        if self.tier_cached_bytes == 0 {
+            return self.cached_bytes > thread_cache_budget()
+                || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV;
+        }
         self.small_cached_bytes() > thread_cache_budget()
             || self.tier_cached_bytes > tier_cache_budget()
             || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
