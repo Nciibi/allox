@@ -416,10 +416,6 @@ impl GlobalHeap {
         if chunks.is_empty() {
             return;
         }
-        crate::counters::bump(
-            &crate::counters::VOLUME.flush_blocks,
-            chunks.iter().map(|c| c.n as u64).sum(),
-        );
         const BATCH: usize = 128;
         for batch in chunks.chunks(BATCH) {
             let mut fates = [PageFate::Keep; BATCH];
@@ -899,7 +895,6 @@ impl MediumHeap {
         n: u32,
     ) {
         debug_assert!(mclass < NUM_MEDIUM);
-        crate::counters::bump(&crate::counters::VOLUME.flush_blocks, n as u64);
         debug_assert!((*span).mclass as usize == mclass);
         let base = span.cast::<u8>();
         let fate = {
@@ -918,10 +913,6 @@ impl MediumHeap {
         if chunks.is_empty() {
             return;
         }
-        crate::counters::bump(
-            &crate::counters::VOLUME.flush_blocks,
-            chunks.iter().map(|c| c.n as u64).sum(),
-        );
         // Stack fates: flush caps groups at MAX_MFLUSH_GROUPS (260).
         debug_assert!(chunks.len() <= 260);
         let mut fates = [SpanFate::Keep; 264];
@@ -1273,7 +1264,6 @@ impl BigHeap {
     pub(crate) unsafe fn release_blocks(&self, span: *mut BigMaster, chain: *mut u8, n: u32) {
         let bclass = (*span).bclass as usize;
         let base = span.cast::<u8>();
-        crate::counters::bump(&crate::counters::VOLUME.flush_blocks, n as u64);
         let fate = {
             let mut list = self.classes[bclass].lock();
             brelease_inner(&mut list, span, chain, n)

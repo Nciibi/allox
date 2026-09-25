@@ -46,9 +46,16 @@ macro_rules! counters {
 }
 
 counters! {
-    // --- thread-cache traffic (all on slow paths) ---
-    // Heap-mutex acquisitions (every tier, every slow path).
-    heap_lock_acquisitions,
+    // --- thread-cache traffic ---
+    //
+    // Every counter below is accumulated in the owning thread's `Pending`
+    // batch and published in bulk. An earlier version incremented a single
+    // global atomic per event for these and it cost **24-34%** on
+    // `mixed-all 8T` and `large-only 8T`: at 4M trims/s and 8M owner
+    // probes/s, threads ping-pong one cache line faster than the work they
+    // are counting. A lock-acquisition counter lived here too and had to go
+    // entirely (it was inside every `Mutex::lock`); `telemetry::timing()`
+    // keeps lock-wait, and flush/refill counts proxy the traffic.
     // Batches pulled from the global heap into a thread cache, small tier.
     small_refills,
     // Blocks delivered by those small refills.
@@ -102,7 +109,7 @@ counters! {
 
 /// Number of volume counters. Kept in step with [`VOLUME_FIELDS`] by the
 /// assertion below, so appending a counter without a reader fails here.
-pub const VOLUME_COUNT: usize = 24;
+pub const VOLUME_COUNT: usize = 23;
 
 /// Nanosecond timings. `telemetry` feature only: a clock read costs more
 /// than most operations here, so production builds without the feature
@@ -182,8 +189,6 @@ pub(crate) use timing_impl::TimingCounters;
 /// want more than a positional array.
 #[derive(Clone, Copy, Debug)]
 pub struct Volume {
-    /// Heap-mutex acquisitions (every tier, every slow path).
-    pub heap_lock_acquisitions: u64,
     /// Batches pulled from the global heap into a thread cache, small tier.
     pub small_refills: u64,
     pub small_refill_blocks: u64,
@@ -215,7 +220,6 @@ pub struct Volume {
 pub fn volume() -> Volume {
     let v = &VOLUME;
     Volume {
-        heap_lock_acquisitions: v.heap_lock_acquisitions.load(Relaxed),
         small_refills: v.small_refills.load(Relaxed),
         small_refill_blocks: v.small_refill_blocks.load(Relaxed),
         medium_refills: v.medium_refills.load(Relaxed),
@@ -249,7 +253,6 @@ pub fn volume_raw() -> [u64; VOLUME_COUNT] {
 
 /// Field names in [`volume_raw`] order, so a consumer can label columns.
 pub const VOLUME_FIELDS: [&str; VOLUME_COUNT] = [
-    "heap_lock_acquisitions",
     "small_refills",
     "small_refill_blocks",
     "medium_refills",

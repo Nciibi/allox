@@ -110,12 +110,16 @@ impl<T> Mutex<T> {
 
     #[inline]
     pub(crate) fn lock(&self) -> MutexGuard<'_, T> {
-        // Lock-wait timing needs a clock read, so it is telemetry-only; the
-        // acquisition count is a single relaxed add on a path that already
-        // ends in a lock-guarded heap slow path.
+        // Lock-wait timing needs a clock read, so it is telemetry-only.
+        //
+        // There is deliberately no always-on acquisition counter here: this
+        // is the one place where a shared atomic cannot be batched (the
+        // cache is not in hand), and one global counter incremented by all
+        // ~64 class locks is a single contended cache line on every slow
+        // path. `flushes`/`*_refills` in `__diagnostics::volume()` proxy the
+        // lock traffic instead.
         #[cfg(all(feature = "telemetry", feature = "std"))]
         let t0 = std::time::Instant::now();
-        crate::counters::bump(&crate::counters::VOLUME.heap_lock_acquisitions, 1);
         self.raw.lock();
         #[cfg(all(feature = "telemetry", feature = "std"))]
         crate::counters::bump_ns(

@@ -271,21 +271,58 @@ pub(crate) struct ThreadCache {
 
 /// Thread-local counter deltas, flushed every [`FLUSH_OPS`] operations.
 const FLUSH_OPS: u32 = 8192;
+/// Diagnostic counters (always on) batch on their own cadence, so they cost
+/// one thread-local add per event and one shared atomic per batch. Sharing
+/// the telemetry cadence would not work: with `telemetry` off, nothing else
+/// drives `ops`.
+const DIAG_FLUSH_OPS: u32 = 8192;
+
+/// Note `by` occurrences of a diagnostic event, publishing the thread's
+/// batch when it fills. One thread-local add and a compare — deliberately
+/// *not* a shared atomic (see the `counters` module docs for what that
+/// costs at 4M events/s).
+macro_rules! note_diag {
+    ($cache:expr, $field:ident, $by:expr) => {{
+        let cache: &mut ThreadCache = $cache;
+        cache.pending.$field += $by as u64;
+        cache.pending.diag_ops += 1;
+        if cache.pending.diag_ops >= DIAG_FLUSH_OPS {
+            cache.publish_diagnostics();
+        }
+    }};
+}
 
 /// Thread-local counter accumulators, published to the global atomics in
 /// batches. The allocation-volume fields feed `telemetry`; the realloc
 /// fields feed the always-on volume counters.
 pub(crate) struct Pending {
-    /// Operations since the last publish; drives the flush cadence.
+    /// Telemetry operations since the last publish; drives the flush cadence.
     ops: u32,
+    /// Diagnostic operations since the last publish (see [`DIAG_FLUSH_OPS`]).
+    diag_ops: u32,
+    // --- always-on volume counters, batched ---
+    trims: u64,
+    flushes: u64,
+    flush_blocks: u64,
+    owner_probes: u64,
+    remote_frees: u64,
+    small_refills: u64,
+    small_refill_blocks: u64,
+    medium_refills: u64,
+    medium_refill_blocks: u64,
+    big_refills: u64,
+    big_refill_blocks: u64,
+    arena_fallbacks: u64,
+    arena_parks: u64,
     /// `realloc` calls that returned a different pointer, and the bytes
     /// they copied. Batched like everything else here: a shared atomic per
     /// realloc measured **-20% throughput** on the process-global app
-    /// benchmark at 4 threads (233k vs 194k docs/s), because four threads
-    /// ping-pong one cache line tens of millions of times per second.
+    /// benchmark at 4 threads, because four threads ping-pong one cache
+    /// line tens of millions of times per second.
     realloc_relocations: u64,
     realloc_copy_bytes: u64,
     realloc_promotions: u64,
+    // --- telemetry-only (feature-gated) ---
     #[cfg(feature = "telemetry")]
     allocs: u64,
     #[cfg(feature = "telemetry")]
@@ -303,6 +340,20 @@ impl Pending {
     const fn new() -> Self {
         Pending {
             ops: 0,
+            diag_ops: 0,
+            trims: 0,
+            flushes: 0,
+            flush_blocks: 0,
+            owner_probes: 0,
+            remote_frees: 0,
+            small_refills: 0,
+            small_refill_blocks: 0,
+            medium_refills: 0,
+            medium_refill_blocks: 0,
+            big_refills: 0,
+            big_refill_blocks: 0,
+            arena_fallbacks: 0,
+            arena_parks: 0,
             realloc_relocations: 0,
             realloc_copy_bytes: 0,
             realloc_promotions: 0,
@@ -366,29 +417,60 @@ impl ThreadCache {
     /// them here is what keeps them off the per-op path. Allocation volume
     /// itself is telemetry-only, as before.
     fn publish(&mut self) {
-        use crate::counters::{bump, VOLUME};
-        if self.pending.realloc_relocations != 0 {
-            bump(
-                &VOLUME.realloc_relocations,
-                self.pending.realloc_relocations,
-            );
-            bump(
-                &VOLUME.realloc_copy_bytes,
-                self.pending.realloc_copy_bytes,
-            );
-            if self.pending.realloc_promotions != 0 {
-                bump(
-                    &VOLUME.realloc_promotions,
-                    self.pending.realloc_promotions,
-                );
-            }
-            self.pending.realloc_relocations = 0;
-            self.pending.realloc_copy_bytes = 0;
-            self.pending.realloc_promotions = 0;
-        }
+        self.publish_diagnostics();
         #[cfg(feature = "telemetry")]
         self.publish_telemetry();
         self.pending.ops = 0;
+    }
+
+    /// Drain the batched diagnostic counters to the global atomics. One
+    /// shared atomic per counter per [`DIAG_FLUSH_OPS`] events, instead of
+    /// one per event.
+    fn publish_diagnostics(&mut self) {
+        use crate::counters::{bump, VOLUME};
+        macro_rules! drain {
+            ($field:ident, $counter:ident) => {
+                if self.pending.$field != 0 {
+                    bump(&VOLUME.$counter, self.pending.$field);
+                    self.pending.$field = 0;
+                }
+            };
+        }
+        drain!(trims, trims);
+        drain!(flushes, flushes);
+        drain!(flush_blocks, flush_blocks);
+        drain!(owner_probes, owner_probes);
+        drain!(remote_frees, remote_frees);
+        drain!(small_refills, small_refills);
+        drain!(small_refill_blocks, small_refill_blocks);
+        drain!(medium_refills, medium_refills);
+        drain!(medium_refill_blocks, medium_refill_blocks);
+        drain!(big_refills, big_refills);
+        drain!(big_refill_blocks, big_refill_blocks);
+        drain!(arena_fallbacks, arena_fallbacks);
+        drain!(arena_parks, arena_parks);
+        drain!(realloc_relocations, realloc_relocations);
+        drain!(realloc_copy_bytes, realloc_copy_bytes);
+        drain!(realloc_promotions, realloc_promotions);
+        self.pending.diag_ops = 0;
+    }
+
+    /// Arena-backed large region parked in the hole store, or served by the
+    /// legacy mmap path because the arena was unavailable.
+    #[inline]
+    pub(crate) fn note_arena_event(&mut self, park: bool) {
+        if park {
+            note_diag!(self, arena_parks, 1);
+        } else {
+            note_diag!(self, arena_fallbacks, 1);
+        }
+    }
+
+    /// Blocks handed back to the heap by a flush.
+    #[inline]
+    pub(crate) fn note_flush(&mut self, blocks: u64) {
+        note_diag!(self, flushes, 1);
+        note_diag!(self, flush_blocks, blocks);
     }
 
     /// Allocation-volume half of [`Self::publish`]: thread-local counters
@@ -742,8 +824,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
-        crate::counters::bump(&crate::counters::VOLUME.small_refills, 1);
-        crate::counters::bump(&crate::counters::VOLUME.small_refill_blocks, count as u64);
+        note_diag!(self, small_refills, 1);
+        note_diag!(self, small_refill_blocks, count);
         // Claim every page in the batch for this thread (drift-cap owner).
         {
             let mut b = chain;
@@ -785,7 +867,7 @@ impl ThreadCache {
         let budget = self.budget;
         let mut foreign = false;
         if self.drift_gate_open_small(budget) {
-            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
+            note_diag!(self, owner_probes, 1);
             let page = PageHeader::of(p);
             let owner = (*page).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
@@ -796,7 +878,7 @@ impl ThreadCache {
         bin.len += 1;
         self.cached_bytes += CLASSES_RUNTIME[class];
         if foreign {
-            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
+            note_diag!(self, remote_frees, 1);
             self.foreign_bytes += CLASSES_RUNTIME[class];
         }
         #[cfg(feature = "telemetry")]
@@ -939,11 +1021,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
-        crate::counters::bump(&crate::counters::VOLUME.medium_refills, 1);
-        crate::counters::bump(
-            &crate::counters::VOLUME.medium_refill_blocks,
-            count as u64,
-        );
+        note_diag!(self, medium_refills, 1);
+        note_diag!(self, medium_refill_blocks, count);
         let mut source: *mut SpanMaster = ptr::null_mut();
         let mut single_span = true;
         {
@@ -1017,7 +1096,7 @@ impl ThreadCache {
         // (see `dealloc`).
         let mut foreign = false;
         if self.drift_gate_open() {
-            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
+            note_diag!(self, owner_probes, 1);
             let span = SpanMaster::of(p);
             if !span.is_null() {
                 let owner = (*span).owner.load(Ordering::Relaxed);
@@ -1035,7 +1114,7 @@ impl ThreadCache {
         self.cached_bytes += MEDIUM_CLASSES[mclass];
         self.tier_cached_bytes += MEDIUM_CLASSES[mclass];
         if foreign {
-            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
+            note_diag!(self, remote_frees, 1);
             self.foreign_bytes += MEDIUM_CLASSES[mclass];
         }
         #[cfg(feature = "telemetry")]
@@ -1189,8 +1268,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
-        crate::counters::bump(&crate::counters::VOLUME.big_refills, 1);
-        crate::counters::bump(&crate::counters::VOLUME.big_refill_blocks, count as u64);
+        note_diag!(self, big_refills, 1);
+        note_diag!(self, big_refill_blocks, count);
         // Claim every span in the batch for this thread (drift-cap owner).
         {
             let mut b = chain;
@@ -1254,7 +1333,7 @@ impl ThreadCache {
         // (see `dealloc`).
         let mut foreign = false;
         if self.drift_gate_open() {
-            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
+            note_diag!(self, owner_probes, 1);
             let owner = (*span).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
         }
@@ -1264,7 +1343,7 @@ impl ThreadCache {
             self.cached_bytes += BIG_CLASSES[bclass];
             self.tier_cached_bytes += BIG_CLASSES[bclass];
             if foreign {
-                crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
+                note_diag!(self, remote_frees, 1);
                 self.foreign_bytes += BIG_CLASSES[bclass];
             }
             #[cfg(all(feature = "telemetry", unix, feature = "std"))]
@@ -1281,7 +1360,7 @@ impl ThreadCache {
         self.cached_bytes += BIG_CLASSES[bclass];
         self.tier_cached_bytes += BIG_CLASSES[bclass];
         if foreign {
-            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
+            note_diag!(self, remote_frees, 1);
             self.foreign_bytes += BIG_CLASSES[bclass];
         }
         #[cfg(all(feature = "telemetry", unix, feature = "std"))]
@@ -1355,7 +1434,7 @@ impl ThreadCache {
         if head.is_null() || len == 0 {
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(len as u64);
         let mut tail = head;
         while !(*tail.cast::<*mut u8>()).is_null() {
             tail = *tail.cast::<*mut u8>();
@@ -1386,7 +1465,7 @@ impl ThreadCache {
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         self.refresh_budget();
-        crate::counters::bump(&crate::counters::VOLUME.trims, 1);
+        note_diag!(self, trims, 1);
         let tier_allowance = self
             .tier_cached_bytes
             .min(self.budget.saturating_mul(2));
@@ -1493,7 +1572,7 @@ impl ThreadCache {
             self.flush_bin(class, 0);
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(len as u64);
         let block_size = CLASSES_RUNTIME[class];
         let chain = self.bins[class].head;
         let mut groups: [MaybeUninit<PageReleaseChunk>; MAX_FLUSH_GROUPS] =
@@ -1552,8 +1631,9 @@ impl ThreadCache {
         if self.bins[class].len <= floor_blocks {
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(0);
         let bin = &mut self.bins[class];
+        let mut flushed: u64 = 0;
 
         while bin.len > floor_blocks {
             // Only slots 0..ng are ever written; a full [PageReleaseChunk; N]
@@ -1609,10 +1689,12 @@ impl ThreadCache {
                 core::slice::from_raw_parts(groups.as_ptr() as *const PageReleaseChunk, ng)
             };
             crate::heap::HEAP.release_many(class, chunks);
+            flushed += popped as u64;
             if popped == 0 {
                 break;
             }
         }
+        note_diag!(self, flush_blocks, flushed);
     }
 
     /// Shrink medium `mclass`'s bin down to `floor_blocks`, returning removed
@@ -1623,11 +1705,12 @@ impl ThreadCache {
         const MFLUSH_CHUNK: u32 = 256;
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
         let block_size = MEDIUM_CLASSES[mclass];
-        let bin = &mut self.mbins[mclass];
-        if bin.len <= floor_blocks {
+        if self.mbins[mclass].len <= floor_blocks {
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(0);
+        let mut flushed: u64 = 0;
+        let bin = &mut self.mbins[mclass];
 
         while bin.len > floor_blocks {
             // Uninit: only 0..ng written (the old EMPTY array zeroed ~8 KiB
@@ -1707,10 +1790,12 @@ impl ThreadCache {
                 core::slice::from_raw_parts(chunks.as_ptr() as *const ReleaseChunk, nch)
             };
             crate::heap::MEDIUM_HEAP.release_many(mclass, chunks_slice);
+            flushed += popped as u64;
             if popped == 0 {
                 break;
             }
         }
+        note_diag!(self, flush_blocks, flushed);
     }
 
     #[cfg(all(unix, feature = "std"))]
@@ -1724,7 +1809,7 @@ impl ThreadCache {
             self.bactive[bclass] = ActiveBig::empty();
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(len as u64);
         let mut tail = head;
         while !(*tail.cast::<*mut u8>()).is_null() {
             tail = *tail.cast::<*mut u8>();
@@ -1746,11 +1831,12 @@ impl ThreadCache {
         const BFLUSH_CHUNK: u32 = 64;
         const MAX_BFLUSH_GROUPS: usize = BFLUSH_CHUNK as usize + 4;
         let block_size = BIG_CLASSES[bclass];
-        let bin = &mut self.bigbins[bclass];
-        if bin.len <= floor_blocks {
+        if self.bigbins[bclass].len <= floor_blocks {
             return;
         }
-        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
+        self.note_flush(0);
+        let mut flushed: u64 = 0;
+        let bin = &mut self.bigbins[bclass];
 
         while bin.len > floor_blocks {
             let mut groups: [MaybeUninit<BGroup>; MAX_BFLUSH_GROUPS] =
@@ -1814,10 +1900,12 @@ impl ThreadCache {
                 let g = unsafe { groups[i].assume_init() };
                 crate::heap::BIG_HEAP.release_blocks(g.master, g.head, g.n);
             }
+            flushed += popped as u64;
             if popped == 0 {
                 break;
             }
         }
+        note_diag!(self, flush_blocks, flushed);
     }
 
     /// Return all cached blocks (used at explicit shutdown/flush requests,

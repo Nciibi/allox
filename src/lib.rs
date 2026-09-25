@@ -601,7 +601,7 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
         // costs a real mmap. Counted so the fallback rate is visible in
         // `__diagnostics::volume().arena_fallbacks` rather than inferred
         // from a missing arena commit.
-        counters::bump(&counters::VOLUME.arena_fallbacks, 1);
+        note_arena_event(false);
     }
     let base = sys::map_any(mapped);
     (base, !base.is_null())
@@ -617,7 +617,7 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     {
         if crate::arena::contains(base, mapped) {
             crate::arena::release(base, (mapped / page::PAGE_SIZE) as usize);
-            counters::bump(&counters::VOLUME.arena_parks, 1);
+            note_arena_event(true);
             return;
         }
     }
@@ -933,6 +933,24 @@ unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
         let _ = (p, size);
         false
     }
+}
+
+/// Record an arena event (region parked in the hole store, or served by the
+/// legacy mmap path) in the calling thread's batched counters. Falls back to
+/// a direct counter only when there is no thread cache to batch into, which
+/// is the cold no_std case.
+#[inline]
+fn note_arena_event(park: bool) {
+    with_cache(
+        |cache| cache.note_arena_event(park),
+        || {
+            if park {
+                counters::bump(&counters::VOLUME.arena_parks, 1);
+            } else {
+                counters::bump(&counters::VOLUME.arena_fallbacks, 1);
+            }
+        },
+    );
 }
 
 /// Record a relocating `realloc` in the calling thread's batched counters.
@@ -2006,8 +2024,10 @@ pub mod telemetry {
     /// spent waiting for its class lock.
     #[derive(Clone, Copy, Debug, Default)]
     pub struct Timing {
-        /// Wall time inside heap-mutex acquisitions. Divide by
-        /// `Volume::heap_lock_acquisitions` for a mean.
+        /// Wall time inside heap-mutex acquisitions. There is no matching
+        /// always-on acquisition counter (it could not be batched, and one
+        /// global counter shared by all class locks is a contended cache
+        /// line); `flushes` and `*_refills` proxy the lock traffic.
         pub lock_wait_ns: u64,
         /// Wall time inside `discard` (madvise / `VirtualAlloc` release).
         pub purge_ns: u64,
@@ -2061,7 +2081,7 @@ pub fn flush_current_thread() {
 #[cfg(all(test, feature = "std", any(unix, windows)))]
 mod counter_wiring_tests {
     use super::*;
-    use crate::counters::{volume, VOLUME};
+    use crate::counters::volume;
 
     #[test]
     fn discard_counts_calls_and_bytes() {
@@ -2083,18 +2103,6 @@ mod counter_wiring_tests {
         );
     }
 
-    #[test]
-    fn mutex_lock_counts_acquisitions() {
-        let before = crate::counters::get(&VOLUME.heap_lock_acquisitions);
-        static M: crate::sys::Mutex<u32> = crate::sys::Mutex::new(0);
-        {
-            let mut g = M.lock();
-            *g += 1;
-        }
-        let after = crate::counters::get(&VOLUME.heap_lock_acquisitions);
-        assert_eq!(after, before + 1, "lock acquisition uncounted");
-    }
-
     #[cfg(all(unix, feature = "std"))]
     #[test]
     fn arena_region_round_trip_counts_park_not_fallback() {
@@ -2106,6 +2114,8 @@ mod counter_wiring_tests {
             assert!(!base.is_null(), "arena commit failed");
             unmap_or_return(base, bytes);
         }
+        // Arena counters are batched per thread like the rest.
+        flush_current_thread();
         let after = volume();
         #[cfg(all(unix, feature = "std"))]
         {
