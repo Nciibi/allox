@@ -1280,7 +1280,8 @@ impl ThreadCache {
 
             for i in 0..ng {
                 let g = unsafe { groups[i].assume_init() };
-                crate::heap::HEAP.release_blocks(g.page, g.head, g.n);
+                debug_assert!((*g.tail.cast::<*mut u8>()).is_null());
+                crate::heap::HEAP.release_blocks_with_tail(g.page, g.head, g.tail, g.n);
             }
             if popped == 0 {
                 break;

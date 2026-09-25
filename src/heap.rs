@@ -344,10 +344,20 @@ impl GlobalHeap {
 
     /// Return a chain of `n` blocks, all belonging to `page`, to that page.
     pub(crate) unsafe fn release_blocks(&self, page: *mut PageHeader, chain: *mut u8, n: u16) {
+        self.release_blocks_with_tail(page, chain, chain, n);
+    }
+
+    pub(crate) unsafe fn release_blocks_with_tail(
+        &self,
+        page: *mut PageHeader,
+        head: *mut u8,
+        tail: *mut u8,
+        n: u16,
+    ) {
         let class = (*page).class as usize;
         let fate = {
             let mut list = self.classes[class].lock();
-            release_inner(&mut list, page, chain, n)
+            release_inner(&mut list, page, head, tail, n)
         };
         match fate {
             PageFate::Keep => {}
