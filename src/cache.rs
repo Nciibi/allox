@@ -605,7 +605,7 @@ impl ThreadCache {
         }
         #[cfg(feature = "telemetry")]
         self.note_free(class);
-        if self.should_shed() {
+        if self.should_shed_small() {
             self.shed();
         }
     }
