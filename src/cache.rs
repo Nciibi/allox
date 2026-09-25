@@ -1715,9 +1715,6 @@ pub(crate) fn reclaim_all() {
     while reclaim_one() {}
 }
 
-#[cfg(not(all(feature = "std", any(unix, windows))))]
-pub(crate) fn reclaim_all() {}
-
 /// Debug-build validation that `p` is a live-looking block of its page:
 /// correct magic, inside the block area, class-aligned, and not already on
 /// the page free list (double-free detection). Runs under the heap lock so
