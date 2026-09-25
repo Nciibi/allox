@@ -215,12 +215,15 @@ enum PageFate {
     Unmap,
 }
 
+const MAX_PAGE_RELEASE_GROUPS: usize = 2056;
+
 #[derive(Clone, Copy)]
 pub(crate) struct PageReleaseChunk {
     pub(crate) page: *mut PageHeader,
     pub(crate) head: *mut u8,
     pub(crate) tail: *mut u8,
     pub(crate) n: u16,
+    pub(crate) retire: bool,
 }
 
 /// Splice `head..=tail` (n blocks of `page`) back onto the page. Lock-only
