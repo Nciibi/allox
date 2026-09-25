@@ -257,7 +257,7 @@ reinitialization. Hooks arm lazily on slow paths, so fast paths pay nothing and
 threads that never allocate are untouched. `flush_current_thread()` remains for
 explicit reclamation (thread pools, the main thread on return-from-main).
 Measured: per-generation mapped growth went from +1050 mappings (linear leak)
-to flat, and focused `spawn-churn` improved from 2.61M to 17.25M ops/s in the
+to flat, and focused `spawn-churn` improved from 2.61M to 18.38M ops/s in the
 capped production matrix.
 
 ## 5. Public API
