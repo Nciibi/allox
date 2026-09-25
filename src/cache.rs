@@ -1544,7 +1544,7 @@ impl ThreadCache {
         let flush_started = std::time::Instant::now();
         for class in 0..NUM_CLASSES {
             if !self.bins[class].head.is_null() {
-                self.flush_bin(class, 0);
+                self.flush_bin_exit(class);
             }
         }
         for mclass in 0..NUM_MEDIUM {
