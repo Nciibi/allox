@@ -71,7 +71,7 @@ fn global_realloc_growth_chain() {
     unsafe {
         let a = allox::Allox;
         let mut size = 65536usize;
-        let layout = Layout::from_size_align(size, 16).unwrap();
+        let mut layout = Layout::from_size_align(size, 16).unwrap();
         let mut p = a.alloc(layout);
         assert!(!p.is_null());
         fill(p, size);
@@ -93,20 +93,11 @@ fn global_realloc_growth_chain() {
             }
             p = np;
             size = nsize;
-            // Rebuild the layout to match the grown size for the next call.
-            return finish_chain(a, p, size);
+            layout = Layout::from_size_align(size, 16).unwrap();
         }
-        #[allow(unreachable_code)]
-        {
-            check(p, BIG_TOP);
-            a.dealloc(p, Layout::from_size_align(BIG_TOP, 16).unwrap());
-        }
+        check(p, BIG_TOP);
+        a.dealloc(p, layout);
     }
-}
-
-unsafe fn finish_chain(a: allox::Allox, p: *mut u8, size: usize) {
-    check(p, size);
-    a.dealloc(p, Layout::from_size_align(size, 16).unwrap());
 }
 
 /// Cross-class growth with a shrink back down must round-trip content and
