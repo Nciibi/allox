@@ -284,9 +284,13 @@ storm, and a flush-dominated exit path.
   avoiding the scan and heap round-trip; post-adoption bin checks cover small,
   medium, and big tiers. Caches over 8 MiB or a full queue use synchronous flush.
 - `spawn-churn` production runs (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup)
-  reached **17.25M Allox vs 13.78M mimalloc ops/s** (1.25x), with peak RSS
-  19.1 MiB vs 19.4 MiB. The adoption path removes most exit-time scanning and
+  reached **18.38M Allox vs 13.78M mimalloc ops/s** (1.33x), with peak RSS
+  18.5 MiB vs 19.4 MiB. The adoption path removes most exit-time scanning and
   lock serialization for the common all-freed thread pattern.
+- A runtime static class-size table removes the hot small-free table copy;
+  `zeroed-large` now discards recycled regions before reuse, and deeper bounded
+  large caches/range-based side-table writes improve `huge-only`. ECS remains a
+  separate growable-extent problem because packed big-span realloc still copies.
 
 Correctness coverage includes the full debug integration suite and
 `tests/thread_exit.rs`; the deferred queue is bounded and falls back to the
