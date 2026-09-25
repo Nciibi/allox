@@ -648,7 +648,7 @@ impl ThreadCache {
             }
         }
         // Under aggregate pressure, shed some cache before asking for more.
-        if self.small_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > self.budget / 2 {
             self.trim();
         }
         let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
@@ -841,7 +841,7 @@ impl ThreadCache {
                 return (p, zeroed);
             }
         }
-        if self.small_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > self.budget / 2 {
             self.trim();
         }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
@@ -1081,7 +1081,7 @@ impl ThreadCache {
                 return (p, zeroed);
             }
         }
-        if self.small_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > self.budget / 2 {
             self.trim();
         }
         if self.tier_cached_bytes > tier_cache_budget() {
