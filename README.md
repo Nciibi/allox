@@ -109,13 +109,15 @@ dlmalloc omitted: 10×+ run-to-run variance on this box.
 
 Small + remote-free + big-span paths win or tie everywhere except
 mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and
-the large-only 1T tail above 524288 B (stays large-path by design);
+the large-only tail above 1 MiB (stays large-path by design);
 large-only 8T is served by arena-backed big spans (0.05× → 0.67×
-mimalloc, zero unmaps in the probe), and the 512 KiB big-cap extension
-improved the capped 1T A/B from 152K to 193K ops/s. mixed-all 8T and
-large-only still carry run-to-run regime notes (lock dynamics, same
-reference). Full six-allocator output (incl. snmalloc, dlmalloc, and the
-json/request/ecs app shapes) in harness runs.
+mimalloc, zero unmaps in the probe), and the big-cap extension now serves
+through 1 MiB. The prior 512 KiB A/B improved the capped 1T range from
+152K to 193K ops/s; the 1 MiB extension has passed focused boundary and
+integration tests, with repeated large-workload RSS validation still
+required. mixed-all 8T and large-only still carry run-to-run regime notes
+(lock dynamics, same reference). Full six-allocator output (incl.
+snmalloc, dlmalloc, and the json/request/ecs app shapes) in harness runs.
 
 The direct comparison uses the system allocator for harness bookkeeping.
 Use `BENCH_OUTPUT=json` for machine-readable samples. Use
