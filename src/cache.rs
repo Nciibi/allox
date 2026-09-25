@@ -436,8 +436,11 @@ impl ThreadCache {
     /// when a block enters the cache.
     #[inline]
     pub(crate) fn arm_exit_hook(&mut self) {
-        if !self.exit_armed && crate::thread_exit::ensure_hook() {
-            self.exit_armed = true;
+        if !self.exit_armed {
+            self.refresh_budget();
+            if crate::thread_exit::ensure_hook() {
+                self.exit_armed = true;
+            }
         }
     }
 
