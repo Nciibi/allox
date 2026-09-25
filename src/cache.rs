@@ -63,6 +63,9 @@ static NEXT_TID: AtomicU32 = AtomicU32::new(1);
 static CACHE_BUDGET: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(DEFAULT_THREAD_CACHE_BUDGET);
 
+#[cfg(feature = "std")]
+static CACHE_BUDGET_EPOCH: AtomicU32 = AtomicU32::new(0);
+
 #[inline]
 fn thread_cache_budget() -> usize {
     #[cfg(feature = "std")]
@@ -84,6 +87,7 @@ pub(crate) fn set_budget(bytes: usize) {
         bytes.max(REFILL_BATCH as usize * 16),
         core::sync::atomic::Ordering::Relaxed,
     );
+    CACHE_BUDGET_EPOCH.fetch_add(1, core::sync::atomic::Ordering::Release);
 }
 
 /// Slots / bytes one thread may keep as whole large regions without touching
