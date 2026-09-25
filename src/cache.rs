@@ -468,7 +468,7 @@ impl ThreadCache {
             }
         };
         self.small_cached_bytes() > thread_cache_budget()
-            || big_over
+            || tier_over
             || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
     }
 
