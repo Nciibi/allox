@@ -337,7 +337,7 @@ impl GlobalHeap {
 
             if count == 0 && !list.empty.is_null() {
                 // Recycle a cached empty page of the same class instead of
-                // asking the OS. Its free list is already full and intact.
+                // asking the OS. Retired pages are reinitialized before use.
                 let page = list.empty;
                 list.empty = (*page).next;
                 (*page).next = ptr::null_mut();
