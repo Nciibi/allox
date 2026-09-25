@@ -570,12 +570,12 @@ impl ThreadCache {
     #[inline]
     fn should_shed(&self) -> bool {
         if self.tier_cached_bytes == 0 {
-            return self.cached_bytes > thread_cache_budget()
-                || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV;
+            return self.cached_bytes > self.budget
+                || self.foreign_bytes >= self.budget / FOREIGN_SHED_DIV;
         }
-        self.small_cached_bytes() > thread_cache_budget()
-            || self.tier_cached_bytes > tier_cache_budget()
-            || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
+        self.small_cached_bytes() > self.budget
+            || self.tier_cached_bytes > self.budget.saturating_mul(2)
+            || self.foreign_bytes >= self.budget / FOREIGN_SHED_DIV
     }
 
     /// Fast-path allocation. Returns null only when the heap is out of memory.
