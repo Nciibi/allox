@@ -15,6 +15,8 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   lookup, cold-span retention, and a per-class active-span fast path for
   same-span refills. Non-arena targets fall back to the large path. (Sizes
   past 1 MiB and over-aligned requests stay on the large path.)
+- Medium and big thread-cache blocks receive a separate 2x retention allowance
+  while the small/remote-free budget remains independently bounded.
 - Large/over-aligned: sharded exact-fit-first region caches with cold
   tier, per-thread stash, virtual-memory arena backing (unix) with hole
   reuse and graceful legacy fallback. Large `calloc` skips redundant zeroing
