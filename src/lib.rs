@@ -316,7 +316,7 @@ const NUM_LARGE_SHARDS: usize = 8;
 /// Single-threaded same-size traffic lands on one shard and must not
 /// slot-starve there (the old single 64-slot cache never did).
 const LARGE_SHARD_SLOTS: usize = 64;
-const LARGE_SHARD_CAP_BYTES: usize = 8 * 1024 * 1024; // 8 x 8 MiB = 64 MiB total
+const LARGE_SHARD_CAP_BYTES: usize = 32 * 1024 * 1024;
 /// Cold (discarded, virtually retained) bytes per shard. Deep on 64-bit
 /// where virtual is free; shallow on 32-bit address spaces.
 #[cfg(target_pointer_width = "64")]
