@@ -380,6 +380,7 @@ struct AlloxDiagnostics {
     abandoned_delta: u64,
     abandoned_total: u64,
     arena_high_water: u64,
+    exit_flush_ns: u64,
     probe: RunSample,
 }
 
@@ -1225,7 +1226,7 @@ fn append_json_allocator(
 
 fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
     output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
+        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"exit_flush_ns\":{},\"probe\":",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
         diagnostics.mapped_delta,
@@ -1240,6 +1241,7 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.abandoned_delta,
         diagnostics.abandoned_total,
         diagnostics.arena_high_water,
+        diagnostics.exit_flush_ns,
     ));
     append_json_sample(output, diagnostics.probe);
     output.push('}');
