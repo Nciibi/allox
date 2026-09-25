@@ -1736,6 +1736,8 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         unsafe { cache.flush_all() };
         return;
     }
+    #[cfg(feature = "telemetry")]
+    cache.publish();
     for slot in &RETIRED_SLOTS {
         if slot
             .state
