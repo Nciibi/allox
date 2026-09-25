@@ -265,28 +265,34 @@ hi359MiB); **mixed-all 8T 13.57M = 0.72× mimalloc / 1.02× system**
 (flat vs prior 0.74×; abnd 0/s, unmaps 0). Docs updated: CHANGELOG,
 ROADMAP order item 4, DESIGN ownership rule, README table.
 
-## 5. spawn-churn per-op + exit latency (0.22x mimalloc — DECOMPOSED, no lever pulled)
+## 5. spawn-churn per-op + exit latency (0.34x mimalloc — RETIREMENT LANDED)
 
-Measured 2026-09-23 (isolated 2 s × 3 reps): allox 2.89M vs mimalloc
-12.64M (0.23x); `spawn-empty` ≈ 29k threads/s (≈34 µs spawn+join) for
-EVERY allocator. Decomposition with a temporary same-churn driver:
-short-lived threads (spawn+exit per 2000-op batch, like the bench)
-2.84M vs long-lived threads (lifecycle amortized) **159M ops/s** —
-56x. Steady-state per-op is excellent (consistent with `mixed-small 8T`
-beating mimalloc 4.3x); probes show ~0 heap syscalls either way, and
-1T→4T scaling (2.70M → 2.89M, 1.07x, vs system 3.4x) implicates
-lifecycle serialization, not fast-path cost. The ~2.7 ms per short
-thread is cold-start page faults on first-touch refills + exit-flush
-grouping/locked releases/discards — structural for shared-page designs
-(mimalloc wins via thread-owned segments freed wholesale, a
-redesign-class difference, out of scope). None of the listed levers
-(refill batch, flush chunk, re-carve init) moves a 2.7 ms lifecycle
-dominated by faults + flush work; pulling them blind risks P2-matrix
-regressions. STOP per the no-blind-experiments rule: next step is lock
-+ fault profiling (PMU, see §6), or documenting 0.23x-isolated /
-0.85x-full-process as the short-thread price. Note the 2x-spawn-cost
-stop criterion as written is unreachable for ANY allocator (mimalloc
-itself is ~18x spawn per thread) — it needs restating before reuse.
+The isolated baseline was 2.61M Allox vs 13.74M mimalloc ops/s (0.19x;
+host variance across the initial runs was 0.19–0.23x). `spawn-empty` remained
+approximately 24–29k threads/s for every allocator, confirming lifecycle work
+rather than pthread creation was the bottleneck. The original decomposition
+showed a 56x short-thread/long-lived-thread gap, no meaningful heap syscall
+storm, and a flush-dominated exit path.
+
+**Implemented 2026-09-25:**
+- Small-bin exit flushes pass their known chain tail, batch same-class page
+  releases, and retire fully-free pages with lazy reinitialization instead of
+  rebuilding every free-list link.
+- OS thread-exit hooks move bounded caches into eight fixed retirement slots;
+  later allocator slow paths reclaim at most one retired cache per cache
+  generation. Caches over 8 MiB or a full queue use the synchronous flush path.
+- `spawn-churn` production runs (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup)
+  reached **4.16M Allox vs 12.22M mimalloc ops/s** (0.34x), with peak RSS
+  17.9 MiB vs 19.4 MiB. The deferred work overlaps worker execution and removes
+  most exit-time lock serialization, but does not eliminate the shared-page
+  scan/first-touch cost; the remaining gap is still material.
+
+Correctness coverage includes the full debug integration suite and
+`tests/thread_exit.rs`; the deferred queue is bounded and falls back to the
+original blocking flush. Re-measure the ratio on a quiet host before using it
+as a release gate. The next possible lever is cheaper page-touch/ownership
+bookkeeping so retirement need not scan each cached block, not another refill
+or flush-size guess.
 
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
