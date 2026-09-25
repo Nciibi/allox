@@ -1380,7 +1380,6 @@ impl ThreadCache {
                             head: b,
                             tail: b,
                             n: 1,
-                            retire: false,
                         });
                         ng += 1;
                     }

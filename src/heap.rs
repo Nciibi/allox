@@ -216,6 +216,7 @@ enum PageFate {
 }
 
 const MAX_PAGE_RELEASE_GROUPS: usize = 2056;
+const PAGE_RELEASE_RETIRED: u16 = 0x8000;
 
 #[derive(Clone, Copy)]
 pub(crate) struct PageReleaseChunk {
@@ -223,7 +224,6 @@ pub(crate) struct PageReleaseChunk {
     pub(crate) head: *mut u8,
     pub(crate) tail: *mut u8,
     pub(crate) n: u16,
-    pub(crate) retire: bool,
 }
 
 /// Splice `head..=tail` (n blocks of `page`) back onto the page. Lock-only
@@ -461,8 +461,10 @@ impl GlobalHeap {
                 debug_assert_eq!((*g.page).class as usize, class);
                 g.head = ptr::null_mut();
                 g.tail = ptr::null_mut();
-                g.retire = g.n == (*g.page).used;
-                partial |= !g.retire;
+                let count = g.n & !PAGE_RELEASE_RETIRED;
+                let retire = count == (*g.page).used;
+                g.n = count | if retire { PAGE_RELEASE_RETIRED } else { 0 };
+                partial |= !retire;
             }
             if partial {
                 let mut cursor = chain;
@@ -474,7 +476,7 @@ impl GlobalHeap {
                         slot += 1;
                     }
                     let g = &mut chunks[slot];
-                    if !g.retire {
+                    if g.n & PAGE_RELEASE_RETIRED == 0 {
                         if g.head.is_null() {
                             g.head = cursor;
                         } else {
@@ -487,10 +489,16 @@ impl GlobalHeap {
                 }
             }
             for (i, g) in chunks.iter().enumerate() {
-                fates[i] = if g.retire {
+                fates[i] = if g.n & PAGE_RELEASE_RETIRED != 0 {
                     retire_page_inner(&mut list, g.page)
                 } else {
-                    release_inner(&mut list, g.page, g.head, g.tail, g.n)
+                    release_inner(
+                        &mut list,
+                        g.page,
+                        g.head,
+                        g.tail,
+                        g.n & !PAGE_RELEASE_RETIRED,
+                    )
                 };
             }
         }
