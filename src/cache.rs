@@ -24,7 +24,11 @@ use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 use crate::page::BigMaster;
 use core::mem::MaybeUninit;
 use core::ptr;
+#[cfg(all(feature = "std", any(unix, windows)))]
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
+#[cfg(all(feature = "std", any(unix, windows)))]
+use core::sync::atomic::{AtomicU8, AtomicUsize};
 
 /// Base budget for small and other cached bytes before trimming starts.
 /// Medium and big tiers receive a separate 2x allowance; the aggregate trim
