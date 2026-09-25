@@ -108,9 +108,9 @@ dlmalloc omitted: 10×+ run-to-run variance on this box.
 | spawn-churn | 11.1 M/s | 2.4 M/s | 10.8 M/s | 12.4 M/s | **4.65×** | 0.90× | **1.03×** |
 
 The spawn-churn row is from the earlier full-matrix run. After bounded
-thread-exit retirement, a focused production A/B (2 s × 5,
-`BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 4.65 M/s for Allox versus
-13.62 M/s for mimalloc, with peak RSS 17.6 MiB versus 19.4 MiB.
+thread-exit retirement and direct cache adoption, a focused production A/B
+(2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 17.25 M/s for Allox
+versus 13.78 M/s for mimalloc, with peak RSS 19.1 MiB versus 19.4 MiB.
 
 Small + remote-free + big-span paths win or tie everywhere except
 mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and

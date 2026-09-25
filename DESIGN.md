@@ -248,14 +248,15 @@ TLS destructors from inside an allocator risk rust#116390-style breakage and
 Windows loader-lock deadlocks. Decision: const-initialized, destructor-less
 TLS, plus one OS key per process (pthread_key / FlsAlloc, `src/thread_exit.rs`)
 whose destructor retires the cache into a bounded fixed-slot queue. Later
-allocator slow paths reclaim queued caches; oversized or overflow caches use
-the normal blocking `flush_all` fallback. Small-page exit flushes also use
-known chain tails and lazy page reinitialization. Hooks arm lazily on slow
-paths, so fast paths pay nothing and threads that never allocate are untouched.
-`flush_current_thread()` remains for explicit reclamation (thread pools, the
-main thread on return-from-main). Measured: per-generation mapped growth went
-from +1050 mappings (linear leak) to flat, and focused `spawn-churn` improved
-from 2.61M to 4.65M ops/s in the capped production matrix.
+allocator slow paths either adopt a queued cache into an empty worker or
+reclaim it; oversized or overflow caches use the normal blocking `flush_all`
+fallback. Small-page exit flushes also use known chain tails and lazy page
+reinitialization. Hooks arm lazily on slow paths, so fast paths pay nothing and
+threads that never allocate are untouched. `flush_current_thread()` remains for
+explicit reclamation (thread pools, the main thread on return-from-main).
+Measured: per-generation mapped growth went from +1050 mappings (linear leak)
+to flat, and focused `spawn-churn` improved from 2.61M to 17.25M ops/s in the
+capped production matrix.
 
 ## 5. Public API
 
