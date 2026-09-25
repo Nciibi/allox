@@ -955,6 +955,11 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
     if !crate::arena::contains(p, 1) {
         return None;
     }
+    // A live large region (e.g. a previous promotion) is never a big block,
+    // even if a stale big-table entry covers its pages: the large table wins.
+    if !crate::arena::large_table_get(p).is_null() {
+        return None;
+    }
     let big = crate::arena::big_table_get(p);
     if big.is_null() {
         return None;
