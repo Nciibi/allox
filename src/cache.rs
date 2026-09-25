@@ -1034,6 +1034,26 @@ impl ThreadCache {
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.reclaim_retired();
+        {
+            let (p, zeroed) = self.active_big_alloc(bclass);
+            if !p.is_null() {
+                return (p, zeroed);
+            }
+            let bin = &mut self.bigbins[bclass];
+            if let Some(p) = pop_block(&mut bin.head) {
+                let below = bin.len - 1;
+                bin.len = below;
+                self.cached_bytes -= BIG_CLASSES[bclass];
+                self.tier_cached_bytes = self
+                    .tier_cached_bytes
+                    .saturating_sub(BIG_CLASSES[bclass]);
+                let zeroed = below < self.bvirgin[bclass];
+                if zeroed {
+                    self.bvirgin[bclass] -= 1;
+                }
+                return (p, zeroed);
+            }
+        }
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
