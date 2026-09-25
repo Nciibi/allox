@@ -433,6 +433,14 @@ impl ThreadCache {
         }
     }
 
+    #[inline]
+    fn reclaim_retired(&mut self) {
+        #[cfg(all(feature = "std", any(unix, windows)))]
+        if !self.retired_reclaimed && reclaim_one() {
+            self.retired_reclaimed = true;
+        }
+    }
+
     /// This thread's ownership id, assigned on first use (slow paths only).
     #[inline]
     fn tid(&mut self) -> u32 {
@@ -580,8 +588,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        #[cfg(all(feature = "std", any(unix, windows)))]
-        reclaim_one();
+        self.reclaim_retired();
         // Under aggregate pressure, shed some cache before asking for more.
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
@@ -753,8 +760,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        #[cfg(all(feature = "std", any(unix, windows)))]
-        reclaim_one();
+        self.reclaim_retired();
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
@@ -973,8 +979,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        #[cfg(all(feature = "std", any(unix, windows)))]
-        reclaim_one();
+        self.reclaim_retired();
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
@@ -1621,6 +1626,7 @@ impl ThreadCache {
         self.cached_bytes = 0;
         self.tier_cached_bytes = 0;
         self.foreign_bytes = 0;
+        self.retired_reclaimed = false;
         // Keep `tid` stable across flushes: it identifies this OS thread for
         // the drift-cap owner heuristic, not a cache generation.
         self.virgin = [0; NUM_CLASSES];
