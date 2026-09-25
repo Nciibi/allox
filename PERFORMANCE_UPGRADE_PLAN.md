@@ -321,12 +321,13 @@ Instrument scan length before changing the data structure. The current code has 
 ## 2.4 Raise or parameterize the big-tier cap
 
 The 1 MiB phase is implemented: `src/classes.rs:258-261` now serves the
-big tier through 1048576 bytes. The focused 1-second `large-only 1T` smoke
-measured Allox at 0.80x mimalloc on this host, while the 512 KiB phase
-measured 193K ops/s versus 152K before that extension. Boundary, release,
-telemetry-enabled, and no_std checks pass; repeated 2 s × 3 large-workload
-validation remains required because the shared benchmark process can retain
-large amounts of virtual and resident memory.
+big tier through 1048576 bytes. A separate 2x medium/big cache allowance
+keeps large-allocation locality without raising the small/remote-free
+budget. With `BENCH_SAFE_LIVE=1` and a 2 GiB cgroup, repeated fresh-process
+2 s × 3 runs measured Allox at 6.79M/s on `large-only 1T` (2.88× mimalloc),
+25.10M/s on `large-only 8T` (1.32×), and 10.73M/s on `mixed-all 1T` (2.90×),
+with low Allox peak RSS. Boundary, release, telemetry-enabled, and no_std
+checks are green.
 
 Next candidates:
 
