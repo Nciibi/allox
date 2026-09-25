@@ -89,7 +89,7 @@ pub(crate) struct ListHead {
     /// Partial pages (spare free blocks), doubly linked via prev/next.
     head: *mut PageHeader,
     /// Fully free pages held for reuse instead of unmapping; singly linked
-    /// via `next`. All carry a full free list and `used == 0`.
+    /// via `next`. Retired pages may carry a reinitialization marker.
     empty: *mut PageHeader,
     empty_count: u32,
     /// Cold pages: discarded (madvise) but virtually retained, stored as
