@@ -1306,7 +1306,6 @@ impl ThreadCache {
                         head: ptr::null_mut(),
                         tail: ptr::null_mut(),
                         n: 1,
-                        retire: false,
                     });
                     ng += 1;
                 }
