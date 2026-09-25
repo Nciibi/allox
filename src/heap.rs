@@ -13,7 +13,7 @@ use crate::classes::{big_span_pages_for, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::page::{
-    pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_VIRGIN, PAGE_SIZE,
+    pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_NEEDS_REINIT, FLAG_VIRGIN, PAGE_SIZE,
 };
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
