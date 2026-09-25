@@ -534,14 +534,14 @@ impl ThreadCache {
     }
 
     #[inline]
-    fn drift_gate_open_small(&self) -> bool {
-        self.cached_bytes > thread_cache_budget() / DRIFT_GATE_DIV
+    fn drift_gate_open_small(&self, budget: usize) -> bool {
+        self.cached_bytes > budget / DRIFT_GATE_DIV
     }
 
     #[inline]
-    fn should_shed_small(&self) -> bool {
-        self.cached_bytes > thread_cache_budget()
-            || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
+    fn should_shed_small(&self, budget: usize) -> bool {
+        self.cached_bytes > budget
+            || self.foreign_bytes >= budget / FOREIGN_SHED_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
@@ -669,8 +669,9 @@ impl ThreadCache {
         // foreign or total budget is hit — never a lock-per-free
         // `release_blocks`, which serialized prodcons and thrashed the arena.
         // The ownership load only runs when the gate is already open.
+        let budget = thread_cache_budget();
         let mut foreign = false;
-        if self.drift_gate_open_small() {
+        if self.drift_gate_open_small(budget) {
             let page = PageHeader::of(p);
             let owner = (*page).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
@@ -685,7 +686,7 @@ impl ThreadCache {
         }
         #[cfg(feature = "telemetry")]
         self.note_free(class);
-        if self.should_shed_small() {
+        if self.should_shed_small(budget) {
             self.shed();
         }
     }
