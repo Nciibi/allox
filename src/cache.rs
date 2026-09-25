@@ -436,8 +436,30 @@ impl ThreadCache {
     #[inline]
     fn reclaim_retired(&mut self) {
         #[cfg(all(feature = "std", any(unix, windows)))]
-        if !self.retired_reclaimed && reclaim_one() {
-            self.retired_reclaimed = true;
+        {
+            if self.retired_reclaimed {
+                return;
+            }
+            if self.cached_bytes == 0 && self.large_len == 0 {
+                if let Some(adopted) = take_one() {
+                    let current_armed = self.exit_armed;
+                    let current_tid = self.tid;
+                    let old = core::mem::replace(self, adopted);
+                    #[cfg(feature = "telemetry")]
+                    let mut old = old;
+                    #[cfg(feature = "telemetry")]
+                    old.publish();
+                    #[cfg(not(feature = "telemetry"))]
+                    let _ = old;
+                    self.exit_armed = current_armed;
+                    self.tid = current_tid;
+                    self.retired_reclaimed = true;
+                    return;
+                }
+            }
+            if reclaim_one() {
+                self.retired_reclaimed = true;
+            }
         }
     }
 
