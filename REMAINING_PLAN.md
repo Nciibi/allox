@@ -217,7 +217,7 @@ Options in order:
    `BigHeap` per-bclass sharded + empty/cold retention (`heap.rs`),
    cache `bigbins`/`bvirgin` + `alloc_big`/`dealloc_big`, dispatch
     `alloc_impl`/`dealloc_impl`/`alloc_zeroed_impl` routing
-    `(65472, 524288]`, `tests/big_spans.rs` (boundary/roundtrip/calloc/
+     `(65472, 1 MiB]`, `tests/big_spans.rs` (boundary/roundtrip/calloc/
     realloc/GlobalAlloc/8T-churn), Kani P1–P6 proofs, Miri carve tests,
     `tier_boundary_seq` fuzz. Measured (2 s × 3, full matrix): large-only
     8T **9.06M vs mimalloc 13.51M (0.67×, was 0.05×)**, probe
