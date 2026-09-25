@@ -29,6 +29,17 @@ telemetry = []
 # Dev-only: jemalloc bench comparator (needs make+autoconf — CI box only).
 # NEVER enable for library consumers; default build stays zero-deps/no-C.
 bench-jemalloc = ["dep:tikv-jemallocator"]
+# Process-global app benchmark (examples/app_workload.rs). Exactly one
+# backend feature selects the installed `#[global_allocator]`, so the
+# measured process has no runtime dispatch on the allocation path — one
+# binary per allocator, as a real deployment would be. `app-p99` adds
+# sampled per-call latency (a second binary; see the script).
+app-allox = []
+app-system = []
+app-mimalloc = []
+app-snmalloc = []
+app-talc = []
+app-p99 = []
 
 [dependencies]
 # Optional, off by default: only `cargo bench --features bench-jemalloc`
@@ -49,6 +60,7 @@ snmalloc-rs = { version = "0.7", features = ["build_cc"] }
 [[bench]]
 name = "alloc"
 harness = false
+
 
 [lints.rust]
 # `cfg(kani)` is set by cargo-kani, not a Cargo feature. check-cfg needs

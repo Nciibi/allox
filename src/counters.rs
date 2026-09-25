@@ -83,9 +83,6 @@ counters! {
     realloc_copy_bytes,
     // Relocations served by the big-block growth promotion.
     realloc_promotions,
-    // `realloc` calls in total; in-place calls are the remainder after
-    // subtracting `realloc_relocations`.
-    realloc_calls,
     // `alloc_zeroed`/`calloc` calls that had to zero memory in software.
     zeroed_calls,
     // Bytes zeroed in software by those calls.
@@ -105,7 +102,7 @@ counters! {
 
 /// Number of volume counters. Kept in step with [`VOLUME_FIELDS`] by the
 /// assertion below, so appending a counter without a reader fails here.
-pub const VOLUME_COUNT: usize = 25;
+pub const VOLUME_COUNT: usize = 24;
 
 /// Nanosecond timings. `telemetry` feature only: a clock read costs more
 /// than most operations here, so production builds without the feature
@@ -158,16 +155,11 @@ mod timing_impl {
     #[cfg(feature = "std")]
     pub static TIMING: TimingAtomics = TimingAtomics::new();
 
-    /// Read the timings; all zero in `no_std` builds (no clock available).
+    /// Read the timings. Only with `std`: without a clock there is nothing
+    /// to read, and `crate::counters::timing_snapshot` returns zeros.
+    #[cfg(feature = "std")]
     pub fn snapshot() -> TimingCounters {
-        #[cfg(feature = "std")]
-        {
-            TIMING.snapshot()
-        }
-        #[cfg(not(feature = "std"))]
-        {
-            TimingCounters::default()
-        }
+        TIMING.snapshot()
     }
 }
 
@@ -211,7 +203,6 @@ pub struct Volume {
     pub realloc_relocations: u64,
     pub realloc_copy_bytes: u64,
     pub realloc_promotions: u64,
-    pub realloc_calls: u64,
     pub zeroed_calls: u64,
     pub zeroed_bytes: u64,
     pub purge_calls: u64,
@@ -242,7 +233,6 @@ pub fn volume() -> Volume {
         realloc_relocations: v.realloc_relocations.load(Relaxed),
         realloc_copy_bytes: v.realloc_copy_bytes.load(Relaxed),
         realloc_promotions: v.realloc_promotions.load(Relaxed),
-        realloc_calls: v.realloc_calls.load(Relaxed),
         zeroed_calls: v.zeroed_calls.load(Relaxed),
         zeroed_bytes: v.zeroed_bytes.load(Relaxed),
         purge_calls: v.purge_calls.load(Relaxed),
@@ -277,7 +267,6 @@ pub const VOLUME_FIELDS: [&str; VOLUME_COUNT] = [
     "realloc_relocations",
     "realloc_copy_bytes",
     "realloc_promotions",
-    "realloc_calls",
     "zeroed_calls",
     "zeroed_bytes",
     "purge_calls",

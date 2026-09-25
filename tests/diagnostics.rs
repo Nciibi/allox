@@ -12,6 +12,13 @@ fn delta(before: u64, after: u64) -> u64 {
     after.saturating_sub(before)
 }
 
+/// Force the calling thread's counter batch out to the global counters.
+/// They are published every 8192 operations, so a test that does less work
+/// than that would otherwise read zeros.
+fn publish_pending() {
+    allox::flush_current_thread();
+}
+
 #[test]
 fn small_churn_moves_refill_and_flush_counters() {
     // A tiny budget guarantees the thread cache cannot absorb the churn, so
@@ -70,6 +77,7 @@ fn realloc_growth_counts_promotion_and_copies() {
         let mut p = a.alloc(layout);
         assert!(!p.is_null());
         let chain_start = volume();
+        let _ = chain_start;
         while size < 1_048_576 {
             let nsize = (size * 2).min(1_048_576);
             let np = a.realloc(p, layout, nsize);
@@ -79,9 +87,10 @@ fn realloc_growth_counts_promotion_and_copies() {
             size = nsize;
         }
         a.dealloc(p, layout);
+        publish_pending();
         let chain_end = volume();
-        // 65536 -> 131072 -> 262144 -> 524288 -> 1048576: four growths.
-        assert_eq!(delta(chain_start.realloc_calls, chain_end.realloc_calls), 4);
+        // 65536 -> 131072 -> 262144 -> 524288 -> 1048576: four growths,
+        // of which only the first can relocate (the rest fit the reserve).
         assert_eq!(
             delta(chain_start.realloc_relocations, chain_end.realloc_relocations),
             1,

@@ -935,6 +935,29 @@ unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
     }
 }
 
+/// Record a relocating `realloc` in the calling thread's batched counters.
+///
+/// This is deliberately *not* a shared atomic: at four threads, one
+/// `fetch_add` per realloc cost 20% of process-global application
+/// throughput (233k -> 194k docs/s) because every thread ping-ponged the
+/// same cache line tens of millions of times per second. One thread-local
+/// add here, one global atomic per 8192 operations in `ThreadCache::publish`.
+#[inline]
+fn note_realloc(copied: usize, promoted: bool) {
+    with_cache(
+        |cache| cache.note_realloc(copied, promoted),
+        || {
+            // No TLS (no_std, or a thread that never allocated): fall back
+            // to the global counter directly. This path is cold.
+            counters::bump(&counters::VOLUME.realloc_relocations, 1);
+            counters::bump(&counters::VOLUME.realloc_copy_bytes, copied as u64);
+            if promoted {
+                counters::bump(&counters::VOLUME.realloc_promotions, 1);
+            }
+        },
+    );
+}
+
 /// Upper bound on the reserve a promoted big block may claim, as a multiple
 /// of the size it is being grown to. The big chain tops out at
 /// `MAX_BIG_BLOCK`, so any first growth into the upper half of the big range
@@ -994,9 +1017,7 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
     }
     let copy = old_usable.min(new_size);
     ptr::copy_nonoverlapping(p, np, copy);
-    counters::bump(&counters::VOLUME.realloc_relocations, 1);
-    counters::bump(&counters::VOLUME.realloc_promotions, 1);
-    counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
+    note_realloc(copy, true);
     dealloc_impl(p);
     Some(np)
 }
@@ -1415,7 +1436,6 @@ unsafe impl GlobalAlloc for Allox {
     }
 
     unsafe fn realloc(&self, p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
-        counters::bump(&counters::VOLUME.realloc_calls, 1);
         if new_size == 0 {
             self.dealloc(p, layout);
             return layout.align().max(1) as *mut u8;
@@ -1498,8 +1518,7 @@ unsafe impl GlobalAlloc for Allox {
         let copy = layout.size().min(new_size);
         if copy > 0 {
             ptr::copy_nonoverlapping(p, new_p, copy);
-            counters::bump(&counters::VOLUME.realloc_relocations, 1);
-            counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
+            note_realloc(copy, false);
         }
         self.dealloc(p, layout);
         new_p
@@ -1549,7 +1568,6 @@ pub unsafe fn calloc(nmemb: usize, size: usize) -> *mut u8 {
 /// # Safety
 /// `p` must be null or a live allocation of this allocator.
 pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
-    counters::bump(&counters::VOLUME.realloc_calls, 1);
     if size > isize::MAX as usize {
         return ptr::null_mut();
     }
@@ -1682,8 +1700,7 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
         let old_size = usable_size(p);
         let copy = old_size.min(size);
         ptr::copy_nonoverlapping(p, new_p, copy);
-        counters::bump(&counters::VOLUME.realloc_relocations, 1);
-        counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
+        note_realloc(copy, false);
     }
     if !new_p.is_null() {
         free(p);

@@ -15,6 +15,7 @@ use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
+
 use crate::classes::{CLASSES_RUNTIME, NUM_CLASSES};
 use crate::heap::{MEDIUM_HEAP, PageReleaseChunk, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
@@ -252,41 +253,63 @@ pub(crate) struct ThreadCache {
     large: [(*mut u8, u32); LARGE_STASH_SLOTS],
     large_len: u32,
     large_bytes: usize,
-    /// Telemetry accumulators, published to the global atomics in batches.
-    #[cfg(feature = "telemetry")]
+    /// Thread-local counter batches, published to the global atomics every
+    /// [`FLUSH_OPS`] operations. Always compiled: batching is what keeps
+    /// these counters off the shared-cache-line path.
     pending: Pending,
 }
 
-/// Thread-local telemetry deltas, flushed every [`FLUSH_OPS`] operations.
-#[cfg(feature = "telemetry")]
+/// Thread-local counter deltas, flushed every [`FLUSH_OPS`] operations.
 const FLUSH_OPS: u32 = 8192;
 
-/// Thread-local telemetry accumulators, published to the global atomics
-/// in batches.
-#[cfg(feature = "telemetry")]
+/// Thread-local counter accumulators, published to the global atomics in
+/// batches. The allocation-volume fields feed `telemetry`; the realloc
+/// fields feed the always-on volume counters.
 pub(crate) struct Pending {
+    /// Operations since the last publish; drives the flush cadence.
     ops: u32,
+    /// `realloc` calls that returned a different pointer, and the bytes
+    /// they copied. Batched like everything else here: a shared atomic per
+    /// realloc measured **-20% throughput** on the process-global app
+    /// benchmark at 4 threads (233k vs 194k docs/s), because four threads
+    /// ping-pong one cache line tens of millions of times per second.
+    realloc_relocations: u64,
+    realloc_copy_bytes: u64,
+    realloc_promotions: u64,
+    #[cfg(feature = "telemetry")]
     allocs: u64,
+    #[cfg(feature = "telemetry")]
     frees: u64,
+    #[cfg(feature = "telemetry")]
     bytes_in: u64,
+    #[cfg(feature = "telemetry")]
     bytes_out: u64,
     /// Small classes at 0..NUM_CLASSES, medium classes after.
+    #[cfg(feature = "telemetry")]
     per_class: [u64; TOTAL_CLASSES],
 }
 
-#[cfg(feature = "telemetry")]
 impl Pending {
     const fn new() -> Self {
         Pending {
             ops: 0,
+            realloc_relocations: 0,
+            realloc_copy_bytes: 0,
+            realloc_promotions: 0,
+            #[cfg(feature = "telemetry")]
             allocs: 0,
+            #[cfg(feature = "telemetry")]
             frees: 0,
+            #[cfg(feature = "telemetry")]
             bytes_in: 0,
+            #[cfg(feature = "telemetry")]
             bytes_out: 0,
+            #[cfg(feature = "telemetry")]
             per_class: [0; TOTAL_CLASSES],
         }
     }
 }
+
 
 impl ThreadCache {
     pub(crate) const fn new() -> Self {        ThreadCache {
@@ -322,14 +345,45 @@ impl ThreadCache {
             large: [(ptr::null_mut(), 0); LARGE_STASH_SLOTS],
             large_len: 0,
             large_bytes: 0,
-            #[cfg(feature = "telemetry")]
             pending: Pending::new(),
         }
     }
 
-    /// Publish accumulated telemetry deltas to the global atomics.
-    #[cfg(feature = "telemetry")]
+    /// Publish accumulated thread-local deltas to the global atomics.
+    ///
+    /// Always compiled: the volume counters are diagnostics, and batching
+    /// them here is what keeps them off the per-op path. Allocation volume
+    /// itself is telemetry-only, as before.
     fn publish(&mut self) {
+        use crate::counters::{bump, VOLUME};
+        if self.pending.realloc_relocations != 0 {
+            bump(
+                &VOLUME.realloc_relocations,
+                self.pending.realloc_relocations,
+            );
+            bump(
+                &VOLUME.realloc_copy_bytes,
+                self.pending.realloc_copy_bytes,
+            );
+            if self.pending.realloc_promotions != 0 {
+                bump(
+                    &VOLUME.realloc_promotions,
+                    self.pending.realloc_promotions,
+                );
+            }
+            self.pending.realloc_relocations = 0;
+            self.pending.realloc_copy_bytes = 0;
+            self.pending.realloc_promotions = 0;
+        }
+        #[cfg(feature = "telemetry")]
+        self.publish_telemetry();
+        self.pending.ops = 0;
+    }
+
+    /// Allocation-volume half of [`Self::publish`]: thread-local counters
+    /// become the process-wide telemetry atomics.
+    #[cfg(feature = "telemetry")]
+    fn publish_telemetry(&mut self) {
         use core::sync::atomic::Ordering::Relaxed;
         let t = &crate::heap::TELEMETRY;
         if self.pending.allocs != 0 {
@@ -360,7 +414,22 @@ impl ThreadCache {
         self.pending.frees = 0;
         self.pending.bytes_in = 0;
         self.pending.bytes_out = 0;
-        self.pending.ops = 0;
+    }
+
+    /// Record a relocating `realloc` (the promotion flag marks the big-block
+    /// growth promotion). Always compiled and batched: one thread-local add
+    /// per relocation, one shared atomic per `FLUSH_OPS` operations.
+    #[inline]
+    pub(crate) fn note_realloc(&mut self, copied: usize, promoted: bool) {
+        self.pending.ops += 1;
+        self.pending.realloc_relocations += 1;
+        self.pending.realloc_copy_bytes += copied as u64;
+        if promoted {
+            self.pending.realloc_promotions += 1;
+        }
+        if self.pending.ops >= FLUSH_OPS {
+            self.publish();
+        }
     }
 
     #[inline]
@@ -459,12 +528,10 @@ impl ThreadCache {
                     #[cfg(feature = "std")]
                     let current_epoch = self.budget_epoch;
                     let old = core::mem::replace(self, adopted);
-                    #[cfg(feature = "telemetry")]
+                    // Publish the retired cache's batched counters before
+                    // dropping it, so its last window is not lost.
                     let mut old = old;
-                    #[cfg(feature = "telemetry")]
                     old.publish();
-                    #[cfg(not(feature = "telemetry"))]
-                    let _ = old;
                     self.exit_armed = current_armed;
                     self.budget = current_budget;
                     #[cfg(feature = "std")]
@@ -1798,7 +1865,6 @@ impl ThreadCache {
         }
         self.large_len = 0;
         self.large_bytes = 0;
-        #[cfg(feature = "telemetry")]
         self.publish();
     }
 }
@@ -1813,7 +1879,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         unsafe { cache.flush_all() };
         return;
     }
-    #[cfg(feature = "telemetry")]
     cache.publish();
     for slot in &RETIRED_SLOTS {
         if slot
