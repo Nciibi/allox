@@ -37,16 +37,6 @@ pub(crate) fn flush_count() -> u64 {
     }
 }
 
-#[cfg(all(feature = "std", feature = "telemetry", any(unix, windows)))]
-pub(crate) fn flush_elapsed_ns() -> u64 {
-    FLUSH_ELAPSED_NS.load(core::sync::atomic::Ordering::Relaxed)
-}
-
-#[cfg(not(all(feature = "std", feature = "telemetry", any(unix, windows))))]
-pub(crate) fn flush_elapsed_ns() -> u64 {
-    0
-}
-
 #[cfg(all(feature = "std", unix))]
 mod imp {
     use core::ffi::c_void;
