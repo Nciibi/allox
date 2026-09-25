@@ -440,7 +440,7 @@ impl ThreadCache {
             let mut steps = bin.len;
             while steps > 0 {
                 assert!(!cursor.is_null());
-                cursor = *cursor.cast::<*mut u8>();
+                cursor = unsafe { *cursor.cast::<*mut u8>() };
                 steps -= 1;
             }
             assert!(cursor.is_null());
