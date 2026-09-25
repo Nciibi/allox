@@ -399,9 +399,6 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
         Kind::Request => run_request(alloc, wl, seconds),
         Kind::Ecs => run_ecs(alloc, wl, seconds),
     };
-    if std::env::var_os("BENCH_DEBUG_CACHE").is_some() {
-        eprintln!("cache_bytes={:?}", allox::__debug_cache_bytes());
-    }
     RunSample::from_start(ops, start)
 }
 
