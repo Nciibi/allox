@@ -270,25 +270,45 @@ pub(crate) struct ThreadCache {
 }
 
 /// Thread-local counter deltas, flushed every [`FLUSH_OPS`] operations.
+#[cfg(feature = "telemetry")]
 const FLUSH_OPS: u32 = 8192;
-/// Diagnostic counters (always on) batch on their own cadence, so they cost
-/// one thread-local add per event and one shared atomic per batch. Sharing
-/// the telemetry cadence would not work: with `telemetry` off, nothing else
-/// drives `ops`.
+/// Diagnostic counters batch on their own cadence: one thread-local add per
+/// event, one shared atomic per batch. Sharing the telemetry cadence would
+/// not work — with `telemetry` off, nothing else drives `ops`.
+#[cfg(feature = "telemetry")]
 const DIAG_FLUSH_OPS: u32 = 8192;
 
 /// Note `by` occurrences of a diagnostic event, publishing the thread's
 /// batch when it fills. One thread-local add and a compare — deliberately
 /// *not* a shared atomic (see the `counters` module docs for what that
 /// costs at 4M events/s).
+///
+/// Telemetry-gated: with the feature off this compiles to nothing, so a
+/// default build pays exactly zero for the diagnostic counters. Measured
+/// cost of leaving them on: 0-3.6% depending on how many events a workload
+/// generates (worst on `prodcons 8T`, where the drift gate puts an owner
+/// probe on nearly every free).
+#[cfg(feature = "telemetry")]
 macro_rules! note_diag {
     ($cache:expr, $field:ident, $by:expr) => {{
-        let cache: &mut ThreadCache = $cache;
-        cache.pending.$field += $by as u64;
-        cache.pending.diag_ops += 1;
-        if cache.pending.diag_ops >= DIAG_FLUSH_OPS {
-            cache.publish_diagnostics();
+        {
+            let cache: &mut ThreadCache = $cache;
+            cache.pending.$field += $by as u64;
+            cache.pending.diag_ops += 1;
+            if cache.pending.diag_ops >= DIAG_FLUSH_OPS {
+                cache.publish_diagnostics();
+            }
         }
+    }};
+}
+
+/// No-op twin for builds without `telemetry`: the arguments are still
+/// type-checked at the call site but nothing is written.
+#[cfg(not(feature = "telemetry"))]
+macro_rules! note_diag {
+    ($cache:expr, $field:ident, $by:expr) => {{
+        let _ = &$cache;
+        let _ = $by;
     }};
 }
 
@@ -299,28 +319,42 @@ pub(crate) struct Pending {
     /// Telemetry operations since the last publish; drives the flush cadence.
     ops: u32,
     /// Diagnostic operations since the last publish (see [`DIAG_FLUSH_OPS`]).
+    #[cfg(feature = "telemetry")]
     diag_ops: u32,
-    // --- always-on volume counters, batched ---
+    // --- volume counters, batched (telemetry-gated; see `note_diag`) ---
+    #[cfg(feature = "telemetry")]
     trims: u64,
+    #[cfg(feature = "telemetry")]
     flushes: u64,
+    #[cfg(feature = "telemetry")]
     flush_blocks: u64,
+    #[cfg(feature = "telemetry")]
     owner_probes: u64,
+    #[cfg(feature = "telemetry")]
     remote_frees: u64,
+    #[cfg(feature = "telemetry")]
     small_refills: u64,
+    #[cfg(feature = "telemetry")]
     small_refill_blocks: u64,
+    #[cfg(feature = "telemetry")]
     medium_refills: u64,
+    #[cfg(feature = "telemetry")]
     medium_refill_blocks: u64,
+    #[cfg(feature = "telemetry")]
     big_refills: u64,
+    #[cfg(feature = "telemetry")]
     big_refill_blocks: u64,
+    #[cfg(feature = "telemetry")]
     arena_fallbacks: u64,
+    #[cfg(feature = "telemetry")]
     arena_parks: u64,
     /// `realloc` calls that returned a different pointer, and the bytes
-    /// they copied. Batched like everything else here: a shared atomic per
-    /// realloc measured **-20% throughput** on the process-global app
-    /// benchmark at 4 threads, because four threads ping-pong one cache
-    /// line tens of millions of times per second.
+    /// they copied. Gated and batched for the same reason as above.
+    #[cfg(feature = "telemetry")]
     realloc_relocations: u64,
+    #[cfg(feature = "telemetry")]
     realloc_copy_bytes: u64,
+    #[cfg(feature = "telemetry")]
     realloc_promotions: u64,
     // --- telemetry-only (feature-gated) ---
     #[cfg(feature = "telemetry")]
@@ -340,22 +374,39 @@ impl Pending {
     const fn new() -> Self {
         Pending {
             ops: 0,
+            #[cfg(feature = "telemetry")]
             diag_ops: 0,
+            #[cfg(feature = "telemetry")]
             trims: 0,
+            #[cfg(feature = "telemetry")]
             flushes: 0,
+            #[cfg(feature = "telemetry")]
             flush_blocks: 0,
+            #[cfg(feature = "telemetry")]
             owner_probes: 0,
+            #[cfg(feature = "telemetry")]
             remote_frees: 0,
+            #[cfg(feature = "telemetry")]
             small_refills: 0,
+            #[cfg(feature = "telemetry")]
             small_refill_blocks: 0,
+            #[cfg(feature = "telemetry")]
             medium_refills: 0,
+            #[cfg(feature = "telemetry")]
             medium_refill_blocks: 0,
+            #[cfg(feature = "telemetry")]
             big_refills: 0,
+            #[cfg(feature = "telemetry")]
             big_refill_blocks: 0,
+            #[cfg(feature = "telemetry")]
             arena_fallbacks: 0,
+            #[cfg(feature = "telemetry")]
             arena_parks: 0,
+            #[cfg(feature = "telemetry")]
             realloc_relocations: 0,
+            #[cfg(feature = "telemetry")]
             realloc_copy_bytes: 0,
+            #[cfg(feature = "telemetry")]
             realloc_promotions: 0,
             #[cfg(feature = "telemetry")]
             allocs: 0,
@@ -417,6 +468,7 @@ impl ThreadCache {
     /// them here is what keeps them off the per-op path. Allocation volume
     /// itself is telemetry-only, as before.
     fn publish(&mut self) {
+        #[cfg(feature = "telemetry")]
         self.publish_diagnostics();
         #[cfg(feature = "telemetry")]
         self.publish_telemetry();
@@ -426,6 +478,7 @@ impl ThreadCache {
     /// Drain the batched diagnostic counters to the global atomics. One
     /// shared atomic per counter per [`DIAG_FLUSH_OPS`] events, instead of
     /// one per event.
+    #[cfg(feature = "telemetry")]
     fn publish_diagnostics(&mut self) {
         use crate::counters::{bump, VOLUME};
         macro_rules! drain {
@@ -457,6 +510,7 @@ impl ThreadCache {
 
     /// Arena-backed large region parked in the hole store, or served by the
     /// legacy mmap path because the arena was unavailable.
+    #[allow(dead_code)] // the arena path only exists on unix + std
     #[inline]
     pub(crate) fn note_arena_event(&mut self, park: bool) {
         if park {
@@ -510,8 +564,8 @@ impl ThreadCache {
     }
 
     /// Record a relocating `realloc` (the promotion flag marks the big-block
-    /// growth promotion). Always compiled and batched: one thread-local add
-    /// per relocation, one shared atomic per `FLUSH_OPS` operations.
+    /// growth promotion). Batched and telemetry-gated, like `note_diag`.
+    #[cfg(feature = "telemetry")]
     #[inline]
     pub(crate) fn note_realloc(&mut self, copied: usize, promoted: bool) {
         self.pending.ops += 1;

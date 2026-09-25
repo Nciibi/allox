@@ -1,4 +1,9 @@
-//! Sensitivity coverage for the always-on diagnostic counters.
+//! Sensitivity coverage for the diagnostic counters.
+//!
+//! The batched volume counters (refills, flushes, trims, owner probes,
+//! realloc work) are telemetry-gated, so their tests are too; a default
+//! build has no such counters to move. The always-on ones (purges, exit
+//! flushes) are checked here and white-box in `lib.rs`.
 //!
 //! These assert that each counter *moves* for the operation it names, so a
 //! wiring regression (counter incremented on the wrong path, or not at all)
@@ -7,6 +12,7 @@
 use allox::malloc;
 use allox::__diagnostics::volume;
 use std::alloc::{GlobalAlloc, Layout};
+
 
 fn delta(before: u64, after: u64) -> u64 {
     after.saturating_sub(before)
@@ -19,6 +25,7 @@ fn publish_pending() {
     allox::flush_current_thread();
 }
 
+#[cfg(feature = "telemetry")]
 #[test]
 fn small_churn_moves_refill_and_flush_counters() {
     // A tiny budget guarantees the thread cache cannot absorb the churn, so
@@ -56,6 +63,7 @@ fn small_churn_moves_refill_and_flush_counters() {
     allox::set_thread_cache_budget(32 * 1024 * 1024);
 }
 
+#[cfg(feature = "telemetry")]
 #[test]
 fn realloc_growth_counts_promotion_and_copies() {
     unsafe {
@@ -104,6 +112,7 @@ fn realloc_growth_counts_promotion_and_copies() {
     }
 }
 
+#[cfg(feature = "telemetry")]
 #[test]
 fn calloc_on_recycled_memory_counts_zeroing() {
     // Warm the small cache so the next calloc gets recycled (non-virgin)

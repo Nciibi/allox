@@ -601,6 +601,7 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
         // costs a real mmap. Counted so the fallback rate is visible in
         // `__diagnostics::volume().arena_fallbacks` rather than inferred
         // from a missing arena commit.
+        #[cfg(feature = "telemetry")]
         note_arena_event(false);
     }
     let base = sys::map_any(mapped);
@@ -617,6 +618,7 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     {
         if crate::arena::contains(base, mapped) {
             crate::arena::release(base, (mapped / page::PAGE_SIZE) as usize);
+            #[cfg(feature = "telemetry")]
             note_arena_event(true);
             return;
         }
@@ -939,18 +941,10 @@ unsafe fn try_grow_large_frontier(p: *mut u8, size: usize) -> bool {
 /// legacy mmap path) in the calling thread's batched counters. Falls back to
 /// a direct counter only when there is no thread cache to batch into, which
 /// is the cold no_std case.
+#[cfg(all(feature = "telemetry", unix, feature = "std"))]
 #[inline]
 fn note_arena_event(park: bool) {
-    with_cache(
-        |cache| cache.note_arena_event(park),
-        || {
-            if park {
-                counters::bump(&counters::VOLUME.arena_parks, 1);
-            } else {
-                counters::bump(&counters::VOLUME.arena_fallbacks, 1);
-            }
-        },
-    );
+    with_cache(|cache| cache.note_arena_event(park), || ());
 }
 
 /// Record a relocating `realloc` in the calling thread's batched counters.
@@ -960,20 +954,10 @@ fn note_arena_event(park: bool) {
 /// throughput (233k -> 194k docs/s) because every thread ping-ponged the
 /// same cache line tens of millions of times per second. One thread-local
 /// add here, one global atomic per 8192 operations in `ThreadCache::publish`.
+#[cfg(feature = "telemetry")]
 #[inline]
 fn note_realloc(copied: usize, promoted: bool) {
-    with_cache(
-        |cache| cache.note_realloc(copied, promoted),
-        || {
-            // No TLS (no_std, or a thread that never allocated): fall back
-            // to the global counter directly. This path is cold.
-            counters::bump(&counters::VOLUME.realloc_relocations, 1);
-            counters::bump(&counters::VOLUME.realloc_copy_bytes, copied as u64);
-            if promoted {
-                counters::bump(&counters::VOLUME.realloc_promotions, 1);
-            }
-        },
-    );
+    with_cache(|cache| cache.note_realloc(copied, promoted), || ());
 }
 
 /// Upper bound on the reserve a promoted big block may claim, as a multiple
@@ -1035,6 +1019,7 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
     }
     let copy = old_usable.min(new_size);
     ptr::copy_nonoverlapping(p, np, copy);
+    #[cfg(feature = "telemetry")]
     note_realloc(copy, true);
     dealloc_impl(p);
     Some(np)
@@ -1544,7 +1529,9 @@ unsafe impl GlobalAlloc for Allox {
         let copy = layout.size().min(new_size);
         if copy > 0 {
             ptr::copy_nonoverlapping(p, new_p, copy);
-            note_realloc(copy, false);
+            #[cfg(feature = "telemetry")]
+            #[cfg(feature = "telemetry")]
+        note_realloc(copy, false);
         }
         self.dealloc(p, layout);
         new_p
@@ -1726,6 +1713,7 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
         let old_size = usable_size(p);
         let copy = old_size.min(size);
         ptr::copy_nonoverlapping(p, new_p, copy);
+        #[cfg(feature = "telemetry")]
         note_realloc(copy, false);
     }
     if !new_p.is_null() {
@@ -2103,7 +2091,7 @@ mod counter_wiring_tests {
         );
     }
 
-    #[cfg(all(unix, feature = "std"))]
+    #[cfg(all(unix, feature = "std", feature = "telemetry"))]
     #[test]
     fn arena_region_round_trip_counts_park_not_fallback() {
         let before = volume();
