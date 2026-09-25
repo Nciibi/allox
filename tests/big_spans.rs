@@ -124,7 +124,7 @@ fn big_realloc_grows_and_shrinks() {
         fill_pattern(p, size);
         for _ in 0..3 {
             let nsize = size * 2;
-            if nsize > 524288 {
+            if nsize > BIG_TOP {
                 break;
             }
             let np = realloc(p, nsize);
@@ -154,6 +154,15 @@ fn big_realloc_grows_and_shrinks() {
         let cross = realloc(cross, 524289);
         assert!(!cross.is_null());
         check_pattern(cross, 524288);
+        let cross = realloc(cross, BIG_TOP);
+        assert!(!cross.is_null());
+        check_pattern(cross, 524289);
+        for i in 524289..BIG_TOP {
+            *cross.add(i) = (i % 251) as u8;
+        }
+        let cross = realloc(cross, BIG_TOP_PLUS_ONE);
+        assert!(!cross.is_null());
+        check_pattern(cross, BIG_TOP);
         free(cross);
 
         // Same-size realloc is identity on arena targets (spans never
