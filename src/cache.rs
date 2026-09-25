@@ -588,6 +588,8 @@ impl ThreadCache {
             }
             #[cfg(feature = "telemetry")]
             self.note_alloc(class);
+            #[cfg(debug_assertions)]
+            self.validate_cache_chains();
             return p;
         }
         let (p, _) = self.refill(class);
