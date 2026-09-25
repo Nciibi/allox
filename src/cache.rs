@@ -218,6 +218,8 @@ pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
     tier_cached_bytes: usize,
+    budget: usize,
+    budget_epoch: u32,
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
     tid: u32,
@@ -295,6 +297,8 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             tier_cached_bytes: 0,
+            budget: DEFAULT_THREAD_CACHE_BUDGET,
+            budget_epoch: 0,
             tid: 0,
             foreign_bytes: 0,
             virgin: [0; NUM_CLASSES],
