@@ -109,8 +109,8 @@ dlmalloc omitted: 10×+ run-to-run variance on this box.
 
 The spawn-churn row is from the earlier full-matrix run. After bounded
 thread-exit retirement and direct cache adoption, a focused production A/B
-(2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 17.25 M/s for Allox
-versus 13.78 M/s for mimalloc, with peak RSS 19.1 MiB versus 19.4 MiB.
+(2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 18.38 M/s for Allox
+versus 13.78 M/s for mimalloc, with peak RSS 18.5 MiB versus 19.4 MiB.
 The hot small path now uses a static class-size table: fresh `tight-small 8T`
 measured 168.9 M/s for Allox versus 162.6 M/s for mimalloc. `zeroed-large 1T`
 reaches 188.7 K/s, and `huge-only 1T` 1.55 M/s in the latest capped probes.
