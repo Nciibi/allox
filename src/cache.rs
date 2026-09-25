@@ -1078,6 +1078,47 @@ impl ThreadCache {
         crate::heap::MEDIUM_HEAP.release_blocks(mclass, span, head, tail, len);
     }
 
+    unsafe fn trim_big(&mut self) {
+        #[cfg(all(unix, feature = "std"))]
+        {
+            while self.big_cached_bytes > big_cache_budget() {
+                let mut active_best = usize::MAX;
+                let mut active_bytes = 0usize;
+                for (bclass, size) in BIG_CLASSES.iter().enumerate() {
+                    let bytes = self.bactive[bclass].len as usize * size;
+                    if self.bactive[bclass].len > 0 && bytes > active_bytes {
+                        active_best = bclass;
+                        active_bytes = bytes;
+                    }
+                }
+                if active_best != usize::MAX {
+                    self.flush_active_big(active_best);
+                    continue;
+                }
+                let mut bin_best = usize::MAX;
+                let mut bin_bytes = 0usize;
+                for (bclass, size) in BIG_CLASSES.iter().enumerate() {
+                    let bytes = self.bigbins[bclass].len as usize * size;
+                    if self.bigbins[bclass].len > 0 && bytes > bin_bytes {
+                        bin_best = bclass;
+                        bin_bytes = bytes;
+                    }
+                }
+                if bin_best == usize::MAX {
+                    break;
+                }
+                let len = self.bigbins[bin_best].len;
+                self.flush_bbin(bin_best, len / 2);
+            }
+        }
+    }
+
+    unsafe fn shed(&mut self) {
+        self.trim();
+        self.trim_big();
+        self.foreign_bytes = 0;
+    }
+
     /// Bring total cached bytes under half the budget by repeatedly halving
     /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
