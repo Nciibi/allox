@@ -118,10 +118,6 @@ mod imp {
                 let _ = FlsSetValue(*s, core::ptr::null());
             }
         }
-        // Blocking is safe here too: SRWLock never touches the loader lock,
-        // and allocator critical sections never touch it either, so no wait
-        // cycle exists even though Fls callbacks run during thread teardown.
-        // Panic-free by construction (see above).
         super::record_flush();
         crate::tls_retire();
     }
