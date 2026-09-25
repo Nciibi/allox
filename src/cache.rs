@@ -1434,6 +1434,7 @@ impl ThreadCache {
                 }
                 popped += 1;
                 self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
+                self.big_cached_bytes = self.big_cached_bytes.saturating_sub(block_size);
 
                 let master = crate::arena::big_table_get(b);
                 debug_assert!(!master.is_null() && (*master).contains(b));
