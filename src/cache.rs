@@ -1701,7 +1701,7 @@ pub(crate) fn reclaim_one() -> bool {
             )
             .is_ok()
         {
-            let cache = unsafe { (*slot.cache.get()).assume_init_read() };
+            let mut cache = unsafe { (*slot.cache.get()).assume_init_read() };
             slot.state.store(RETIRED_EMPTY, Ordering::Release);
             RETIRED_READY_COUNT.fetch_sub(1, Ordering::AcqRel);
             unsafe { cache.flush_all() };
