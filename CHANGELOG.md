@@ -6,7 +6,8 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 
 - Small allocations (16 B–16 KiB, ~12.5% classes): lock-free per-thread
   caches with batched refill, sharded per-class heap, empty + cold
-  (discarded-physical) page retention, virgin-page zero-init fast path.
+  (discarded-physical) page retention, virgin-page zero-init fast path, and
+  a runtime static class-size table to avoid per-free const-table copies.
 - Medium allocations (up to 65472 B): multi-page spans with sharded
   span heap, exact-fit selection, cold-span retention.
 - Big allocations (65473–1 MiB, arena-backed on unix+std): multi-page
