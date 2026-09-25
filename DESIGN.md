@@ -130,9 +130,10 @@ mapped region (multiple of 64 KiB)
 user_ptr = align_up(base + HDR_SIZE, align)   // recomputed on free
 ```
 
-Region cache: per-thread stash (8 slots / 8 MiB) → 8 sharded hot caches
-(64 slots / 8 MiB each) → cold tier (512 slots / 64 MiB each, physical
-discarded, virtual retained) → arena hole park or `munmap`. Exact-fit first.
+Region cache: per-thread stash (8 slots / 32 MiB, with a 64 MiB cap for
+huge regions) → 8 sharded hot caches (64 slots / 32 MiB each) → cold tier
+(512 slots / 64 MiB each, physical discarded, virtual retained) → arena hole
+park or `munmap`. Exact-fit first.
 `dealloc` probes the large header offset first (fault-safety), then page-mask
 magic, then span containment; corrupt pointers abort. Debug builds also walk
 the page freelist to catch double frees.
