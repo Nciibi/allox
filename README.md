@@ -111,6 +111,9 @@ The spawn-churn row is from the earlier full-matrix run. After bounded
 thread-exit retirement and direct cache adoption, a focused production A/B
 (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 17.25 M/s for Allox
 versus 13.78 M/s for mimalloc, with peak RSS 19.1 MiB versus 19.4 MiB.
+The hot small path now uses a static class-size table: fresh `tight-small 8T`
+measured 168.9 M/s for Allox versus 162.6 M/s for mimalloc. `zeroed-large 1T`
+reaches 188.7 K/s, and `huge-only 1T` 1.55 M/s in the latest capped probes.
 
 Small + remote-free + big-span paths win or tie everywhere except
 mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and
