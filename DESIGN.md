@@ -346,16 +346,17 @@ fuzz/     alloc_seq  zero_init_seq
   blocks clears just that word; otherwise it memsets the full block.
   The flag is cleared whenever any block is returned to the page.
 - Large-region recycling: freed large regions (64 KiB-multiples, the
-  >262 KiB / over-aligned class of allocations) are parked in a three-tier
-  cache — per-thread stash (8 slots / 8 MiB), 8 sharded hot caches
-  (64 slots / 8 MiB each), and a cold tier (512 slots / 64 MiB each with
-  physical discarded via `madvise`, virtual retained) — and reused
-  exact-fit-first on the next large allocation. Without this, block-heavy
-  workloads pay one map + one unmap syscall per allocation (~10 us/op
-  ceiling). Reused regions are treated as dirty unless the cold tier's discard
-  succeeded; `alloc_zeroed` skips the memset only for those known-zero regions.
-  `malloc` does not care. On arena-backed unix, evicted regions park as
-  arena holes instead of `munmap`.
+   >262 KiB / over-aligned class of allocations) are parked in a three-tier
+   cache — per-thread stash (8 slots / 32 MiB, 64 MiB for huge regions),
+   8 sharded hot caches (64 slots / 32 MiB each), and a cold tier
+   (512 slots / 64 MiB each with physical discarded via `madvise`, virtual
+   retained) — and reused exact-fit-first on the next large allocation.
+   Without this, block-heavy workloads pay one map + one unmap syscall per
+   allocation (~10 us/op ceiling). Reused regions are treated as dirty unless
+   the cold tier's discard succeeded; `alloc_zeroed` discards an exclusively
+   owned recycled region when possible and skips the memset only after a
+   successful discard. `malloc` does not care. On arena-backed unix, evicted
+   regions park as arena holes instead of `munmap`.
 
 Rejected optimization, recorded deliberately: in-place realloc growth into
 the adjacent free block requires taking the class lock to inspect the page
