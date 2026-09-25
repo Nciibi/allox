@@ -524,6 +524,18 @@ impl ThreadCache {
     }
 
     #[inline]
+    fn refresh_budget(&mut self) {
+        #[cfg(feature = "std")]
+        {
+            let epoch = CACHE_BUDGET_EPOCH.load(Ordering::Acquire);
+            if self.budget_epoch != epoch {
+                self.budget = thread_cache_budget();
+                self.budget_epoch = epoch;
+            }
+        }
+    }
+
+    #[inline]
     fn small_cached_bytes(&self) -> usize {
         #[cfg(debug_assertions)]
         debug_assert_eq!(self.tier_cached_bytes, self.actual_tier_bytes());
