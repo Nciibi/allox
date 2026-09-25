@@ -156,7 +156,7 @@ fn big_realloc_grows_and_shrinks() {
         check_pattern(cross, 524288);
         let cross = realloc(cross, BIG_TOP);
         assert!(!cross.is_null());
-        check_pattern(cross, 524289);
+        check_pattern(cross, 524288);
         for i in 524289..BIG_TOP {
             *cross.add(i) = (i % 251) as u8;
         }
