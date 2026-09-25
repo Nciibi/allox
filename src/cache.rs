@@ -1124,7 +1124,7 @@ impl ThreadCache {
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         let target = thread_cache_budget() / 2;
-        while self.cached_bytes > target {
+        while self.non_big_cached_bytes() > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
             for (class, size) in CLASSES.iter().enumerate() {
