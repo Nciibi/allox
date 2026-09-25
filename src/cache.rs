@@ -590,7 +590,7 @@ impl ThreadCache {
         // `release_blocks`, which serialized prodcons and thrashed the arena.
         // The ownership load only runs when the gate is already open.
         let mut foreign = false;
-        if self.drift_gate_open() {
+        if self.drift_gate_open_small() {
             let page = PageHeader::of(p);
             let owner = (*page).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
