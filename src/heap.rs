@@ -339,7 +339,11 @@ impl GlobalHeap {
                 list.empty = (*page).next;
                 (*page).next = ptr::null_mut();
                 list.empty_count -= 1;
-                if (*page).flags & FLAG_VIRGIN == 0 {
+                if (*page).flags & FLAG_NEEDS_REINIT != 0 {
+                    (*page).init(class);
+                    (*page).flags &= !FLAG_VIRGIN;
+                    virgin = false;
+                } else if (*page).flags & FLAG_VIRGIN == 0 {
                     virgin = false;
                 }
                 link_partial(&mut list.head, page);
