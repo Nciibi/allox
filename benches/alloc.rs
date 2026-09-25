@@ -450,7 +450,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
                             }
                             ops += 1;
                             // keep resident memory bounded regardless of size mix
-                            if live_bytes > 96 * 1024 * 1024 {
+                            if (ops & 15) == 0 && live_bytes > 96 * 1024 * 1024 {
                                 for (p, s) in live.drain(..) {
                                     live_bytes -= s;
                                     unsafe { alloc.dealloc(p, layout_for(s)) };
@@ -516,7 +516,7 @@ fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
                                 unsafe { alloc.dealloc(p, layout_for(s)) };
                             }
                             ops += 1;
-                            if live_bytes > 96 * 1024 * 1024 {
+                            if (ops & 15) == 0 && live_bytes > 96 * 1024 * 1024 {
                                 for (p, s) in live.drain(..) {
                                     live_bytes -= s;
                                     unsafe { alloc.dealloc(p, layout_for(s)) };
