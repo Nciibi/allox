@@ -442,6 +442,63 @@ impl GlobalHeap {
         }
     }
 
+    pub(crate) unsafe fn release_bin_chunks(
+        &self,
+        class: usize,
+        chain: *mut u8,
+        len: u32,
+        chunks: &mut [PageReleaseChunk],
+    ) {
+        if len == 0 || chunks.is_empty() {
+            return;
+        }
+        debug_assert!(chunks.len() <= MAX_PAGE_RELEASE_GROUPS);
+        let mut fates = [PageFate::Keep; MAX_PAGE_RELEASE_GROUPS];
+        let mut partial = false;
+        {
+            let mut list = self.classes[class].lock();
+            for g in chunks.iter_mut() {
+                debug_assert_eq!((*g.page).class as usize, class);
+                g.head = ptr::null_mut();
+                g.tail = ptr::null_mut();
+                g.retire = g.n == (*g.page).used;
+                partial |= !g.retire;
+            }
+            if partial {
+                let mut cursor = chain;
+                for _ in 0..len {
+                    let next = *cursor.cast::<*mut u8>();
+                    let page = PageHeader::of(cursor);
+                    let mut slot = 0;
+                    while chunks[slot].page != page {
+                        slot += 1;
+                    }
+                    let g = &mut chunks[slot];
+                    if !g.retire {
+                        if g.head.is_null() {
+                            g.head = cursor;
+                        } else {
+                            *g.tail.cast::<*mut u8>() = cursor;
+                        }
+                        g.tail = cursor;
+                        *cursor.cast::<*mut u8>() = ptr::null_mut();
+                    }
+                    cursor = next;
+                }
+            }
+            for (i, g) in chunks.iter().enumerate() {
+                fates[i] = if g.retire {
+                    retire_page_inner(&mut list, g.page)
+                } else {
+                    release_inner(&mut list, g.page, g.head, g.tail, g.n)
+                };
+            }
+        }
+        for (g, fate) in chunks.iter().zip(fates.iter()) {
+            act_page_fate(g.page, *fate);
+        }
+    }
+
     /// Lock access to a class' partial list for external validation
     /// (debug double-free detection).
     #[cfg(debug_assertions)]
