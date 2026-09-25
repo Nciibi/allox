@@ -436,8 +436,28 @@ impl ThreadCache {
     #[inline]
     fn reclaim_retired(&mut self) {
         #[cfg(all(feature = "std", any(unix, windows)))]
-        if !self.retired_reclaimed && reclaim_one() {
-            self.retired_reclaimed = true;
+        {
+            if self.retired_reclaimed {
+                return;
+            }
+            if self.cached_bytes == 0 && self.large_len == 0 {
+                if let Some(adopted) = take_one() {
+                    let current_armed = self.exit_armed;
+                    let old = core::mem::replace(self, adopted);
+                    #[cfg(feature = "telemetry")]
+                    let mut old = old;
+                    #[cfg(feature = "telemetry")]
+                    old.publish();
+                    #[cfg(not(feature = "telemetry"))]
+                    let _ = old;
+                    self.exit_armed = current_armed;
+                    self.retired_reclaimed = true;
+                    return;
+                }
+            }
+            if reclaim_one() {
+                self.retired_reclaimed = true;
+            }
         }
     }
 
@@ -589,6 +609,20 @@ impl ThreadCache {
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.reclaim_retired();
+        {
+            let bin = &mut self.bins[class];
+            if !bin.head.is_null() {
+                let p = pop_block(&mut bin.head).unwrap();
+                let below = bin.len - 1;
+                bin.len = below;
+                self.cached_bytes -= CLASSES[class];
+                let zeroed = below < self.virgin[class];
+                if zeroed {
+                    self.virgin[class] -= 1;
+                }
+                return (p, zeroed);
+            }
+        }
         // Under aggregate pressure, shed some cache before asking for more.
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
@@ -761,6 +795,26 @@ impl ThreadCache {
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.reclaim_retired();
+        {
+            let (p, zeroed) = self.active_medium_alloc(mclass);
+            if !p.is_null() {
+                return (p, zeroed);
+            }
+            let bin = &mut self.mbins[mclass];
+            if let Some(p) = pop_block(&mut bin.head) {
+                let below = bin.len - 1;
+                bin.len = below;
+                self.cached_bytes -= MEDIUM_CLASSES[mclass];
+                self.tier_cached_bytes = self
+                    .tier_cached_bytes
+                    .saturating_sub(MEDIUM_CLASSES[mclass]);
+                let zeroed = below < self.mvirgin[mclass];
+                if zeroed {
+                    self.mvirgin[mclass] -= 1;
+                }
+                return (p, zeroed);
+            }
+        }
         if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
