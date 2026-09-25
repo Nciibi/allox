@@ -75,8 +75,9 @@ Ground facts (verify against code before implementing; drift kills):
 
 ## 3. Requirements
 
-1. Serve `(65472, 524288]` (phase 2; 512K–1M stays large-path — §7) with
-   per-thread bins + sharded heap + cold retention, mirroring medium.
+1. Serve `(65472, 1 MiB]` (phase 3; sizes above 1 MiB stay on the large
+   path) with per-thread bins + sharded heap + cold retention, mirroring
+   medium.
 2. `free(p)` with NO layout (C ABI) must locate the owning span from the
    bare pointer without faulting and without false positives.
 3. Fresh commits are virgin-zero; carving dirties only freelist-link words
