@@ -1,18 +1,20 @@
 # Remaining plan — from big-spans-validated to 0.2
 
 State at fork-off: **big spans DONE 2026-09-23; 512 KiB big-cap phase
-DONE 2026-09-24; 1 MiB big-cap extension DONE 2026-09-25**. The tier-aware
-cache allowance and bounded benchmark matrix are validated: `large-only 1T`
-2.88× mimalloc, `large-only 8T` 1.32×, and `mixed-all 1T` 2.90× on the
-2 s × 3 safe fresh-process run. The 1T tail above 1 MiB is still on the
-large path.
+DONE 2026-09-24; 1 MiB big-cap extension DONE 2026-09-25; growable-extent
+promotion DONE 2026-09-25** (§4c). The tier-aware cache allowance and
+bounded benchmark matrix are validated: `large-only 1T` 2.88× mimalloc,
+`large-only 8T` 1.32×, and `mixed-all 1T` 2.90× on the 2 s × 3 safe
+fresh-process run. The 1T tail above 1 MiB is still on the large path.
 **Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
-mimalloc). Full 14-workload matrix: ~9–10/14 win-or-tie vs the best
-comparator on Linux x86-64 (json/request beat mimalloc; ecs beats every
-comparator except system's mremap growth — allox ~7.9M vs system ~113M
-isolated, same 0.06× story as the mremap note in §4). Full suite +
-telemetry + no_std + release green and warning-free. Contra remaining
-gaps below, each
+mimalloc). **Full 20-workload matrix 2026-09-25: 20/20 win-or-tie vs the
+best comparator** on Linux x86-64 (fresh process per sample, 2 s × 3,
+`BENCH_SAFE_LIVE=1`, 3 GiB cgroup, `taskset -c 0-7`; README table
+refreshed from that run). The last structural loss is gone: `ecs 8T` used
+to be 0.06× the system allocator because glibc grows with zero-copy
+`mremap` while allox copied every step of a doubling chain — the promotion
+in §4c makes it 1.20–1.23×. Full suite + telemetry + no_std + release
+green and warning-free. Contra remaining gaps below, each
 capable of closing independently, ordered by ROI. Methodology everywhere:
 ≥2 s × 3 reps, `__debug_map_split` + `peakRSS` probe columns,
 sensitivity-checked tests (disable-the-feature must fail), one point
@@ -171,23 +173,25 @@ Options in order:
    Do NOT pursue: bigger global slots (8192+ — unbounded tuning, scan
    cost grows, §4 bullet 3), looser byte caps (E4 proved it worsens
    abandonment 59k → 74k by removing the throttle).
-* **mremap-based large growth (TRIALED 2026-09-23, REVERTED — no
-  effect).** ecs 8T: allox 6.4M vs system 111M (0.06x) while beating
-  every other allocator 3–25x; probes show healthy caching, so the gap
-  is O(n) copy cost on realloc doubling vs glibc's zero-copy growth.
-  Built it: `mremap(M…).MAYMOVE` wrapper (Linux/Android, stubs
-  elsewhere) + shared try-grow for legacy regions with alloc-copy-free
-  fallback, both realloc entry points, 5 new tests (all passed).
-  Measured ecs 8T: 6.50M vs 6.38M baseline (+2%, noise) — because ecs
-  traffic is arena-backed (probe ~47/48 hole reuses), so legacy-only
-  mremap never fires. Reverted entirely (helper, call sites, wrapper,
-  stubs, white-box tests); kept the two fallback-growth integration
-   tests as regression coverage. Frontier-adjacent arena growth is now
-   implemented as a narrow slice: a live region ending exactly at the bump
-   frontier can atomically claim and commit adjacent pages, and both realloc
-   entry points use it with legacy/non-frontier copy fallback. The dedicated
-   `frontier_growth` regression passes; this is not yet a general growable
-   extent design.
+ * **mremap-based large growth (TRIALED 2026-09-23, REVERTED — no
+   effect).** ecs 8T: allox 6.4M vs system 111M (0.06x) while beating
+   every other allocator 3–25x; probes show healthy caching, so the gap
+   is O(n) copy cost on realloc doubling vs glibc's zero-copy growth.
+   Built it: `mremap(M…).MAYMOVE` wrapper (Linux/Android, stubs
+   elsewhere) + shared try-grow for legacy regions with alloc-copy-free
+   fallback, both realloc entry points, 5 new tests (all passed).
+   Measured ecs 8T: 6.50M vs 6.38M baseline (+2%, noise) — because ecs
+   traffic is arena-backed (probe ~47/48 hole reuses), so legacy-only
+   mremap never fires. Reverted entirely (helper, call sites, wrapper,
+   stubs, white-box tests); kept the two fallback-growth integration
+    tests as regression coverage. Frontier-adjacent arena growth is now
+    implemented as a narrow slice: a live region ending exactly at the bump
+    frontier can atomically claim and commit adjacent pages, and both realloc
+    entry points use it with legacy/non-frontier copy fallback. The dedicated
+    `frontier_growth` regression passes; this is not yet a general growable
+    extent design. **The ecs gap itself was closed the next day by §4c
+    (big-block promotion), which removes the copy from the arena path
+    that `mremap` could never have reached — so no `mremap` is needed.**
    TRIALED 2026-09-23, REVERTED (no effect): 16 size-shards × 1024
    slots + global CAS-claimed byte cap (exact-size home shard, first-fit
    fallback across shards, never nested locks). Result on large-only 8T
@@ -265,6 +269,53 @@ hi359MiB); **mixed-all 8T 13.57M = 0.72× mimalloc / 1.02× system**
 (flat vs prior 0.74×; abnd 0/s, unmaps 0). Docs updated: CHANGELOG,
 ROADMAP order item 4, DESIGN ownership rule, README table.
 
+## 4c. Growable extents for packed big blocks (DONE 2026-09-25)
+
+The last structural loss: `ecs 8T` at 0.06× the system allocator, whose
+glibc grows a doubling chain with zero-copy `mremap`. §4's `mremap` trial
+was flat because ecs traffic is arena-backed, so the copy had to be
+removed from the arena path itself.
+
+Shipped: `try_promote_big_grow` in `src/lib.rs` (arena targets). A big
+block is carved contiguously out of a shared span, so it can never grow in
+place — the neighbours are live data. The *first* cross-class growth now
+relocates once into a large region whose reserve is
+`BIG_GROW_SLACK_FACTOR (8) x new_size`, capped at `MAX_BIG_BLOCK`, and
+virtual-only (untouched anonymous pages, so RSS tracks live demand). Every
+later growth in the chain fits that mapping and is served in place by the
+existing `try_grow_large_frontier`: no copy, no syscall, no span traffic
+per step. Both `GlobalAlloc::realloc` and the free function route through
+it; a live large region is excluded by an `arena::large_table_get` check
+so a stale big-table entry can never misroute an already-promoted block,
+and every failure path falls back to the ordinary alloc-copy-free route.
+`tests/big_growth_promote.rs` pins content preservation at every step,
+sticky in-place growth, both entry points, and a shrink round-trip.
+
+Measured (fresh process per sample, 2 s × 3, `BENCH_SAFE_LIVE=1`,
+`taskset -c 0-7`, allox-only A/B vs `v0.0.1255` on the same box and
+session): **`ecs 8T` 9.59 → 92.09 M/s (9.6×)**, peak RSS 19.7 → 12.2 MiB.
+Comparators in the same regime: system 74.69 M/s (1.23×), mimalloc
+1.85 M/s, talc 1.52 M/s, dlmalloc 783 K/s, snmalloc 370 K/s; a 2 s × 5
+confirmation gave 91.45 vs 76.27 M/s (1.20×). Probe: 0 unmaps, 0–1 arena
+commit, 18 MiB arena high-water.
+
+Full 20-workload A/B against the same pre-promotion build, everything
+else flat inside run-to-run spread: `tight-small 8T` 227 → 235 M/s,
+`mixed-small 8T` 183 → 182, `mixed-all 8T` 46.0 → 44.9, `mixed-all 1T`
+17.8 → 18.1, `medium-only 8T` 47.7 → 48.5, `large-only 1T` 7.47 → 7.72,
+`large-only 8T` 31.7 → 31.9, `huge-only 1T` 1.88 → 1.96, `prodcons 8T`
+40.5 → 38.4 (bimodal in both builds), `spawn-churn` bimodal in both,
+`json-ish 8T` 239.6 → 246.3, `request 8T` 381.7 → 396.3. Full suite green:
+debug, release, telemetry, no_std (73 + 74 + 74 tests).
+
+Known limits (documented, not fixed): a growth past the big cap, or past
+a reserve that is not frontier-adjacent, still falls back to
+alloc-copy-free, so a non-doubling growth pattern can still relocate
+after having settled in place; the reserve is up to 8× the requested
+bytes (bounded by the arena's own caps and by the big cap), which is
+virtual-only but does consume arena reservation. No `mremap` wrapper is
+involved — none is needed.
+
 ## 5. spawn-churn per-op + exit latency (1.33x mimalloc — ADOPTION LANDED)
 
 The isolated baseline was 2.61M Allox vs 13.74M mimalloc ops/s (0.19x;
@@ -289,8 +340,9 @@ storm, and a flush-dominated exit path.
   lock serialization for the common all-freed thread pattern.
 - A runtime static class-size table removes the hot small-free table copy;
   `zeroed-large` now discards recycled regions before reuse, and deeper bounded
-  large caches/range-based side-table writes improve `huge-only`. ECS remains a
-  separate growable-extent problem because packed big-span realloc still copies.
+  large caches/range-based side-table writes improve `huge-only`. ECS was a
+  separate growable-extent problem because packed big-span realloc still
+  copied; that is now §4c (closed 2026-09-25, 9.6× on `ecs 8T`).
 
 Correctness coverage includes the full debug integration suite and
 `tests/thread_exit.rs`; the deferred queue is bounded and falls back to the

@@ -46,9 +46,9 @@ fn growth_chain_preserves_content_and_settles_in_place() {
             // Whatever happened (relocate or grow), the old prefix survives.
             check(np, size);
             if np == p {
-                // Once a growth fits in place, every later growth must too:
-                // the reserve only ever grows, so it can never start moving
-                // again.
+                // Once a growth fits in place, every later growth inside the
+                // big range must too: the reserve only ever grows, and it is
+                // capped at the big cap this chain stops at.
                 settled = true;
             } else {
                 assert!(!settled, "relocated after settling in place at {}", nsize);
@@ -83,8 +83,9 @@ fn global_realloc_growth_chain() {
             assert!(!np.is_null(), "grow {} -> {}", size, nsize);
             assert_eq!(np as usize % 16, 0, "alignment preserved");
             check(np, size);
-            if np == p {
-                settled = true;
+        if np == p {
+            // Sticky within the big range, same reasoning as above.
+            settled = true;
             } else {
                 assert!(!settled, "relocated after settling in place at {}", nsize);
             }

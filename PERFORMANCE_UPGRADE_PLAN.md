@@ -365,6 +365,32 @@ Reserve virtual capacity ahead of the requested size. On growth:
 
 Use `mremap` only for standalone mappings, preserving alignment and updating the header. Linux documents `mremap` as a way to implement efficient `realloc`, but the previous Allox trial was flat because it only applied to the legacy path while ECS traffic stayed arena-backed.
 
+### 2.5.1 Status — arena-backed growth shipped (2026-09-25)
+
+Two in-place growth paths now exist, both arena-only, both with
+alloc-copy-free fallback:
+
+* **Frontier-adjacent growth.** A live region that ends exactly at the
+  arena bump frontier atomically claims and commits the adjacent pages.
+  Both realloc entry points use it; everything else copies.
+* **Big-block promotion** (`try_promote_big_grow`). Big blocks are carved
+  contiguously from a shared span, so they can never grow in place. The
+  first cross-class growth relocates the block once into a large region
+  whose reserve is `8 x new_size`, capped at the big cap and virtual-only.
+  Every later growth in the chain fits that mapping and is served in place
+  by the frontier path. This is the "promote once, then grow" shape the
+  design asked for, minus a general growable-extent type: the reserve
+  replaces stored `reserved_capacity`/`committed_pages` fields, and the
+  same side-table header carries `requested_size` vs `mapped_size`.
+
+Measured (fresh 2 s × 3 processes, allox-only A/B against the
+pre-promotion build): `ecs 8T` **9.59 → 92.09 M/s (9.6×)**, peak RSS
+19.7 → 12.2 MiB; 1.20× the system allocator in a 2 s × 5 confirmation
+(91.45 vs 76.27 M/s) and 1.23× in the full matrix. Every other workload
+is flat inside run-to-run spread. Not yet generalized: a growth past the
+big cap, or past a reserve that was not frontier-adjacent, still falls
+back to alloc-copy-free, and `mremap` remains unused.
+
 Add separate benchmarks for:
 
 - Geometric growth.
@@ -508,9 +534,10 @@ per-cache budget snapshots are implemented. `spawn-churn` improved from
 2.61M to 18.38M ops/s in the capped production matrix, exceeding mimalloc;
 `tight-small` now reaches 168.9M fresh ops/s versus 162.6M for mimalloc.
 `zeroed-large` discards recycled regions and `huge-only` benefits from deeper
-bounded caches and range-based side-table writes. ECS remains structurally
-slower because big-span realloc growth still copies across packed spans; that
-requires a separate growable-extent design.
+bounded caches and range-based side-table writes. The ECS gap that
+remained after this phase — big-span `realloc` growth copying across packed
+spans — was closed the same day by the growable-extent promotion in §2.5.1:
+`ecs 8T` is now 1.2× the system allocator instead of 0.06×.
 
 ---
 

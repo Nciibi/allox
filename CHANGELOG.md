@@ -23,6 +23,15 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   memory arena backing (unix) with hole reuse and graceful legacy fallback.
   Large `calloc` discards exclusively-owned recycled regions when possible;
   arena-frontier large realloc can grow in place without copying.
+- Growable extents for packed big blocks: the first cross-class growth
+  promotes once into a slack reserve (8x the new size, capped at the big
+  cap, virtual-only so RSS still tracks live demand) and every later
+  growth in the chain then runs in place — no copy, no syscall, no span
+  traffic per step. `ecs 8T` 9.6x faster in a fresh 2 s x 3 A/B
+  (9.59 -> 92.09 M/s) with peak RSS 19.7 -> 12.2 MiB, turning the last
+  known loss (0.06x the system allocator's zero-copy `mremap` growth) into
+  a 1.2x win. Arena targets only; everywhere else the existing
+  alloc-copy-free path is unchanged.
 - Thread-exit retirement (pthread key / FlsAlloc) uses a bounded fixed-slot
   queue; an empty worker can adopt a queued cache directly, otherwise later
   allocator slow paths reclaim it, with synchronous flush fallback for

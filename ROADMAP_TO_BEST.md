@@ -20,9 +20,14 @@ Constraints (assumed, plain language):
   after big spans (was 0.05x); unmaps 0 in probe. The 1 MiB big-cap
   extension keeps this guard in-band and improves the 1T tail; >1 MiB
   remains large-path by design.
-* `ecs 8T` still loses to system (≈0.07×) because glibc grows via
-  `mremap` (zero-copy); allox realloc copies — mremap trial was flat for
-  allox (arena-backed traffic never hit the legacy path) and reverted.
+* `ecs 8T` **was** the last loss (≈0.06× system) because glibc grows via
+  `mremap` (zero-copy) while allox realloc copied every step of a doubling
+  chain. **CLOSED 2026-09-25**: the first cross-class growth now promotes
+  the block once into a slack reserve and the rest of the chain grows in
+  place — 9.59 → 92.09 M/s (9.6×) in a fresh 2 s × 3 A/B, peak RSS
+  19.7 → 12.2 MiB, and 1.20× system in a 2 s × 5 confirmation. The
+  earlier legacy-only `mremap` trial was flat because arena-backed traffic
+  never hit that path; it was reverted and is still unnecessary.
 * Historical bullets that motivated the original plan (all fixed by
   P0–P1): single global LARGE_CACHE spinlock + O(N) best-fit; per-page
   mmap+trim tax; 4214-page dead-thread leak; 0.04× mixed-all.
@@ -154,9 +159,13 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    boundary, telemetry, release, telemetry-enabled, and no_std checks pass.
    A separate 2x medium/big cache allowance and `BENCH_SAFE_LIVE=1` matrix
    measured `large-only 1T` at 2.88× mimalloc, `large-only 8T` at 1.32×,
-   and `mixed-all 1T` at 2.90× in fresh 2 s × 3 runs. NEXT: P2
-   futex/parking mutex (unix spin convoy hypothesis) + refill tuning, or
-   mixed-all per-op (REMAINING_PLAN §6).
+   and `mixed-all 1T` at 2.90× in fresh 2 s × 3 runs.
+   P1h growable extents → **DONE 2026-09-25** (see results below): first
+   cross-class big growth promotes once into a slack reserve, the rest of
+   the chain grows in place; `ecs 8T` 9.6× and the last structural loss
+   (0.06× system) becomes 1.2×. NEXT: P2 futex/parking mutex (unix spin
+   convoy hypothesis) + refill tuning, or mixed-all per-op
+   (REMAINING_PLAN §6).
 
 ## P2 results — parking mutex on hosted unix (pthread, lazy init)
 
@@ -173,12 +182,16 @@ locks uncontended, where pthread ≈ spin (one CAS either way). Kept anyway:
 strictly more robust under preemption/oversubscription (spin convoys are
 real, just not the binding constraint here), zero regressions, full suite
 green (12 binaries), all feature combos warning-free. The remaining MT gaps
-(spawn-churn 0.22x isolated; large-only 1T tail >1 MiB) are per-op/syscall
+(then: spawn-churn 0.22x isolated, large-only 1T tail >1 MiB; now closed —
+1.22x and 2.87x mimalloc in the refreshed matrix) are per-op/syscall
 volume and class-cap edges, not lock parking — the 1 MiB big-cap phase
-addresses the first 1T tail slice.
+addressed the 1T tail slice, P1f the spawn-churn one.
 4. P1 exit-flush + drift cap → DONE (exit-flush with P1e; drift cap
-   2026-09-23, batched shed — prodcons 8T 1.20× mimalloc).
-5. P2 lock + tuning sweep → full matrix on Linux/Windows/macOS.
+   2026-09-23, batched shed — prodcons 8T 1.20× mimalloc). P1f deferred
+   retirement + direct adoption, P1g hot-path table/large cache, P1h
+   growable extents: all DONE 2026-09-25.
+5. P2 lock + tuning sweep → Linux matrix done (20/20 win-or-tie);
+   Windows/macOS rows pending CI artifacts.
 6. Harden + docs + publish 0.2.
 
 ## P1a results (BENCH_SECS=1 BENCH_REPS=1, Linux Ryzen 5 1600)
@@ -309,7 +322,38 @@ constant.
   reuse, avoiding full memsets; adaptive large stash/shard caps and range-based
   side-table writes improve the 5–8 MiB path.
 * `zeroed-large 1T` reaches 188.7 K/s and `huge-only 1T` 1.55 M/s in capped
-  probes. ECS remains the known structural big-span realloc/copy gap.
+  probes. ECS was still the known structural big-span realloc/copy gap —
+  closed by P1h below.
+
+## P1h results — growable extents for packed big blocks (2026-09-25)
+
+What shipped: `try_promote_big_grow` in `src/lib.rs` (arena targets). Big
+blocks are carved contiguously out of a shared span, so a cross-class
+`realloc` growth cannot extend in place — the neighbours are live data —
+and the generic path allocated + copied at every step. The first
+cross-class growth now relocates **once** into a large region that reserves
+slack (8x the new size, capped at the big cap, virtual-only: untouched
+anonymous pages, so RSS still tracks live demand). Every later growth in
+the chain fits the existing mapping and is served in place by the existing
+`try_grow_large_frontier`, with no copy, no syscall and no span traffic.
+Both `GlobalAlloc::realloc` and the free function use it; an already-large
+block is excluded by a side-table check so a stale big entry can never
+misroute it, and every failure falls back to the ordinary alloc-copy-free
+path. `tests/big_growth_promote.rs` pins the contract (content preserved
+at every step, in-place growth is sticky, both entry points, shrink
+round-trip).
+
+* `ecs 8T` (fresh 2 s × 3 processes, allox-only A/B vs `v0.0.1255`):
+  **9.59 → 92.09 M/s (9.6×)**, peak RSS 19.7 → 12.2 MiB. Against the
+  comparators: 1.23× system, 50× mimalloc (2 s × 5 confirmation:
+  91.45 vs 76.27 M/s = 1.20×).
+* Full 20-workload A/B against the pre-promotion build: every other
+  workload flat inside run-to-run spread (`mixed-all 8T` 46.0 → 44.9,
+  `large-only 8T` 31.7 → 31.9, `prodcons 8T` 40.5 → 38.4 both bimodal,
+  `json-ish 8T` 239.6 → 246.3, `spawn-churn` bimodal in both builds).
+* Full matrix is now **20/20 win-or-tie vs the best comparator** (README
+  table refreshed from that run). Full suite green: debug, release,
+  telemetry, no_std.
 
 ## Phase 0 results — `map_any` + fault-safe dispatch (1 s/1 rep probes)
 

@@ -198,9 +198,11 @@ the thread's cached bytes exceed the tier-adjusted target (32 MiB base plus a
 runtime-overridable), halving the largest bin first.
 Trim passes are chunked (2048 blocks) to bound stack use for huge bins.
 
-realloc: same-class small resize is identity; otherwise alloc-copy-free.
-alloc_zeroed: alloc + explicit zero (OS-zero guarantee only holds for fresh
-pages; recycled cache memory must be zeroed in software).
+realloc: same-class small/medium/big resize is identity (spans never move);
+otherwise alloc-copy-free, with two in-place growth paths first (see
+"Growable extents" below). alloc_zeroed: alloc + explicit zero (OS-zero
+guarantee only holds for fresh pages; recycled cache memory must be zeroed
+in software).
 
 Thread-local state is const-initialized `UnsafeCell<ThreadCache>` — no lazy
 init, no destructor, no borrow-flag cost on the fast path. Aliasing is sound
@@ -363,3 +365,32 @@ Rejected optimization, recorded deliberately: in-place realloc growth into
 the adjacent free block requires taking the class lock to inspect the page
 free list (it is lock-protected), so every grow pays a lock acquisition to
 sometimes avoid a copy - expected net loss; alloc-copy-free stays.
+
+### Growable extents (big/large `realloc`, arena targets)
+
+Big blocks are carved contiguously out of a shared span, so a block's
+neighbours are live data and it can never grow in place; large regions are
+individually mapped, so theirs can. Two paths exploit that, both with
+alloc-copy-free fallback:
+
+- **Frontier growth.** A live region whose mapping ends exactly at the
+  arena bump frontier can atomically claim and commit the adjacent pages
+  (the frontier is a CAS'd offset, so the claim is exclusive) and extend
+  its own header. Narrow by construction: any neighbour inside the region
+  disqualifies it.
+- **Big-block promotion.** The first cross-class growth of a packed big
+  block relocates it once into a large region whose reserve is
+  `BIG_GROW_SLACK_FACTOR` (8) x the new size, capped at `MAX_BIG_BLOCK`.
+  The reserve is virtual-only — untouched anonymous pages fault on first
+  write — so retained virtual is bounded by the big cap and the arena's own
+  caps while RSS still tracks live demand. Every later growth of the chain
+  fits that mapping and is served by the frontier path's capacity check:
+  no copy, no syscall, no span traffic per step. A live large region is
+  rejected up front (side-table lookup) so a stale big-span entry can never
+  misroute an already-promoted block.
+
+Measured on `ecs 8T` (64 KiB realloc-doubled to 1 MiB, four buffers per
+thread, plus small churn): 9.59 -> 92.09 M/s, peak RSS 19.7 -> 12.2 MiB,
+and 1.2x the system allocator, whose glibc grows the same chain with
+zero-copy `mremap`. Not generalized: growth past the big cap, or past a
+reserve that is not frontier-adjacent, still copies.

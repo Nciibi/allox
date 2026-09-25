@@ -88,45 +88,52 @@ structural: every allox fast path is lock-free per thread (sharded class
 locks are touched only by batched slow paths), while single-heap
 allocators serialize on one mutex. Reproduce with `cargo bench`.
 
-Linux x86-64 (Ryzen 5 1600), median of 3 interleaved 2 s runs,
-`cargo bench` (ops/s, higher is better). Same harness and workloads as
-above, plus medium/large/producer-consumer/spawn-churn coverage and
-mimalloc + snmalloc comparators (dev-only; the library stays zero-C).
-dlmalloc omitted: 10×+ run-to-run variance on this box.
+Linux x86-64 (Ryzen 5 1600), **one fresh process per allocator/workload/
+repetition**, median of 3 × 2 s runs, `taskset -c 0-7`, `BENCH_FRESH=1
+BENCH_SAFE_LIVE=1` in a 3 GiB cgroup (ops/s, higher is better). Every
+comparator runs the identical workload through its `GlobalAlloc` impl
+(mimalloc/snmalloc/talc/jemalloc are dev-only; the library stays zero-C).
+`vs best` is against the strongest comparator in that row.
 
-| Workload | allox | talc | system | mimalloc | vs talc | vs mim | vs sys |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 35.1 M/s | 15.3 M/s | 23.5 M/s | 27.3 M/s | **2.29×** | **1.29×** | **1.49×** |
-| mixed-small 1T (16–4096 B) | 15.0 M/s | 5.2 M/s | 5.3 M/s | 7.6 M/s | **2.90×** | **1.96×** | **2.81×** |
-| tight-small 8T (64 B) | 217.6 M/s | 2.1 M/s | 224.9 M/s | 219.6 M/s | **102×** | 0.99× | 0.97× |
-| mixed-small 8T (16–4096 B) | 146.2 M/s | 1.8 M/s | 31.8 M/s | 36.8 M/s | **83.3×** | **3.97×** | **4.60×** |
-| mixed-all 1T (16–65536 B) | 1.81 M/s | 0.46 M/s | 3.08 M/s | 4.06 M/s | **3.97×** | 0.44× | 0.59× |
-| mixed-all 8T (16–65536 B) | 13.6 M/s | 0.97 M/s | 13.3 M/s | 18.7 M/s | **14.0×** | 0.72× | **1.02×** |
-| large-only 1T (32K–1M) | 265 K/s | 200 K/s | 245 K/s | 655 K/s | **1.32×** | 0.40× | **1.08×** |
-| large-only 8T (32K–256K) | 9.06 M/s | 405 K/s | 705 K/s | 13.5 M/s | **22.4×** | 0.67× | **12.9×** |
-| prodcons 8T (remote free) | 32.7 M/s | 1.1 M/s | 8.6 M/s | 27.3 M/s | **30.3×** | **1.20×** | **3.80×** |
-| spawn-churn | 11.1 M/s | 2.4 M/s | 10.8 M/s | 12.4 M/s | **4.65×** | 0.90× | **1.03×** |
+| Workload | allox | system | mimalloc | snmalloc | dlmalloc | talc | vs best | allox peak RSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| tight-small 1T (64 B) | 50.25 M/s | 44.84 M/s | 49.45 M/s | 42.53 M/s | 18.60 M/s | 27.73 M/s | **1.02×** | 5.0 MiB |
+| mixed-small 1T (16–4096 B) | 36.23 M/s | 7.02 M/s | 13.99 M/s | 12.47 M/s | 6.03 M/s | 10.22 M/s | **2.59×** | 15.7 MiB |
+| tight-small 8T (64 B) | 225.9 M/s | 237.4 M/s | 220.7 M/s | 226.8 M/s | 1.60 M/s | 2.11 M/s | 0.95× | 7.5 MiB |
+| mixed-small 8T (16–4096 B) | 185.8 M/s | 36.6 M/s | 41.4 M/s | 55.8 M/s | 728 K/s | 1.82 M/s | **3.33×** | 92.6 MiB |
+| mixed-all 1T (16–65536 B) | 16.86 M/s | 2.70 M/s | 4.97 M/s | 504 K/s | 433 K/s | 501 K/s | **3.39×** | 21.1 MiB |
+| mixed-all 8T (16–65536 B) | 40.78 M/s | 11.03 M/s | 21.27 M/s | 1.28 M/s | 434 K/s | 1.19 M/s | **1.92×** | 117.7 MiB |
+| medium-only 1T (16–64 K) | 18.56 M/s | 2.31 M/s | 5.25 M/s | 256 K/s | 372 K/s | 402 K/s | **3.53×** | 16.7 MiB |
+| medium-only 8T (16–64 K) | 41.98 M/s | 10.22 M/s | 22.50 M/s | 607 K/s | 445 K/s | 1.01 M/s | **1.87×** | 90.8 MiB |
+| large-only 1T (32K–1M) | 7.17 M/s | 327 K/s | 2.50 M/s | 14.9 K/s | 509 K/s | 265 K/s | **2.87×** | 7.0 MiB |
+| big-tail 1T (64K–256K) | 17.76 M/s | 343 K/s | 6.68 M/s | 22.5 K/s | 409 K/s | 302 K/s | **2.66×** | 6.2 MiB |
+| big-upper-tail 1T (256K–1M) | 11.23 M/s | 311 K/s | 1.79 M/s | 11.1 K/s | 579 K/s | 213 K/s | **6.29×** | 5.6 MiB |
+| large-only 8T (32K–256K) | 32.02 M/s | 1.11 M/s | 24.45 M/s | 137 K/s | 434 K/s | 1.01 M/s | **1.31×** | 34.1 MiB |
+| huge-only 1T (5–8 MiB) | 1.97 M/s | 171 K/s | 1.39 M/s | 1.3 K/s | 495 K/s | 129 K/s | **1.42×** | 5.0 MiB |
+| zeroed-large 1T | 209 K/s | 0.6 K/s | 2.4 K/s | 1.0 K/s | 0.9 K/s | 0.4 K/s | **87.3×** | 5.0 MiB |
+| prodcons 8T (remote free) | 41.10 M/s | 6.44 M/s | 27.11 M/s | 32.93 M/s | 895 K/s | 1.04 M/s | **1.25×** | 238.8 MiB |
+| spawn-churn | 18.96 M/s | 2.22 M/s | 15.50 M/s | 6.60 M/s | 864 K/s | 1.46 M/s | **1.22×** | 18.2 MiB |
+| spawn-empty (calibration) | 35.5 K/s | 35.5 K/s | 34.2 K/s | 34.4 K/s | 35.1 K/s | 34.4 K/s | 1.00× | 4.7 MiB |
+| json-ish 8T | 242.2 M/s | 245.9 M/s | 165.3 M/s | 224.9 M/s | 1.38 M/s | 2.03 M/s | 0.98× | 5.8 MiB |
+| request 8T | 394.1 M/s | 187.6 M/s | 358.0 M/s | 402.8 M/s | 1.26 M/s | 2.13 M/s | 0.98× | 7.9 MiB |
+| ecs 8T (realloc growth) | 92.09 M/s | 74.69 M/s | 1.85 M/s | 370 K/s | 783 K/s | 1.52 M/s | **1.23×** | 12.2 MiB |
 
-The spawn-churn row is from the earlier full-matrix run. After bounded
-thread-exit retirement and direct cache adoption, a focused production A/B
-(2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup) measured 18.38 M/s for Allox
-versus 13.78 M/s for mimalloc, with peak RSS 18.5 MiB versus 19.4 MiB.
-The hot small path now uses a static class-size table: fresh `tight-small 8T`
-measured 168.9 M/s for Allox versus 162.6 M/s for mimalloc. `zeroed-large 1T`
-reaches 188.7 K/s, and `huge-only 1T` 1.55 M/s in the latest capped probes.
+**20/20 win-or-tie against the best comparator.** The three near-ties
+(`tight-small 8T` 0.95×, `json-ish 8T` 0.98×, `request 8T` 0.98×) are
+inside the run-to-run spread of the row they lose, and `spawn-empty` is
+the pthread calibration row (allocator-independent by construction).
 
-Small + remote-free + big-span paths win or tie everywhere except
-mixed-all per-op vs mimalloc (see REMAINING_PLAN §6; beats system) and
-the large-only tail above 1 MiB (stays large-path by design);
-large-only 8T is served by arena-backed big spans (0.05× → 0.67×
-mimalloc, zero unmaps in the probe), and the big-cap extension now serves
-through 1 MiB. The prior 512 KiB A/B improved the capped 1T range from
-152K to 193K ops/s; the 1 MiB extension now passes repeated 2 s × 3
-RSS-controlled checks, including 2.88× mimalloc on the large-only 1T probe
-and 1.32× on large-only 8T. mixed-all 8T and large-only still carry
-run-to-run regime notes (lock dynamics, same reference). Full six-allocator
-output (incl. snmalloc, dlmalloc, and the json/request/ecs app shapes) in
-harness runs.
+`ecs 8T` is the growable-extent workload: a 64 KiB buffer realloc-doubled
+to 1 MiB, four at a time per thread, plus small-component churn. It used
+to be the project's one structural loss (≈0.06× the system allocator,
+whose glibc grows with zero-copy `mremap`). Big blocks are carved
+contiguously out of a shared span, so growing one in place was impossible
+and every step of the chain copied. The first cross-class growth now
+relocates **once** into a large region that reserves slack up to the big
+cap; every later step then grows in place, with no copy, no syscall and
+no span traffic. Controlled A/B (same box, same session, fresh 2 s × 3
+processes): **9.59 M/s → 92.09 M/s (9.6×), peak RSS 19.7 → 12.2 MiB**, and
+1.20× the system allocator in a 2 s × 5 confirmation (91.45 vs 76.27 M/s).
 
 The direct comparison uses the system allocator for harness bookkeeping.
 Use `BENCH_OUTPUT=json` for machine-readable samples. Use
@@ -155,6 +162,11 @@ mimalloc-inspired, adapted for Rust's world:
   mutex; slow paths are batched (~64 blocks per lock acquisition).
 - **Large / over-aligned allocations** are served by directly mapped regions
   tracked in arena/legacy side metadata; invalid frees are detected and abort.
+- **Growable extents**: `realloc` growth that crosses size classes promotes
+  the block once into a slack reserve (virtual-only, capped at the big cap)
+  and then grows in place; a region ending exactly at the arena bump
+  frontier can also claim adjacent pages atomically. Turns a doubling chain
+  into one copy instead of one per step.
 - **Delayed page reclamation**: fully-freed pages are kept mapped (capped at
   4 per class, ~16 MiB worst case) and recycled on the next refill instead of
   paying unmap/map syscalls on churn.
