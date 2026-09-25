@@ -179,7 +179,7 @@ pub(crate) struct ThreadCache {
     bins: [Bin; NUM_CLASSES],
     cached_bytes: usize,
     #[cfg(all(unix, feature = "std"))]
-    big_cached_bytes: usize,
+    tier_cached_bytes: usize,
     /// This thread's ownership id (0 = not yet assigned). Used only for the
     /// remote-free drift-cap heuristic; never for correctness.
     tid: u32,
@@ -256,7 +256,7 @@ impl ThreadCache {
             }; NUM_CLASSES],
             cached_bytes: 0,
             #[cfg(all(unix, feature = "std"))]
-            big_cached_bytes: 0,
+            tier_cached_bytes: 0,
             tid: 0,
             foreign_bytes: 0,
             virgin: [0; NUM_CLASSES],
@@ -434,10 +434,10 @@ impl ThreadCache {
     }
 
     #[inline]
-    fn non_big_cached_bytes(&self) -> usize {
+    fn non_tier_cached_bytes(&self) -> usize {
         #[cfg(all(unix, feature = "std"))]
         {
-            self.cached_bytes.saturating_sub(self.big_cached_bytes)
+            self.cached_bytes.saturating_sub(self.tier_cached_bytes)
         }
         #[cfg(not(all(unix, feature = "std")))]
         {
@@ -449,7 +449,7 @@ impl ThreadCache {
     /// should be counted for a batched shed (see [`DRIFT_GATE_DIV`]).
     #[inline]
     fn drift_gate_open(&self) -> bool {
-        self.non_big_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
+        self.non_tier_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
@@ -460,14 +460,14 @@ impl ThreadCache {
         let big_over = {
             #[cfg(all(unix, feature = "std"))]
             {
-                self.big_cached_bytes > big_cache_budget()
+                self.tier_cached_bytes > big_cache_budget()
             }
             #[cfg(not(all(unix, feature = "std")))]
             {
                 false
             }
         };
-        self.non_big_cached_bytes() > thread_cache_budget()
+        self.non_tier_cached_bytes() > thread_cache_budget()
             || big_over
             || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
     }
@@ -523,7 +523,7 @@ impl ThreadCache {
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         // Under aggregate pressure, shed some cache before asking for more.
-        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
+        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
@@ -686,7 +686,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
+        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
@@ -811,7 +811,7 @@ impl ThreadCache {
             (p, zeroed)
         };
         self.cached_bytes -= block_size;
-        self.big_cached_bytes = self.big_cached_bytes.saturating_sub(block_size);
+        self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(block_size);
         (p, zeroed)
     }
 
@@ -848,7 +848,7 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= BIG_CLASSES[bclass];
-            self.big_cached_bytes = self.big_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
+            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
             if below < self.bvirgin[bclass] {
                 self.bvirgin[bclass] -= 1;
             }
@@ -878,7 +878,7 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= BIG_CLASSES[bclass];
-            self.big_cached_bytes = self.big_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
+            self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
             let zeroed = below < self.bvirgin[bclass];
             if zeroed {
                 self.bvirgin[bclass] -= 1;
@@ -901,10 +901,10 @@ impl ThreadCache {
     #[inline]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
+        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
-        if self.big_cached_bytes > big_cache_budget() {
+        if self.tier_cached_bytes > big_cache_budget() {
             self.trim_big();
         }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
@@ -949,14 +949,14 @@ impl ThreadCache {
             active.len = count - 1;
             active.virgin = if virgin { count - 1 } else { 0 };
             self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
-            self.big_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.tier_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = 0;
         } else {
             let bin = &mut self.bigbins[bclass];
             bin.head = rest;
             bin.len += count - 1;
             self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
-            self.big_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.tier_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
         }
         (first, virgin)
@@ -981,7 +981,7 @@ impl ThreadCache {
         if self.active_big_contains(p, bclass, span) {
             self.active_big_dealloc(p, bclass);
             self.cached_bytes += BIG_CLASSES[bclass];
-            self.big_cached_bytes += BIG_CLASSES[bclass];
+            self.tier_cached_bytes += BIG_CLASSES[bclass];
             if foreign {
                 self.foreign_bytes += BIG_CLASSES[bclass];
             }
@@ -1086,7 +1086,7 @@ impl ThreadCache {
     unsafe fn trim_big(&mut self) {
         #[cfg(all(unix, feature = "std"))]
         {
-            while self.big_cached_bytes > big_cache_budget() {
+            while self.tier_cached_bytes > big_cache_budget() {
                 let mut active_best = usize::MAX;
                 let mut active_bytes = 0usize;
                 for (bclass, size) in BIG_CLASSES.iter().enumerate() {
@@ -1129,7 +1129,7 @@ impl ThreadCache {
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         let target = thread_cache_budget() / 2;
-        while self.non_big_cached_bytes() > target {
+        while self.non_tier_cached_bytes() > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
             for (class, size) in CLASSES.iter().enumerate() {
@@ -1397,8 +1397,8 @@ impl ThreadCache {
             tail = *tail.cast::<*mut u8>();
         }
         self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
-        self.big_cached_bytes = self
-            .big_cached_bytes
+        self.tier_cached_bytes = self
+            .tier_cached_bytes
             .saturating_sub(block_size * len as usize);
         self.bactive[bclass] = ActiveBig::empty();
         crate::heap::BIG_HEAP.release_blocks(span, head, len);
@@ -1433,7 +1433,7 @@ impl ThreadCache {
                 }
                 popped += 1;
                 self.cached_bytes = self.cached_bytes.saturating_sub(block_size);
-                self.big_cached_bytes = self.big_cached_bytes.saturating_sub(block_size);
+                self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(block_size);
 
                 let master = crate::arena::big_table_get(b);
                 debug_assert!(!master.is_null() && (*master).contains(b));
@@ -1514,7 +1514,7 @@ impl ThreadCache {
         self.cached_bytes = 0;
         #[cfg(all(unix, feature = "std"))]
         {
-            self.big_cached_bytes = 0;
+            self.tier_cached_bytes = 0;
         }
         self.foreign_bytes = 0;
         // Keep `tid` stable across flushes: it identifies this OS thread for
