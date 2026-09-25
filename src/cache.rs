@@ -1113,7 +1113,7 @@ impl ThreadCache {
     }
 
     /// Bring cached bytes under the tier-adjusted target by repeatedly halving
-    /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
+    /// the largest bin. Fixed-size passes over small, medium, and big bins; no allocation.
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         let tier_allowance = self.tier_cached_bytes.min(tier_cache_budget());
