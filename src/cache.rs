@@ -631,6 +631,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
+        self.refresh_budget();
         self.reclaim_retired();
         {
             let bin = &mut self.bins[class];
@@ -818,6 +819,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
+        self.refresh_budget();
         self.reclaim_retired();
         {
             let (p, zeroed) = self.active_medium_alloc(mclass);
@@ -1057,6 +1059,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
+        self.refresh_budget();
         self.reclaim_retired();
         {
             let (p, zeroed) = self.active_big_alloc(bclass);
