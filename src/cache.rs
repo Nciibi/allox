@@ -457,7 +457,7 @@ impl ThreadCache {
     /// `foreign_bytes`.
     #[inline]
     fn should_shed(&self) -> bool {
-        let big_over = {
+        let tier_over = {
             #[cfg(all(unix, feature = "std"))]
             {
                 self.tier_cached_bytes > tier_cache_budget()
