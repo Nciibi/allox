@@ -500,6 +500,15 @@ The current spawn workload explicitly frees all remaining blocks, so it does not
 - Lower minor faults per short-lived thread.
 - No RSS growth after retired caches are drained.
 
+## 4.4 Status — deferred retirement landed
+
+The fixed-slot queue, lazy page reinitialization, and tail-aware grouped small
+flushes are implemented. `spawn-churn` improved from 2.61M to 4.16M ops/s in
+the capped production matrix, while `spawn-empty` and steady-state mixed
+workloads remain flat. The remaining gap is the per-cache block scan and
+first-touch cost; a future maintenance worker or cheaper ownership bookkeeping
+must preserve the bounded queue and synchronous overflow fallback.
+
 ---
 
 # Phase 5 — Memory, tail latency, and platform polish
