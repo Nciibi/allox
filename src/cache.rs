@@ -434,7 +434,7 @@ impl ThreadCache {
     }
 
     #[inline]
-    fn non_tier_cached_bytes(&self) -> usize {
+    fn small_cached_bytes(&self) -> usize {
         #[cfg(all(unix, feature = "std"))]
         {
             self.cached_bytes.saturating_sub(self.tier_cached_bytes)
@@ -449,7 +449,7 @@ impl ThreadCache {
     /// should be counted for a batched shed (see [`DRIFT_GATE_DIV`]).
     #[inline]
     fn drift_gate_open(&self) -> bool {
-        self.non_tier_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
+        self.small_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
@@ -467,7 +467,7 @@ impl ThreadCache {
                 false
             }
         };
-        self.non_tier_cached_bytes() > thread_cache_budget()
+        self.small_cached_bytes() > thread_cache_budget()
             || big_over
             || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
     }
@@ -523,7 +523,7 @@ impl ThreadCache {
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         // Under aggregate pressure, shed some cache before asking for more.
-        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = crate::heap::HEAP.take_blocks(class);
@@ -686,7 +686,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         let (chain, count, virgin) = MEDIUM_HEAP.take_blocks(mclass);
@@ -901,7 +901,7 @@ impl ThreadCache {
     #[inline]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
-        if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
+        if self.small_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
         if self.tier_cached_bytes > tier_cache_budget() {
@@ -1129,7 +1129,7 @@ impl ThreadCache {
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         let target = thread_cache_budget() / 2;
-        while self.non_tier_cached_bytes() > target {
+        while self.small_cached_bytes() > target {
             let mut best = usize::MAX;
             let mut best_bytes = 0usize;
             for (class, size) in CLASSES.iter().enumerate() {
