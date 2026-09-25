@@ -231,13 +231,19 @@ Options in order:
     chains to `BigHeap`. A capped 2 s × 2 comparison against parent
     `v0.0.969` measured 1.52M vs 1.28M ops/s median on `large-only 8T`
     (+19% for ActiveBig; peak RSS remained within the existing cap).
-    512K CAP (KEPT 2026-09-24): extending the top big class from 262144
-    to 524288 improved capped `large-only 1T` from 152K to 193K ops/s
-    (+27%), with peak RSS 23.3 → 23.8 MiB. `mixed-all 1T` was flat and
-    `large-only 8T` stayed within its noisy guard band. The >512K portion
-    remains the next large-tail candidate.
-3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
-   discipline matters more than the last 10% hit rate here.
+     512K CAP (KEPT 2026-09-24): extending the top big class from 262144
+     to 524288 improved capped `large-only 1T` from 152K to 193K ops/s
+     (+27%), with peak RSS 23.3 → 23.8 MiB. `mixed-all 1T` was flat and
+     `large-only 8T` stayed within its noisy guard band. The >512K portion
+     was the next large-tail candidate at that checkpoint.
+     1 MiB CAP (IMPLEMENTED 2026-09-25): the top big class is now 1048576
+     bytes, with a 129-page top span, exact boundary coverage, and updated
+     telemetry large-path probes. The bounded smoke measured 0.80× mimalloc
+     on `large-only 1T`; repeated 2 s × 3 RSS-controlled validation is still
+     required before calling the phase fully accepted. The >1 MiB portion
+     remains the next large-tail candidate.
+ 3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
+    discipline matters more than the last 10% hit rate here.
 
 ## 4b. Remote-free drift cap (DONE 2026-09-23)
 
