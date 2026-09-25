@@ -1225,7 +1225,7 @@ fn append_json_allocator(
 
 fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
     output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"exit_flush_ns\":{},\"probe\":",
+        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
         diagnostics.mapped_delta,
