@@ -282,21 +282,7 @@ impl ThreadCache {
     }
 
     pub(crate) fn debug_bytes(&self) -> (usize, usize, usize) {
-        let mut medium = 0usize;
-        for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
-            medium += self.mactive[mclass].len as usize * size;
-            medium += self.mbins[mclass].len as usize * size;
-        }
-        #[cfg(all(unix, feature = "std"))]
-        let mut big = 0usize;
-        #[cfg(all(unix, feature = "std"))]
-        for (bclass, size) in BIG_CLASSES.iter().enumerate() {
-            big += self.bactive[bclass].len as usize * size;
-            big += self.bigbins[bclass].len as usize * size;
-        }
-        #[cfg(not(all(unix, feature = "std")))]
-        let big = 0usize;
-        (self.cached_bytes, medium + big, self.tier_cached_bytes)
+        (self.cached_bytes, self.actual_tier_bytes(), self.tier_cached_bytes)
     }
 
     /// Publish accumulated telemetry deltas to the global atomics.

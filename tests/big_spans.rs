@@ -250,7 +250,7 @@ fn big_churn_multithreaded() {
 #[test]
 fn cache_budget_probe() {
     unsafe {
-        for i in 0..1000usize {
+        for i in 0..100_000usize {
             let size = 32768 + (i * 7919) % (1_048_576 - 32768);
             let p = malloc(size);
             assert!(!p.is_null());
