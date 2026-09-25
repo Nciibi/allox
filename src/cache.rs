@@ -91,7 +91,7 @@ pub(crate) fn set_budget(bytes: usize) {
 /// syscalls, so even a small stash removes the global lock from the hot
 /// same-thread reuse path (the common benchmark shape).
 pub(crate) const LARGE_STASH_SLOTS: usize = 8;
-pub(crate) const LARGE_STASH_CAP_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const LARGE_STASH_CAP_BYTES: usize = 32 * 1024 * 1024;
 
 /// Blocks released to the global heap per grouping pass. Bounds the stack
 /// buffer used to group blocks by owning page.
