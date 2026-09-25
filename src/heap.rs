@@ -818,7 +818,7 @@ pub(crate) static MEDIUM_HEAP: MediumHeap = MediumHeap::new();
 /// Smaller than the medium batch: big blocks are huge (up to 1 MiB), so
 /// 4 per refill already moves ~4 MiB; measure 2/4/8 during tuning.
 #[cfg(all(unix, feature = "std"))]
-pub(crate) const BIG_REFILL_BATCH: u32 = 8;
+pub(crate) const BIG_REFILL_BATCH: u32 = 4;
 
 /// Fully-freed big spans kept mapped per big class before unmapping.
 /// Byte-scaled like the medium caps (a few big spans hot; spans run to
