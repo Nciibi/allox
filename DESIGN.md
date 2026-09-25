@@ -147,7 +147,8 @@ minimum block = 16 B = max useful fundamental alignment):
 - **Small:** 16 B .. 16384 B (~58 classes). A 1 KiB direct-mapped table
   (index `(size+15)/16`) turns class lookup into a shift and a load;
   measured necessary after the scan version showed up in mixed-size
-  profiles.
+  profiles. The hot cache path uses a runtime static class-size table so
+  per-free accounting does not materialize the const table on the stack.
 - **Medium:** (16384, 65472] — steps sized so a block still fits beside
   the span master header inside a 64 KiB chunk (`TOP_MEDIUM_BLOCK`).
 - **Big:** (65472, 1 MiB] — same geometric chain, `BIG_REFILL_BATCH = 4`
