@@ -1684,11 +1684,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
     unsafe { cache.flush_all() };
 }
 
-#[cfg(not(all(feature = "std", any(unix, windows))))]
-pub(crate) unsafe fn retire(mut cache: ThreadCache) {
-    cache.flush_all();
-}
-
 #[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) fn reclaim_one() -> bool {
     if RETIRED_READY_COUNT.load(Ordering::Acquire) == 0 {
