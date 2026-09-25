@@ -988,8 +988,7 @@ impl ThreadCache {
             #[cfg(all(feature = "telemetry", unix, feature = "std"))]
             self.note_free_big(bclass);
             if self.should_shed() {
-                self.trim();
-                self.foreign_bytes = 0;
+                self.shed();
             }
             return;
         }
