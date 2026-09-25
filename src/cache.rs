@@ -981,6 +981,7 @@ impl ThreadCache {
         if self.active_big_contains(p, bclass, span) {
             self.active_big_dealloc(p, bclass);
             self.cached_bytes += BIG_CLASSES[bclass];
+            self.big_cached_bytes += BIG_CLASSES[bclass];
             if foreign {
                 self.foreign_bytes += BIG_CLASSES[bclass];
             }
