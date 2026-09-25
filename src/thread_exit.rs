@@ -93,7 +93,7 @@ mod imp {
         // try_lock); blocking serializes the herd and actually reclaims.
         // Panic-free by construction (bounded loops, atomics, syscalls only).
         super::record_flush();
-        crate::tls_flush_full();
+        crate::tls_retire();
     }
 
     pub(crate) fn ensure_hook() -> bool {
@@ -160,7 +160,7 @@ mod imp {
         // cycle exists even though Fls callbacks run during thread teardown.
         // Panic-free by construction (see above).
         super::record_flush();
-        crate::tls_flush_full();
+        crate::tls_retire();
     }
 
     pub(crate) fn ensure_hook() -> bool {
