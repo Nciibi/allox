@@ -237,11 +237,12 @@ Options in order:
      (+27%), with peak RSS 23.3 → 23.8 MiB. `mixed-all 1T` was flat and
      `large-only 8T` stayed within its noisy guard band. The >512K portion
      was the next large-tail candidate at that checkpoint.
-     1 MiB CAP (IMPLEMENTED 2026-09-25): the top big class is now 1048576
-     bytes, with a 129-page top span, exact boundary coverage, and updated
-     telemetry large-path probes. The bounded smoke measured 0.80× mimalloc
-     on `large-only 1T`; repeated 2 s × 3 RSS-controlled validation is still
-     required before calling the phase fully accepted. The >1 MiB portion
+     1 MiB CAP (DONE 2026-09-25): the top big class is now 1048576 bytes,
+     with a 129-page top span, exact boundary coverage, updated telemetry
+     large-path probes, and a separate 2x medium/big cache allowance. Safe
+     fresh-process 2 s × 3 runs measured 6.79M/s on `large-only 1T`
+     (2.88× mimalloc), 25.10M/s on `large-only 8T` (1.32×), and 10.73M/s
+     on `mixed-all 1T` (2.90×), with low Allox peak RSS. The >1 MiB portion
      remains the next large-tail candidate.
  3. Do NOT raise caps blindly: retention is already hundreds of MiB; RSS
     discipline matters more than the last 10% hit rate here.
