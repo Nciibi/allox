@@ -21,6 +21,10 @@
 static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+#[cfg(all(feature = "std", feature = "telemetry", any(unix, windows)))]
+static FLUSH_ELAPSED_NS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 #[cfg(all(feature = "std", any(unix, windows)))]
 fn record_flush() {
     FLUSH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
