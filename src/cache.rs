@@ -70,7 +70,7 @@ fn thread_cache_budget() -> usize {
 
 #[cfg(all(unix, feature = "std"))]
 #[inline]
-fn big_cache_budget() -> usize {
+fn tier_cache_budget() -> usize {
     thread_cache_budget().saturating_mul(2)
 }
 
@@ -460,7 +460,7 @@ impl ThreadCache {
         let big_over = {
             #[cfg(all(unix, feature = "std"))]
             {
-                self.tier_cached_bytes > big_cache_budget()
+                self.tier_cached_bytes > tier_cache_budget()
             }
             #[cfg(not(all(unix, feature = "std")))]
             {
@@ -904,7 +904,7 @@ impl ThreadCache {
         if self.non_tier_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
-        if self.tier_cached_bytes > big_cache_budget() {
+        if self.tier_cached_bytes > tier_cache_budget() {
             self.trim_big();
         }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
@@ -1086,7 +1086,7 @@ impl ThreadCache {
     unsafe fn trim_big(&mut self) {
         #[cfg(all(unix, feature = "std"))]
         {
-            while self.tier_cached_bytes > big_cache_budget() {
+            while self.tier_cached_bytes > tier_cache_budget() {
                 let mut active_best = usize::MAX;
                 let mut active_bytes = 0usize;
                 for (bclass, size) in BIG_CLASSES.iter().enumerate() {
