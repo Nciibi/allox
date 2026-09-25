@@ -689,7 +689,7 @@ impl ThreadCache {
         // foreign or total budget is hit — never a lock-per-free
         // `release_blocks`, which serialized prodcons and thrashed the arena.
         // The ownership load only runs when the gate is already open.
-        let budget = thread_cache_budget();
+        let budget = self.budget;
         let mut foreign = false;
         if self.drift_gate_open_small(budget) {
             let page = PageHeader::of(p);
