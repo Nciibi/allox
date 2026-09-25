@@ -149,8 +149,12 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    large-only 8T 0.05× → **0.67× mimalloc** (9.06M vs 13.51M), unmaps 0.
    BIG-CAP PHASE 2 → **DONE 2026-09-24**: top class raised to 524288;
    large-only 1T improved 152K → 193K ops/s in capped A/B, with mixed-all
-   and small guards flat. NEXT: P2 futex/parking mutex (unix spin convoy
-   hypothesis) + refill tuning, or mixed-all per-op (REMAINING_PLAN §6).
+   and small guards flat.
+   BIG-CAP PHASE 3 → **IMPLEMENTED 2026-09-25**: top class raised to 1 MiB;
+   boundary, telemetry, release, telemetry-enabled, and no_std checks pass.
+   Repeated large-workload RSS/throughput validation remains before the
+   phase is marked fully accepted. NEXT: P2 futex/parking mutex (unix spin
+   convoy hypothesis) + refill tuning, or mixed-all per-op (REMAINING_PLAN §6).
 
 ## P2 results — parking mutex on hosted unix (pthread, lazy init)
 
@@ -167,8 +171,8 @@ locks uncontended, where pthread ≈ spin (one CAS either way). Kept anyway:
 strictly more robust under preemption/oversubscription (spin convoys are
 real, just not the binding constraint here), zero regressions, full suite
 green (12 binaries), all feature combos warning-free. The remaining MT gaps
-(spawn-churn 0.22x isolated; large-only 1T tail >524288) are per-op/syscall
-volume and class-cap edges, not lock parking — the 512 KiB big-cap phase
+(spawn-churn 0.22x isolated; large-only 1T tail >1 MiB) are per-op/syscall
+volume and class-cap edges, not lock parking — the 1 MiB big-cap phase
 addresses the first 1T tail slice.
 4. P1 exit-flush + drift cap → DONE (exit-flush with P1e; drift cap
    2026-09-23, batched shed — prodcons 8T 1.20× mimalloc).
