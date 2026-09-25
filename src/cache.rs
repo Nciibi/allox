@@ -516,14 +516,14 @@ impl ThreadCache {
     #[cfg(debug_assertions)]
     fn actual_tier_bytes(&self) -> usize {
         let mut medium = 0usize;
-        for (mclass, size) in MEDIUM_CLASSES_RUNTIME.iter().enumerate() {
+        for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
             medium += self.mactive[mclass].len as usize * size;
             medium += self.mbins[mclass].len as usize * size;
         }
         #[cfg(all(unix, feature = "std"))]
         let mut big = 0usize;
         #[cfg(all(unix, feature = "std"))]
-        for (bclass, size) in BIG_CLASSES_RUNTIME.iter().enumerate() {
+        for (bclass, size) in BIG_CLASSES.iter().enumerate() {
             big += self.bactive[bclass].len as usize * size;
             big += self.bigbins[bclass].len as usize * size;
         }
@@ -1304,7 +1304,7 @@ impl ThreadCache {
             }
             let mut abest = usize::MAX;
             let mut abest_bytes = 0usize;
-            for (mclass, size) in MEDIUM_CLASSES_RUNTIME.iter().enumerate() {
+            for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
                 let bin_bytes = self.mactive[mclass].len as usize * size;
                 if self.mactive[mclass].len > 0 && bin_bytes > abest_bytes {
                     abest_bytes = bin_bytes;
@@ -1320,7 +1320,7 @@ impl ThreadCache {
             // medium bin outranks the small-bin threshold logic).
             let mut mbest = usize::MAX;
             let mut mbest_bytes = 0usize;
-            for (mclass, size) in MEDIUM_CLASSES_RUNTIME.iter().enumerate() {
+            for (mclass, size) in MEDIUM_CLASSES.iter().enumerate() {
                 let bin_bytes = self.mbins[mclass].len as usize * size;
                 if self.mbins[mclass].len > 0 && bin_bytes > mbest_bytes {
                     mbest_bytes = bin_bytes;
@@ -1332,7 +1332,7 @@ impl ThreadCache {
             #[cfg(all(unix, feature = "std"))]
             let mut active_bbest_bytes = 0usize;
             #[cfg(all(unix, feature = "std"))]
-            for (bclass, size) in BIG_CLASSES_RUNTIME.iter().enumerate() {
+            for (bclass, size) in BIG_CLASSES.iter().enumerate() {
                 let active_bytes = self.bactive[bclass].len as usize * size;
                 if self.bactive[bclass].len > 0 && active_bytes > active_bbest_bytes {
                     active_bbest_bytes = active_bytes;
@@ -1350,7 +1350,7 @@ impl ThreadCache {
             #[cfg(all(unix, feature = "std"))]
             let mut bbest_bytes = 0usize;
             #[cfg(all(unix, feature = "std"))]
-            for (bclass, size) in BIG_CLASSES_RUNTIME.iter().enumerate() {
+            for (bclass, size) in BIG_CLASSES.iter().enumerate() {
                 let bin_bytes = self.bigbins[bclass].len as usize * size;
                 if self.bigbins[bclass].len > 0 && bin_bytes > bbest_bytes {
                     bbest_bytes = bin_bytes;
