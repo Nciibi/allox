@@ -18,10 +18,10 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 - Medium and big thread-cache blocks receive a separate 2x retention allowance
   while the small/remote-free budget remains independently bounded.
 - Large/over-aligned: sharded exact-fit-first region caches with cold
-  tier, per-thread stash, virtual-memory arena backing (unix) with hole
-  reuse and graceful legacy fallback. Large `calloc` skips redundant zeroing
-  only after a successful discard, and arena-frontier large realloc can grow
-  in place without copying.
+  tier, adaptive 32/64 MiB per-thread stash, 32 MiB hot shards, virtual-
+  memory arena backing (unix) with hole reuse and graceful legacy fallback.
+  Large `calloc` discards exclusively-owned recycled regions when possible;
+  arena-frontier large realloc can grow in place without copying.
 - Thread-exit retirement (pthread key / FlsAlloc) uses a bounded fixed-slot
   queue; an empty worker can adopt a queued cache directly, otherwise later
   allocator slow paths reclaim it, with synchronous flush fallback for
