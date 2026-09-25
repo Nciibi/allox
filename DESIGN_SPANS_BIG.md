@@ -23,13 +23,13 @@ RSS moved from 23.3 MiB to 23.8 MiB. `mixed-all 1T` was flat within noise;
 `large-only 8T` remained within the noisy guard band, and all new boundary,
 `calloc`, realloc, and multithreaded big-span tests passed.
 
-Phase-3 validation (2026-09-25, bounded 1 s smoke): the cap now reaches
-1 MiB, with a 129-page top span and exact 1 MiB/1 MiB+1 boundary coverage.
-The focused `large-only 1T` sample measured Allox at 0.80× mimalloc; the
-low-memory `mixed-all 1T` guard measured 1.87× mimalloc. These samples are
-directional only: the shared benchmark process can retain gigabytes, so the
-required repeated 2 s × 3 RSS-controlled comparison remains pending.
-Boundary, release, telemetry-enabled, and no_std checks are green.
+Phase-3 validation (2026-09-25, `BENCH_SAFE_LIVE=1`, fresh 2 s × 3): the cap
+reaches 1 MiB with a 129-page top span and exact 1 MiB/1 MiB+1 coverage. A
+separate 2x medium/big cache allowance preserves small/remote-free behavior.
+Allox measured 6.79M/s on `large-only 1T` (2.88× mimalloc), 25.10M/s on
+`large-only 8T` (1.32×), and 10.73M/s on `mixed-all 1T` (2.90×), with low
+peak RSS under a 2 GiB cgroup. Boundary, release, telemetry-enabled, and
+no_std checks are green.
 
 ## 1. Problem
 
