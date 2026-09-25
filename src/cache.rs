@@ -433,11 +433,23 @@ impl ThreadCache {
         }
     }
 
+    #[inline]
+    fn non_big_cached_bytes(&self) -> usize {
+        #[cfg(all(unix, feature = "std"))]
+        {
+            self.cached_bytes.saturating_sub(self.big_cached_bytes)
+        }
+        #[cfg(not(all(unix, feature = "std")))]
+        {
+            self.cached_bytes
+        }
+    }
+
     /// True when this cache is under enough pressure that foreign frees
     /// should be counted for a batched shed (see [`DRIFT_GATE_DIV`]).
     #[inline]
     fn drift_gate_open(&self) -> bool {
-        self.cached_bytes > thread_cache_budget() / DRIFT_GATE_DIV
+        self.non_big_cached_bytes() > thread_cache_budget() / DRIFT_GATE_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
@@ -445,7 +457,18 @@ impl ThreadCache {
     /// `foreign_bytes`.
     #[inline]
     fn should_shed(&self) -> bool {
-        self.cached_bytes > thread_cache_budget()
+        let big_over = {
+            #[cfg(all(unix, feature = "std"))]
+            {
+                self.big_cached_bytes > big_cache_budget()
+            }
+            #[cfg(not(all(unix, feature = "std")))]
+            {
+                false
+            }
+        };
+        self.non_big_cached_bytes() > thread_cache_budget()
+            || big_over
             || self.foreign_bytes >= thread_cache_budget() / FOREIGN_SHED_DIV
     }
 
