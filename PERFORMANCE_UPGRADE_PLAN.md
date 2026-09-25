@@ -450,7 +450,8 @@ This is required for real thread-pool workloads, not only the current benchmark.
 
 # Phase 4 — Reduce lifecycle and first-touch cost
 
-The current exit hook performs a blocking full flush at `src/thread_exit.rs:42-52`.
+The exit hook now uses bounded deferred retirement; the original blocking full
+flush remains the oversized/overflow fallback.
 
 ## 4.1 Lazy provisioning
 
