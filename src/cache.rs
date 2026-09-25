@@ -26,8 +26,9 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-/// Total bytes one thread's cache may retain before trimming starts.
-/// Worst-case overhead is this many bytes per thread.
+/// Base budget for small and other cached bytes before trimming starts.
+/// Medium and big tiers receive a separate 2x allowance; the aggregate trim
+/// target is bounded accordingly.
 /// Overridable at startup via `allox::set_thread_cache_budget` (atomic read;
 /// never from the environment, since environment access can allocate).
 const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
@@ -1083,7 +1084,7 @@ impl ThreadCache {
         self.foreign_bytes = 0;
     }
 
-    /// Bring total cached bytes under half the budget by repeatedly halving
+    /// Bring cached bytes under the tier-adjusted target by repeatedly halving
     /// the largest bin. Fixed-size passes over small + medium bins; no allocation.
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
