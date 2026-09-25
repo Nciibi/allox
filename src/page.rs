@@ -34,6 +34,7 @@ pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
 /// was carved, so every free block is still OS-zero. Cleared the moment any
 /// block is returned to the page.
 pub(crate) const FLAG_VIRGIN: u16 = 2;
+pub(crate) const FLAG_NEEDS_REINIT: u16 = 4;
 
 // magic + prev + next + free_head + free_count/used/class/flags + owner = 44
 // bytes, padded by align(16) to 48 (HEADER_SIZE unchanged).
