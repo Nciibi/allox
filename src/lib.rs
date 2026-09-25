@@ -1709,8 +1709,8 @@ pub fn __debug_arena_detail() -> (u64, u64) {
 }
 
 #[doc(hidden)]
-pub fn __debug_cache_bytes() -> (usize, usize) {
-    with_cache(|c| c.debug_bytes(), || (0, 0))
+pub fn __debug_cache_bytes() -> (usize, usize, usize) {
+    with_cache(|c| c.debug_bytes(), || (0, 0, 0))
 }
 
 #[doc(hidden)]
