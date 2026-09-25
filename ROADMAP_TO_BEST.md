@@ -150,11 +150,13 @@ Recommendation: **don't just raise `MAX_SMALL`. Add spans.**
    BIG-CAP PHASE 2 → **DONE 2026-09-24**: top class raised to 524288;
    large-only 1T improved 152K → 193K ops/s in capped A/B, with mixed-all
    and small guards flat.
-   BIG-CAP PHASE 3 → **IMPLEMENTED 2026-09-25**: top class raised to 1 MiB;
+   BIG-CAP PHASE 3 → **DONE 2026-09-25**: top class raised to 1 MiB;
    boundary, telemetry, release, telemetry-enabled, and no_std checks pass.
-   Repeated large-workload RSS/throughput validation remains before the
-   phase is marked fully accepted. NEXT: P2 futex/parking mutex (unix spin
-   convoy hypothesis) + refill tuning, or mixed-all per-op (REMAINING_PLAN §6).
+   A separate 2x medium/big cache allowance and `BENCH_SAFE_LIVE=1` matrix
+   measured `large-only 1T` at 2.88× mimalloc, `large-only 8T` at 1.32×,
+   and `mixed-all 1T` at 2.90× in fresh 2 s × 3 runs. NEXT: P2
+   futex/parking mutex (unix spin convoy hypothesis) + refill tuning, or
+   mixed-all per-op (REMAINING_PLAN §6).
 
 ## P2 results — parking mutex on hosted unix (pthread, lazy init)
 
