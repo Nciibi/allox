@@ -281,6 +281,10 @@ impl ThreadCache {
         }
     }
 
+    pub(crate) fn debug_bytes(&self) -> (usize, usize) {
+        (self.cached_bytes, self.tier_cached_bytes)
+    }
+
     /// Publish accumulated telemetry deltas to the global atomics.
     #[cfg(feature = "telemetry")]
     fn publish(&mut self) {
