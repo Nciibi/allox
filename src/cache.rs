@@ -240,6 +240,7 @@ pub(crate) struct ThreadCache {
     /// Whether this thread armed the OS thread-exit flush. Set once after
     /// the hook is installed; fast paths only check the flag.
     exit_armed: bool,
+    retired_reclaimed: bool,
     /// Per-thread stash of freed large regions: (base, mapped_pages).
     /// Touched only by the owning thread (or the global-cache lock holder in
     /// no_std, which is still mutually exclusive), so no synchronization.
