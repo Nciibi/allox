@@ -1082,7 +1082,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             || take_one_big(bclass),
         );
         if p.is_null() {
-            let (lp, _fresh, known_zeroed) = alloc_large_ex(size, align, true);
+            let (lp, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
             zero_large_allocation(lp, size, known_zeroed);
             return lp;
         }
