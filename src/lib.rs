@@ -1839,9 +1839,9 @@ pub fn set_thread_cache_budget(bytes: usize) {
 /// Return this thread's cached free blocks to their pages.
 ///
 /// Useful for thread-pool workers between tasks; otherwise blocks stay cached
-/// until the pages naturally die. Deliberately *not* run in a TLS destructor:
-/// see DESIGN.md §4.5 for why. With `std` disabled this flushes the single
-/// global cache.
+/// until the pages naturally die or a later slow path reclaims them. The
+/// bounded retirement queue is drained before this call. With `std` disabled
+/// this flushes the single global cache.
 pub fn flush_current_thread() {
     tls::flush();
 }
