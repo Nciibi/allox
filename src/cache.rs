@@ -1651,8 +1651,6 @@ impl ThreadCache {
         self.large_bytes = 0;
         #[cfg(feature = "telemetry")]
         self.publish();
-        #[cfg(all(feature = "std", feature = "telemetry", any(unix, windows)))]
-        crate::thread_exit::record_flush_elapsed(flush_started.elapsed().as_nanos() as u64);
     }
 }
 
