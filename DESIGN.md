@@ -191,9 +191,9 @@ lock-per-free release. Same-thread frees below the gate stay header-free.
 likely to be re-allocated by the same thread; round-tripping them through the
 global heap costs ~5x on mixed workloads (lock + list surgery + re-carve).
 Therefore thread caches grow without per-bin limits and are trimmed only when
- the thread's cached bytes exceed the tier-adjusted target (32 MiB base plus a
- 2x medium/big allowance, `DEFAULT_THREAD_CACHE_BUDGET` in `cache.rs`,
- runtime-overridable), halving the largest bin first.
+the thread's cached bytes exceed the tier-adjusted target (32 MiB base plus a
+2x medium/big allowance, `DEFAULT_THREAD_CACHE_BUDGET` in `cache.rs`,
+runtime-overridable), halving the largest bin first.
 Trim passes are chunked (2048 blocks) to bound stack use for huge bins.
 
 realloc: same-class small resize is identity; otherwise alloc-copy-free.
