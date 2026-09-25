@@ -639,15 +639,15 @@ mod kani_proofs {
     use super::*;
 
     /// Nondeterministic big-class block size within the documented range
-    /// (65473..=524288, 16-aligned), plus a nondeterministic page count.
+    /// (65473..=1 MiB, 16-aligned), plus a nondeterministic page count.
     fn any_big_block_and_pages() -> (usize, usize) {
         let block: usize = kani::any();
         // BIG_CLASSES: 65472 exclusive lower edge in design notes; actual
         // min is the first class >65472 (65488 or similar). Use the full
-        // design window: >65472, <=524288, 16-aligned.
-        kani::assume(block > 65_472 && block <= 524_288 && block % 16 == 0);
+        // design window: >65472, <=1 MiB, 16-aligned.
+        kani::assume(block > 65_472 && block <= 1_048_576 && block % 16 == 0);
         let pages: usize = kani::any();
-        kani::assume(pages >= 1 && pages <= 16);
+        kani::assume(pages >= 1 && pages <= 129);
         (block, pages)
     }
 

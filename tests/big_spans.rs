@@ -6,6 +6,9 @@
 use allox::{free, malloc, realloc};
 use std::alloc::{GlobalAlloc, Layout};
 
+const BIG_TOP: usize = 1_048_576;
+const BIG_TOP_PLUS_ONE: usize = BIG_TOP + 1;
+
 fn check_pattern(p: *mut u8, size: usize) {
     unsafe {
         for i in 0..size {

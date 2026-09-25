@@ -815,14 +815,14 @@ pub(crate) static MEDIUM_HEAP: MediumHeap = MediumHeap::new();
 // ---------------------------------------------------------------------------
 
 /// Blocks moved from big spans into a thread cache per slow-path take.
-/// Smaller than the medium batch: big blocks are huge (up to 512 KiB), so
-/// 4 per refill already moves ~2 MiB; measure 2/4/8 during tuning.
+/// Smaller than the medium batch: big blocks are huge (up to 1 MiB), so
+/// 4 per refill already moves ~4 MiB; measure 2/4/8 during tuning.
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const BIG_REFILL_BATCH: u32 = 4;
 
 /// Fully-freed big spans kept mapped per big class before unmapping.
 /// Byte-scaled like the medium caps (a few big spans hot; spans run to
-/// ~2 MiB, so the count cap alone would retain far too little).
+/// ~8 MiB, so the count cap alone would retain far too little).
 #[cfg(all(unix, feature = "std"))]
 const EMPTY_BIG_SPAN_CACHE_PER_CLASS: u32 = 4;
 #[cfg(all(unix, feature = "std"))]
