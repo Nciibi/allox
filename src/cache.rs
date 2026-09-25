@@ -1221,9 +1221,9 @@ impl ThreadCache {
         let bin = &mut self.bins[class];
 
         while bin.len > floor_blocks {
-            // Only slots 0..ng are ever written; a full [Group::EMPTY; N]
+            // Only slots 0..ng are ever written; a full [PageReleaseChunk; N]
             // zeroed ~65 KiB of stack per call (PMU: ~35% of flush_bin).
-            let mut groups: [MaybeUninit<Group>; MAX_FLUSH_GROUPS] =
+            let mut groups: [MaybeUninit<PageReleaseChunk>; MAX_FLUSH_GROUPS] =
                 unsafe { MaybeUninit::uninit().assume_init() };
             let mut ng = 0usize;
             let mut popped = 0u32;
@@ -1259,7 +1259,7 @@ impl ThreadCache {
                         g.n += 1;
                     }
                     None => {
-                        groups[ng] = MaybeUninit::new(Group {
+                        groups[ng] = MaybeUninit::new(PageReleaseChunk {
                             page,
                             head: b,
                             tail: b,
