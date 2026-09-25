@@ -389,29 +389,31 @@ impl GlobalHeap {
             let mut list = self.classes[class].lock();
             release_inner(&mut list, page, head, tail, n)
         };
-        match fate {
-            PageFate::Keep => {}
-            // Cold pages were already discarded under the class lock in
-            // `release_inner` (discarding here, after unlock, would race a
-            // concurrent cold reuse and zero live blocks). Nothing to do.
-            PageFate::Cold => {}
-            PageFate::Unmap => {
-                // Arena-owned pages park in holes (no syscall, counters stay
-                // balanced); legacy mappings need the true unmap +
-                // decrements. Same shape as the span fate arm below and
-                // large's `crate::unmap_or_return`.
-                #[cfg(all(unix, feature = "std"))]
-                {
-                    if crate::arena::contains(page.cast::<u8>(), PAGE_SIZE) {
-                        crate::arena::release(page.cast::<u8>(), 1);
-                        return;
-                    }
+        act_page_fate(page, fate);
+    }
+
+    pub(crate) unsafe fn release_many(&self, class: usize, chunks: &[PageReleaseChunk]) {
+        if chunks.is_empty() {
+            return;
+        }
+        const BATCH: usize = 128;
+        for batch in chunks.chunks(BATCH) {
+            let mut fates = [PageFate::Keep; BATCH];
+            {
+                let mut list = self.classes[class].lock();
+                for (i, chunk) in batch.iter().enumerate() {
+                    debug_assert_eq!((*chunk.page).class as usize, class);
+                    fates[i] = release_inner(
+                        &mut list,
+                        chunk.page,
+                        chunk.head,
+                        chunk.tail,
+                        chunk.n,
+                    );
                 }
-                if sys::unmap(page.cast::<u8>(), PAGE_SIZE) {
-                    MAPPED_PAGES.fetch_sub(1, Ordering::Relaxed);
-                    UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-                    SMALL_UNMAP_CALLS.fetch_add(1, Ordering::Relaxed);
-                }
+            }
+            for (chunk, fate) in batch.iter().zip(fates.iter()) {
+                act_page_fate(chunk.page, *fate);
             }
         }
     }
