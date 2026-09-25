@@ -503,12 +503,14 @@ The current spawn workload explicitly frees all remaining blocks, so it does not
 ## 4.4 Status — deferred retirement landed
 
 The fixed-slot queue, lazy page reinitialization, tail-aware grouped small
-flushes, and direct cache adoption are implemented. `spawn-churn` improved
-from 2.61M to 17.25M ops/s in the capped production matrix, exceeding mimalloc
-at 13.78M, while `spawn-empty` and steady-state workloads remain healthy. The
-remaining lifecycle work is first-touch cost for workers that cannot adopt a
-cache; future changes must preserve the bounded queue and synchronous overflow
-fallback.
+flushes, direct cache adoption, static hot-path class-size table, and
+per-cache budget snapshots are implemented. `spawn-churn` improved from
+2.61M to 18.38M ops/s in the capped production matrix, exceeding mimalloc;
+`tight-small` now reaches 168.9M fresh ops/s versus 162.6M for mimalloc.
+`zeroed-large` discards recycled regions and `huge-only` benefits from deeper
+bounded caches and range-based side-table writes. ECS remains structurally
+slower because big-span realloc growth still copies across packed spans; that
+requires a separate growable-extent design.
 
 ---
 
