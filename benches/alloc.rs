@@ -1477,7 +1477,6 @@ fn main() {
                 abandoned_delta: d1abnd.saturating_sub(d0abnd),
                 abandoned_total: d1abnd,
                 arena_high_water: d1hi,
-                exit_flush_ns: allox::__debug_exit_flush_elapsed_ns(),
                 probe,
             })
         } else {
