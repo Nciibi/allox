@@ -1213,6 +1213,66 @@ impl ThreadCache {
         }
     }
 
+    unsafe fn flush_bin_exit(&mut self, class: usize) {
+        let len = self.bins[class].len;
+        if len == 0 {
+            return;
+        }
+        if len > FLUSH_CHUNK {
+            self.flush_bin(class, 0);
+            return;
+        }
+        let block_size = CLASSES[class];
+        let chain = self.bins[class].head;
+        let mut groups: [MaybeUninit<PageReleaseChunk>; MAX_FLUSH_GROUPS] =
+            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut ng = 0usize;
+        let mut cursor = chain;
+        for _ in 0..len {
+            let next = *cursor.cast::<*mut u8>();
+            let page = PageHeader::of(cursor);
+            let mut slot = None;
+            for i in 0..ng {
+                let g = unsafe { groups[i].assume_init_ref() };
+                if g.page == page {
+                    slot = Some(i);
+                    break;
+                }
+            }
+            match slot {
+                Some(i) => {
+                    let g = unsafe { groups[i].assume_init_mut() };
+                    g.n += 1;
+                }
+                None => {
+                    groups[ng] = MaybeUninit::new(PageReleaseChunk {
+                        page,
+                        head: ptr::null_mut(),
+                        tail: ptr::null_mut(),
+                        n: 1,
+                        retire: false,
+                    });
+                    ng += 1;
+                }
+            }
+            cursor = next;
+        }
+        debug_assert!(cursor.is_null());
+        self.cached_bytes = self
+            .cached_bytes
+            .saturating_sub(block_size * len as usize);
+        self.bins[class].head = ptr::null_mut();
+        self.bins[class].len = 0;
+        self.virgin[class] = 0;
+        let chunks = unsafe {
+            core::slice::from_raw_parts_mut(
+                groups.as_mut_ptr() as *mut PageReleaseChunk,
+                ng,
+            )
+        };
+        crate::heap::HEAP.release_bin_chunks(class, chain, len, chunks);
+    }
+
     /// Shrink `class`'s bin down to `floor_blocks` blocks, returning removed
     /// blocks to their owning pages in chunked, grouped batches so each page
     /// needs only one lock acquisition per chunk.
