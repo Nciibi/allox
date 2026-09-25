@@ -460,9 +460,6 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
                         }
                         }
                     }
-                    if std::env::var_os("BENCH_DEBUG_CACHE").is_some() {
-                        eprintln!("worker_cache_bytes={:?}", allox::__debug_cache_bytes());
-                    }
                     for (p, s) in live {
                         unsafe { alloc.dealloc(p, layout_for(s)) };
                     }
@@ -530,9 +527,6 @@ fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
                             }
                         }
                         }
-                    }
-                    if std::env::var_os("BENCH_DEBUG_CACHE").is_some() {
-                        eprintln!("worker_cache_bytes={:?}", allox::__debug_cache_bytes());
                     }
                     for (p, s) in live {
                         unsafe { alloc.dealloc(p, layout_for(s)) };
