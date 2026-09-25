@@ -265,8 +265,8 @@ P6 (no clobber): carving writes stay within `[base, base+npages*64K)`
 
 1. Exact class top for phase 3: **1 MiB** (1048576 bytes). The tail above
    1 MiB remains on the large path; the top span requires 129 pages and
-   the existing retention caps remain unchanged pending RSS-controlled
-   repeated measurements.
+   the existing retention caps remain unchanged; RSS-controlled repeated
+   measurements are green under a 2 GiB cgroup.
 2. `BIG_REFILL_BATCH`: **4** shipped (measure-don't-assume noted in
    `heap.rs`; 4 × up to 1 MiB ≈ 4 MiB per refill, budget-sane). Tune
    2/8 only if large-only profiling shows refill cost as the bottleneck.
