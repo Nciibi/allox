@@ -1683,9 +1683,9 @@ pub(crate) fn retire(mut cache: ThreadCache) {
 }
 
 #[cfg(all(feature = "std", any(unix, windows)))]
-fn take_one() -> Option<ThreadCache> {
+pub(crate) fn reclaim_one() -> bool {
     if RETIRED_READY_COUNT.load(Ordering::Acquire) == 0 {
-        return None;
+        return false;
     }
     for slot in &RETIRED_SLOTS {
         if slot
@@ -1698,23 +1698,14 @@ fn take_one() -> Option<ThreadCache> {
             )
             .is_ok()
         {
-            let cache = unsafe { (*slot.cache.get()).assume_init_read() };
+            let mut cache = unsafe { (*slot.cache.get()).assume_init_read() };
             slot.state.store(RETIRED_EMPTY, Ordering::Release);
             RETIRED_READY_COUNT.fetch_sub(1, Ordering::AcqRel);
-            return Some(cache);
+            unsafe { cache.flush_all() };
+            return true;
         }
     }
-    None
-}
-
-#[cfg(all(feature = "std", any(unix, windows)))]
-pub(crate) fn reclaim_one() -> bool {
-    if let Some(mut cache) = take_one() {
-        unsafe { cache.flush_all() };
-        true
-    } else {
-        false
-    }
+    false
 }
 
 #[cfg(all(feature = "std", any(unix, windows)))]
