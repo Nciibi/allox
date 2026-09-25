@@ -904,6 +904,9 @@ impl ThreadCache {
         if self.non_big_cached_bytes() > thread_cache_budget() / 2 {
             self.trim();
         }
+        if self.big_cached_bytes > big_cache_budget() {
+            self.trim_big();
+        }
         let (chain, count, virgin) = BIG_HEAP.take_blocks(bclass);
         if chain.is_null() {
             return (ptr::null_mut(), false);
