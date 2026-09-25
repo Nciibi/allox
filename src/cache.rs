@@ -117,6 +117,45 @@ struct BGroup {
     n: u32,
 }
 
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_SLOT_COUNT: usize = 8;
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_SLOT_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_EMPTY: u8 = 0;
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_WRITING: u8 = 1;
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_READY: u8 = 2;
+#[cfg(all(feature = "std", any(unix, windows)))]
+const RETIRED_TAKING: u8 = 3;
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+struct RetiredSlot {
+    state: AtomicU8,
+    cache: UnsafeCell<MaybeUninit<ThreadCache>>,
+}
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+unsafe impl Sync for RetiredSlot {}
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+impl RetiredSlot {
+    const fn new() -> Self {
+        Self {
+            state: AtomicU8::new(RETIRED_EMPTY),
+            cache: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+}
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+static RETIRED_SLOTS: [RetiredSlot; RETIRED_SLOT_COUNT] =
+    [const { RetiredSlot::new() }; RETIRED_SLOT_COUNT];
+
+#[cfg(all(feature = "std", any(unix, windows)))]
+static RETIRED_READY_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(Clone, Copy)]
 struct Bin {
     head: *mut u8,
