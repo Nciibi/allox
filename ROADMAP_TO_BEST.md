@@ -289,9 +289,9 @@ post-adoption small/medium/big bin checks; oversized or overflow caches use the
 synchronous path. Small-page exit flushing also passes known tails, batches
 same-class releases, and lazily reinitializes fully-free pages.
 
-* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **17.25M vs
-  13.78M mimalloc** (1.25x), up from 2.61M vs 13.74M at the isolated baseline;
-  peak RSS 19.1 MiB vs 19.4 MiB.
+* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **18.38M vs
+  13.78M mimalloc** (1.33x), up from 2.61M vs 13.74M at the isolated baseline;
+  peak RSS 18.5 MiB vs 19.4 MiB.
 * `spawn-empty` remains allocator-independent; `mixed-all 8T`, `prodcons 8T`,
   `medium-only 8T`, and `large-only 8T` remain wins in capped checks. Full
   debug integration, telemetry, release, and thread-exit convergence tests pass.
