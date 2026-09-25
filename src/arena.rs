@@ -102,7 +102,7 @@ extern "C" {
 /// discarded slices read back as zeros, so any metadata stored inside them
 /// would not survive. Offsets (not absolute bases) keep the entries
 /// position-independent garbage on reset paths.
-const EXACT_BUCKET_MAX: usize = 64;
+const EXACT_BUCKET_MAX: usize = 128;
 const EMPTY_BUCKET: u16 = u16::MAX;
 
 struct HoleStore {
