@@ -32,6 +32,7 @@
 
 mod cache;
 mod classes;
+mod counters;
 mod ffi;
 mod heap;
 mod page;
@@ -596,6 +597,11 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
         if !base.is_null() {
             return (base, fresh);
         }
+        // Arena unavailable or reservation exhausted: this large region
+        // costs a real mmap. Counted so the fallback rate is visible in
+        // `__diagnostics::volume().arena_fallbacks` rather than inferred
+        // from a missing arena commit.
+        counters::bump(&counters::VOLUME.arena_fallbacks, 1);
     }
     let base = sys::map_any(mapped);
     (base, !base.is_null())
@@ -611,6 +617,7 @@ pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
     {
         if crate::arena::contains(base, mapped) {
             crate::arena::release(base, (mapped / page::PAGE_SIZE) as usize);
+            counters::bump(&counters::VOLUME.arena_parks, 1);
             return;
         }
     }
@@ -985,7 +992,11 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
     if np.is_null() {
         return None;
     }
-    ptr::copy_nonoverlapping(p, np, old_usable.min(new_size));
+    let copy = old_usable.min(new_size);
+    ptr::copy_nonoverlapping(p, np, copy);
+    counters::bump(&counters::VOLUME.realloc_relocations, 1);
+    counters::bump(&counters::VOLUME.realloc_promotions, 1);
+    counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
     dealloc_impl(p);
     Some(np)
 }
@@ -1108,7 +1119,19 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
 unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
     if !p.is_null() && !known_zeroed {
         ptr::write_bytes(p, 0, size);
+        counters::bump(&counters::VOLUME.zeroed_calls, 1);
+        counters::bump(&counters::VOLUME.zeroed_bytes, size as u64);
     }
+}
+
+/// Software zeroing of a recycled block: one memset plus the counters that
+/// make "how much zeroing did we actually do" measurable (the virgin
+/// fast paths above skip both).
+#[inline]
+unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
+    ptr::write_bytes(p, 0, size);
+    counters::bump(&counters::VOLUME.zeroed_calls, 1);
+    counters::bump(&counters::VOLUME.zeroed_bytes, size as u64);
 }
 
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
@@ -1151,7 +1174,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         if virgin {
             p.cast::<u64>().write(0);
         } else {
-            ptr::write_bytes(p, 0, size);
+            note_zeroed_fill(p, size);
         }
         return p;
     }
@@ -1165,7 +1188,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             if virgin {
                 p.cast::<u64>().write(0);
             } else {
-                ptr::write_bytes(p, 0, size);
+                note_zeroed_fill(p, size);
             }
         }
         return p;
@@ -1180,7 +1203,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             // Only the freelist link word is dirty.
             p.cast::<u64>().write(0);
         } else {
-            ptr::write_bytes(p, 0, size);
+            note_zeroed_fill(p, size);
         }
     }
     p
@@ -1392,6 +1415,7 @@ unsafe impl GlobalAlloc for Allox {
     }
 
     unsafe fn realloc(&self, p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
+        counters::bump(&counters::VOLUME.realloc_calls, 1);
         if new_size == 0 {
             self.dealloc(p, layout);
             return layout.align().max(1) as *mut u8;
@@ -1474,6 +1498,8 @@ unsafe impl GlobalAlloc for Allox {
         let copy = layout.size().min(new_size);
         if copy > 0 {
             ptr::copy_nonoverlapping(p, new_p, copy);
+            counters::bump(&counters::VOLUME.realloc_relocations, 1);
+            counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
         }
         self.dealloc(p, layout);
         new_p
@@ -1523,6 +1549,7 @@ pub unsafe fn calloc(nmemb: usize, size: usize) -> *mut u8 {
 /// # Safety
 /// `p` must be null or a live allocation of this allocator.
 pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
+    counters::bump(&counters::VOLUME.realloc_calls, 1);
     if size > isize::MAX as usize {
         return ptr::null_mut();
     }
@@ -1653,7 +1680,10 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
     };
     if !new_p.is_null() && size != 0 {
         let old_size = usable_size(p);
-        ptr::copy_nonoverlapping(p, new_p, old_size.min(size));
+        let copy = old_size.min(size);
+        ptr::copy_nonoverlapping(p, new_p, copy);
+        counters::bump(&counters::VOLUME.realloc_relocations, 1);
+        counters::bump(&counters::VOLUME.realloc_copy_bytes, copy as u64);
     }
     if !new_p.is_null() {
         free(p);
@@ -1835,6 +1865,23 @@ pub fn __debug_arena_hole_stats() -> (u64, u64, u64, u64) {
     }
 }
 
+/// Diagnostic counters for tuning and benchmark instrumentation.
+///
+/// `volume()` counts work (refills, flushes, copied bytes, purges, arena
+/// fallbacks, ...). Those counters live on slow paths, so they are always
+/// compiled and always updated — a production build without the
+/// `telemetry` feature still reports them. Nanosecond *timings* need a
+/// clock read and therefore require the feature; see
+/// [`crate::telemetry::timing`].
+///
+/// Hidden: not semver-covered, may change or vanish. Field names come
+/// from [`crate::counters::VOLUME_FIELDS`] so a consumer can label
+/// [`volume_raw`] columns.
+#[doc(hidden)]
+pub mod __diagnostics {
+    pub use crate::counters::{volume, volume_raw, Volume, VOLUME_FIELDS};
+}
+
 /// Built-in allocation telemetry.
 ///
 /// Enable with the `telemetry` feature (zero cost when disabled). Counters
@@ -1924,6 +1971,36 @@ pub mod telemetry {
             }
         }
     }
+
+    /// Cumulative wall time spent inside instrumented allocator regions.
+    ///
+    /// Unlike [`Telemetry`], these need a clock read per event, so they
+    /// exist only in `telemetry` builds (the feature this module lives
+    /// behind). Divide by the matching call count in
+    /// [`crate::__diagnostics::volume`] for a mean; e.g.
+    /// `lock_wait_ns / small_refills` is the average time a small refill
+    /// spent waiting for its class lock.
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct Timing {
+        /// Wall time inside heap-mutex acquisitions. Divide by
+        /// `Volume::heap_lock_acquisitions` for a mean.
+        pub lock_wait_ns: u64,
+        /// Wall time inside `discard` (madvise / `VirtualAlloc` release).
+        pub purge_ns: u64,
+        /// Wall time inside thread-exit cache flushes.
+        pub exit_flush_ns: u64,
+    }
+
+    /// Read the cumulative timing counters. All zero in `no_std` builds,
+    /// which have no clock to read.
+    pub fn timing() -> Timing {
+        let t = crate::counters::timing_snapshot();
+        Timing {
+            lock_wait_ns: t.lock_wait_ns,
+            purge_ns: t.purge_ns,
+            exit_flush_ns: t.exit_flush_ns,
+        }
+    }
 }
 
 /// Set the base per-thread cache retention budget in bytes (default 32 MiB).
@@ -1952,6 +2029,72 @@ pub fn set_thread_cache_budget(bytes: usize) {
 /// this flushes the single global cache.
 pub fn flush_current_thread() {
     tls::flush();
+}
+
+/// White-box coverage for the counter wiring that integration tests cannot
+/// provoke cheaply: the retention policy needs megabytes of churn before it
+/// discards anything, but the instrumentation itself sits on two lines.
+#[cfg(all(test, feature = "std", any(unix, windows)))]
+mod counter_wiring_tests {
+    use super::*;
+    use crate::counters::{volume, VOLUME};
+
+    #[test]
+    fn discard_counts_calls_and_bytes() {
+        let before = volume();
+        let pages = 4 * page::PAGE_SIZE;
+        // SAFETY: fresh mapping, discarded before it is released.
+        unsafe {
+            let p = sys::map(pages);
+            assert!(!p.is_null());
+            sys::discard(p, pages);
+            assert!(sys::unmap(p, pages));
+        }
+        let after = volume();
+        assert!(after.purge_calls > before.purge_calls, "discard uncounted");
+        assert!(
+            after.purge_bytes - before.purge_bytes >= pages as u64,
+            "discard bytes uncounted: {} < {pages}",
+            after.purge_bytes - before.purge_bytes
+        );
+    }
+
+    #[test]
+    fn mutex_lock_counts_acquisitions() {
+        let before = crate::counters::get(&VOLUME.heap_lock_acquisitions);
+        static M: crate::sys::Mutex<u32> = crate::sys::Mutex::new(0);
+        {
+            let mut g = M.lock();
+            *g += 1;
+        }
+        let after = crate::counters::get(&VOLUME.heap_lock_acquisitions);
+        assert_eq!(after, before + 1, "lock acquisition uncounted");
+    }
+
+    #[cfg(all(unix, feature = "std"))]
+    #[test]
+    fn arena_region_round_trip_counts_park_not_fallback() {
+        let before = volume();
+        let bytes = 4 * page::PAGE_SIZE;
+        // SAFETY: region is released through the same helper below.
+        unsafe {
+            let (base, _fresh) = map_large_region(bytes);
+            assert!(!base.is_null(), "arena commit failed");
+            unmap_or_return(base, bytes);
+        }
+        let after = volume();
+        #[cfg(all(unix, feature = "std"))]
+        {
+            assert!(
+                after.arena_parks > before.arena_parks,
+                "arena release not counted as a park"
+            );
+            assert_eq!(
+                after.arena_fallbacks, before.arena_fallbacks,
+                "arena commit succeeded, so there must be no legacy fallback"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, feature = "std"))]

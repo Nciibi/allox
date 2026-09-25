@@ -13,8 +13,11 @@
 //! Fast smoke: BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
 //! Machine-readable output: BENCH_OUTPUT=json cargo bench
 //! Fresh-process JSONL: BENCH_FRESH=1 BENCH_OUTPUT=json cargo bench
+//! Per-op latency percentiles: BENCH_P99=1024 (sampled 1-in-1024 calls)
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
@@ -380,6 +383,13 @@ struct AlloxDiagnostics {
     abandoned_delta: u64,
     abandoned_total: u64,
     arena_high_water: u64,
+    /// Delta of every always-on volume counter, parallel to
+    /// `allox::__diagnostics::VOLUME_FIELDS` (refills, flushes, copied
+    /// bytes, purges, arena fallbacks, ...).
+    volume: Vec<(String, u64)>,
+    /// Cumulative lock-wait / purge / exit-flush nanoseconds. Only present
+    /// in `telemetry` builds, where those counters are compiled.
+    timing_ns: Option<[u64; 3]>,
     probe: RunSample,
 }
 
@@ -1046,6 +1056,187 @@ trait SyncGlobalAlloc: GlobalAlloc + Sync {}
 
 impl<T: GlobalAlloc + Sync> SyncGlobalAlloc for T {}
 
+// ---------------------------------------------------------------------------
+// Per-operation latency sampling (BENCH_P99=1|64|1024...)
+//
+// A clock pair costs ~20-25 ns; a small thread-cache pop costs ~5 ns, so
+// timing every call would measure the timer, not the allocator. Instead we
+// sample 1-in-N calls and subtract a calibrated clock-pair cost, which makes
+// the reported percentiles the *distribution* of per-op latency (order
+// statistics, not a time series) at ~0.02 ns/op of overhead at 1/1024.
+//
+// Samples land in a process-wide buffer rather than thread-local storage:
+// worker threads are short-lived (spawn-churn) and their TLS would be gone
+// before the run finished. Two relaxed atomics per *sampled* call is noise.
+// ---------------------------------------------------------------------------
+
+const LATENCY_CAPACITY: usize = 1 << 18;
+static LATENCY_SAMPLES: [AtomicU32; LATENCY_CAPACITY] =
+    [const { AtomicU32::new(0) }; LATENCY_CAPACITY];
+static LATENCY_LEN: AtomicUsize = AtomicUsize::new(0);
+
+thread_local! {
+    /// Per-thread sampling tick. Deliberately *not* a shared atomic: a
+    /// contended `fetch_add` on every allocator call cost 3x throughput on
+    /// `mixed-all 8T` (40.8M -> 12.0M ops/s) before this was thread-local.
+    static LATENCY_TICK: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Median cost of a back-to-back clock pair, in nanoseconds. Every sample
+/// carries one clock pair, so this is subtracted from it.
+fn calibrate_clock_overhead() -> u32 {
+    let mut samples: Vec<u64> = Vec::with_capacity(1024);
+    for _ in 0..1024 {
+        let t0 = Instant::now();
+        let t1 = Instant::now();
+        samples.push(t1.duration_since(t0).as_nanos() as u64);
+    }
+    samples.sort_unstable();
+    samples[samples.len() / 2] as u32
+}
+
+/// Round a requested rate up to a power of two so the hot-path test is a
+/// mask rather than a division.
+fn sampling_mask(every: u64) -> u64 {
+    if every <= 1 {
+        return 0;
+    }
+    every.next_power_of_two() - 1
+}
+
+fn latency_reset() {
+    LATENCY_LEN.store(0, Ordering::Relaxed);
+}
+
+#[inline]
+fn latency_record(elapsed_ns: u64, overhead: u32) {
+    let value = elapsed_ns.saturating_sub(overhead as u64) as u32;
+    let index = LATENCY_LEN.fetch_add(1, Ordering::Relaxed);
+    if index < LATENCY_CAPACITY {
+        LATENCY_SAMPLES[index].store(value, Ordering::Relaxed);
+    }
+}
+
+/// Percentiles over the sampled per-op latencies, or `None` when sampling
+/// is off or nothing was recorded.
+fn latency_summary() -> Option<[u64; 4]> {
+    let len = LATENCY_LEN.load(Ordering::Relaxed).min(LATENCY_CAPACITY);
+    if len == 0 {
+        return None;
+    }
+    let mut values: Vec<u32> = (0..len)
+        .map(|index| LATENCY_SAMPLES[index].load(Ordering::Relaxed))
+        .collect();
+    values.sort_unstable();
+    let at = |q: f64| -> u64 {
+        let position = ((values.len() as f64 - 1.0) * q).round() as usize;
+        values[position.min(values.len() - 1)] as u64
+    };
+    Some([at(0.50), at(0.90), at(0.99), at(0.999)])
+}
+
+/// Wraps a comparator and samples per-call latency. `mask == 0` disables
+/// sampling entirely and the hot path is a thread-local increment plus a
+/// mask test (no atomics, no clock).
+struct Probed {
+    inner: &'static dyn SyncGlobalAlloc,
+    mask: u64,
+    overhead: u32,
+}
+
+impl Probed {
+    #[inline]
+    fn new(inner: &'static dyn SyncGlobalAlloc, every: u64) -> Self {
+        let mask = sampling_mask(every);
+        let overhead = if mask == 0 { 0 } else { calibrate_clock_overhead() };
+        Probed {
+            inner,
+            mask,
+            overhead,
+        }
+    }
+
+    /// True on 1-in-N calls. The tick lives in thread-local storage so the
+    /// decision never touches a shared cache line.
+    #[inline]
+    fn due(&self) -> bool {
+        if self.mask == 0 {
+            return false;
+        }
+        LATENCY_TICK.with(|tick| {
+            let value = tick.get();
+            tick.set(value.wrapping_add(1));
+            value & self.mask == 0
+        })
+    }
+
+    #[inline]
+    fn record(&self, start: Instant) {
+        latency_record(start.elapsed().as_nanos() as u64, self.overhead);
+    }
+}
+
+// SAFETY: every method forwards to `inner` with the same arguments and
+// returns its result unchanged, so all `GlobalAlloc` contracts (pointer
+// validity, layout match, no use-after-free) are exactly the inner
+// allocator's.
+unsafe impl GlobalAlloc for Probed {
+    #[inline]
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if !self.due() {
+            return self.inner.alloc(layout);
+        }
+        let t0 = Instant::now();
+        let p = self.inner.alloc(layout);
+        self.record(t0);
+        p
+    }
+
+    #[inline]
+    unsafe fn dealloc(&self, p: *mut u8, layout: Layout) {
+        if !self.due() {
+            return self.inner.dealloc(p, layout);
+        }
+        let t0 = Instant::now();
+        self.inner.dealloc(p, layout);
+        self.record(t0);
+    }
+
+    #[inline]
+    unsafe fn realloc(&self, p: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if !self.due() {
+            return self.inner.realloc(p, layout, new_size);
+        }
+        let t0 = Instant::now();
+        let np = self.inner.realloc(p, layout, new_size);
+        self.record(t0);
+        np
+    }
+
+    #[inline]
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        if !self.due() {
+            return self.inner.alloc_zeroed(layout);
+        }
+        let t0 = Instant::now();
+        let p = self.inner.alloc_zeroed(layout);
+        self.record(t0);
+        p
+    }
+}
+
+/// Cumulative allocator timings, present only in `telemetry` builds.
+fn timing_counters() -> Option<[u64; 3]> {
+    if cfg!(feature = "telemetry") {
+        #[cfg(feature = "telemetry")]
+        {
+            let t = allox::telemetry::timing();
+            return Some([t.lock_wait_ns, t.purge_ns, t.exit_flush_ns]);
+        }
+    }
+    None
+}
+
 fn format_f64_vec(values: &[f64]) -> String {
     let mut text = String::from("[");
     for (index, value) in values.iter().enumerate() {
@@ -1075,6 +1266,7 @@ fn print_raw_samples(
     selected: &[usize],
     runs: &[Vec<RunSample>],
     warmups: &[Option<RunSample>],
+    latency: &[Option<[u64; 4]>],
 ) {
     for &index in selected {
         let samples = &runs[index];
@@ -1109,6 +1301,35 @@ fn print_raw_samples(
             timing.p95_run_ns_per_op,
             timing.p99_run_ns_per_op,
             timing.p99_9_run_ns_per_op,
+        );
+        if let Some([p50, p90, p99, p999]) = latency[index] {
+            println!(
+                "       call latency ns p50={} p90={} p99={} p99.9={} (sampled, clock overhead subtracted)",
+                p50, p90, p99, p999
+            );
+        }
+    }
+}
+
+/// One line per allox run: the volume counters that moved, so a throughput
+/// number can be read together with the work behind it (refills, flushes,
+/// copied bytes, purges, ...).
+fn print_volume_counters(diagnostics: &AlloxDiagnostics) {
+    let mut parts: Vec<String> = Vec::new();
+    for (name, value) in &diagnostics.volume {
+        if *value == 0 {
+            continue;
+        }
+        parts.push(format!("{}={}", name, value));
+    }
+    if parts.is_empty() {
+        return;
+    }
+    println!("       counters {}", parts.join(" "));
+    if let Some([lock, purge, exit]) = diagnostics.timing_ns {
+        println!(
+            "       timing ns lock_wait={} purge={} exit_flush={} (telemetry build)",
+            lock, purge, exit
         );
     }
 }
@@ -1203,6 +1424,7 @@ fn append_json_allocator(
     warmup: Option<RunSample>,
     samples: &[RunSample],
     summary: Option<SampleSummary>,
+    latency: Option<[u64; 4]>,
 ) {
     output.push_str("{\"name\":");
     output.push_str(&json_string(name));
@@ -1220,12 +1442,22 @@ fn append_json_allocator(
     } else {
         output.push_str("null");
     }
+    // Sampled per-call latency percentiles in ns (BENCH_P99); null when
+    // sampling is off.
+    output.push_str(",\"call_latency_ns\":");
+    match latency {
+        Some([p50, p90, p99, p999]) => output.push_str(&format!(
+            "{{\"p50\":{},\"p90\":{},\"p99\":{},\"p99_9\":{}}}",
+            p50, p90, p99, p999
+        )),
+        None => output.push_str("null"),
+    }
     output.push('}');
 }
 
 fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) {
     output.push_str(&format!(
-        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"probe\":",
+        "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"volume\":{{",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
         diagnostics.mapped_delta,
@@ -1241,6 +1473,28 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         diagnostics.abandoned_total,
         diagnostics.arena_high_water,
     ));
+    // Only non-zero counters: the full set is 25 fields and most are zero on
+    // any given workload, which would drown the signal in JSONL output.
+    for (index, (name, value)) in diagnostics.volume.iter().enumerate() {
+        if *value == 0 {
+            continue;
+        }
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str(&format!("\"{}\":{}", name, value));
+    }
+    output.push_str("},\"timing_ns\":");
+    match &diagnostics.timing_ns {
+        Some([lock, purge, exit]) => {
+            output.push_str(&format!(
+                "{{\"lock_wait\":{},\"purge\":{},\"exit_flush\":{}}}",
+                lock, purge, exit
+            ));
+        }
+        None => output.push_str("null"),
+    }
+    output.push_str(",\"probe\":");
     append_json_sample(output, diagnostics.probe);
     output.push('}');
 }
@@ -1345,6 +1599,14 @@ fn main() {
         }
     }
 
+    // Per-op latency sampling: `BENCH_P99=1` samples every call, any other
+    // positive value samples 1-in-N. Unset (the default) leaves every
+    // comparator untouched, so throughput numbers are unaffected.
+    let p99_every: u64 = std::env::var("BENCH_P99")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+
     #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
     let mut allocators: Vec<Named> = vec![
         Named("allox", &ALLOX),
@@ -1356,6 +1618,14 @@ fn main() {
     ];
     #[cfg(feature = "bench-jemalloc")]
     allocators.push(Named("jemalloc", &JEMALLOC));
+    if p99_every > 0 {
+        for allocator in &mut allocators {
+            let probed: &'static dyn SyncGlobalAlloc =
+                Box::leak(Box::new(Probed::new(allocator.1, p99_every)));
+            allocator.1 = probed;
+        }
+        latency_reset();
+    }
 
     let filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let alloc_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
@@ -1427,11 +1697,21 @@ fn main() {
                 warmups[allocator_index] = Some(run(allocator.1, workload, warmup_secs));
             }
         }
+        let mut latency_by_allocator: Vec<Option<[u64; 4]>> =
+            (0..allocators.len()).map(|_| None).collect();
         for _ in 0..reps {
             for &allocator_index in &alloc_idx {
                 let allocator = &allocators[allocator_index];
                 eprintln!("  running {} / {}...", workload.name, allocator.0);
-                runs[allocator_index].push(run(allocator.1, workload, secs));
+                latency_reset();
+                let sample = run(allocator.1, workload, secs);
+                if p99_every > 0 {
+                    // Last rep wins: percentiles over a whole 2 s run are
+                    // what we report, and merging runs would need per-rep
+                    // sample buffers.
+                    latency_by_allocator[allocator_index] = latency_summary();
+                }
+                runs[allocator_index].push(sample);
             }
         }
 
@@ -1458,10 +1738,20 @@ fn main() {
             let s0 = allox::stats();
             let (d0sp, d0su, d0sm, d0smu, d0ac, d0aru, d0bm, d0bmu) = allox::__debug_map_split();
             let (d0abnd, _) = allox::__debug_arena_detail();
+            let v0 = allox::__diagnostics::volume_raw();
             let probe = run(allocators[allocator_index].1, workload, 1);
             let s1 = allox::stats();
             let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
             let (d1abnd, d1hi) = allox::__debug_arena_detail();
+            let v1 = allox::__diagnostics::volume_raw();
+            let volume = allox::__diagnostics::VOLUME_FIELDS
+                .iter()
+                .zip(v0.iter().zip(v1.iter()))
+                .map(|(name, (before, after))| {
+                    ((*name).to_string(), after.saturating_sub(*before))
+                })
+                .collect();
+            let timing_ns = timing_counters();
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
                 unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
@@ -1477,6 +1767,8 @@ fn main() {
                 abandoned_delta: d1abnd.saturating_sub(d0abnd),
                 abandoned_total: d1abnd,
                 arena_high_water: d1hi,
+                volume,
+                timing_ns,
                 probe,
             })
         } else {
@@ -1544,7 +1836,16 @@ fn main() {
                 arena,
             ));
             println!("{}", row);
-            print_raw_samples(&allocators, &alloc_idx, &runs, &warmups);
+            print_raw_samples(
+                &allocators,
+                &alloc_idx,
+                &runs,
+                &warmups,
+                &latency_by_allocator,
+            );
+            if let Some(diagnostics) = &diagnostics {
+                print_volume_counters(diagnostics);
+            }
         }
 
         if !first_result {
@@ -1567,6 +1868,7 @@ fn main() {
                 warmups[allocator_index],
                 &runs[allocator_index],
                 summaries[allocator_index],
+                latency_by_allocator[allocator_index],
             );
         }
         json.push_str("],\"allox_diagnostics\":");

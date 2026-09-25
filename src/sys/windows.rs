@@ -37,13 +37,26 @@ pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) -> bool {
 /// Tell the OS the range is no longer needed but keep it reserved: physical
 /// pages are dropped, the virtual reservation survives for reuse.
 pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
-    !VirtualAlloc(
+    // Instrumented at the backend entry point (see the unix twin): one
+    // place covers every retention tier, and the clock read stays behind
+    // `telemetry`.
+    #[cfg(all(feature = "telemetry", feature = "std"))]
+    let t0 = std::time::Instant::now();
+    let discarded = !VirtualAlloc(
         p as *mut core::ffi::c_void,
         size,
         MEM_RESET,
         PAGE_READWRITE,
     )
-    .is_null()
+    .is_null();
+    crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
+    crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
+    #[cfg(all(feature = "telemetry", feature = "std"))]
+    crate::counters::bump_ns(
+        &crate::counters::TIMING.purge_ns,
+        t0.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+    );
+    discarded
 }
 
 // ---------------------------------------------------------------------------

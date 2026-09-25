@@ -110,7 +110,18 @@ impl<T> Mutex<T> {
 
     #[inline]
     pub(crate) fn lock(&self) -> MutexGuard<'_, T> {
+        // Lock-wait timing needs a clock read, so it is telemetry-only; the
+        // acquisition count is a single relaxed add on a path that already
+        // ends in a lock-guarded heap slow path.
+        #[cfg(all(feature = "telemetry", feature = "std"))]
+        let t0 = std::time::Instant::now();
+        crate::counters::bump(&crate::counters::VOLUME.heap_lock_acquisitions, 1);
         self.raw.lock();
+        #[cfg(all(feature = "telemetry", feature = "std"))]
+        crate::counters::bump_ns(
+            &crate::counters::TIMING.lock_wait_ns,
+            t0.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+        );
         MutexGuard { mutex: self }
     }
 }

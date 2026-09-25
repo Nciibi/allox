@@ -14,6 +14,24 @@ static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
 #[cfg(all(feature = "std", any(unix, windows)))]
 fn record_flush() {
     FLUSH_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    // One extra relaxed add per exiting thread: negligible next to the
+    // flush itself, and it is the only place that can see the cost.
+    crate::counters::bump(&crate::counters::VOLUME.exit_flushes, 1);
+    #[cfg(all(feature = "telemetry", feature = "std"))]
+    {
+        let t0 = std::time::Instant::now();
+        // SAFETY: called from the OS thread-exit hook (or its synchronous
+        // fallback) on the exiting thread, exactly where the destructor
+        // used to call it.
+        unsafe { crate::tls_retire() };
+        crate::counters::bump_ns(
+            &crate::counters::TIMING.exit_flush_ns,
+            t0.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+        );
+    }
+    #[cfg(not(feature = "telemetry"))]
+    // SAFETY: see above.
+    unsafe { crate::tls_retire() };
 }
 
 pub(crate) fn flush_count() -> u64 {
@@ -56,7 +74,6 @@ mod imp {
             }
         }
         super::record_flush();
-        crate::tls_retire();
     }
 
     pub(crate) fn ensure_hook() -> bool {
@@ -119,7 +136,6 @@ mod imp {
             }
         }
         super::record_flush();
-        crate::tls_retire();
     }
 
     pub(crate) fn ensure_hook() -> bool {

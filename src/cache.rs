@@ -453,6 +453,7 @@ impl ThreadCache {
             }
             if self.cached_bytes == 0 && self.large_len == 0 {
                 if let Some(adopted) = take_one() {
+                    crate::counters::bump(&crate::counters::VOLUME.adopted_caches, 1);
                     let current_armed = self.exit_armed;
                     let current_budget = self.budget;
                     #[cfg(feature = "std")]
@@ -663,6 +664,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        crate::counters::bump(&crate::counters::VOLUME.small_refills, 1);
+        crate::counters::bump(&crate::counters::VOLUME.small_refill_blocks, count as u64);
         // Claim every page in the batch for this thread (drift-cap owner).
         {
             let mut b = chain;
@@ -704,6 +707,7 @@ impl ThreadCache {
         let budget = self.budget;
         let mut foreign = false;
         if self.drift_gate_open_small(budget) {
+            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
             let page = PageHeader::of(p);
             let owner = (*page).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
@@ -714,6 +718,7 @@ impl ThreadCache {
         bin.len += 1;
         self.cached_bytes += CLASSES_RUNTIME[class];
         if foreign {
+            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
             self.foreign_bytes += CLASSES_RUNTIME[class];
         }
         #[cfg(feature = "telemetry")]
@@ -856,6 +861,11 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        crate::counters::bump(&crate::counters::VOLUME.medium_refills, 1);
+        crate::counters::bump(
+            &crate::counters::VOLUME.medium_refill_blocks,
+            count as u64,
+        );
         let mut source: *mut SpanMaster = ptr::null_mut();
         let mut single_span = true;
         {
@@ -929,6 +939,7 @@ impl ThreadCache {
         // (see `dealloc`).
         let mut foreign = false;
         if self.drift_gate_open() {
+            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
             let span = SpanMaster::of(p);
             if !span.is_null() {
                 let owner = (*span).owner.load(Ordering::Relaxed);
@@ -946,6 +957,7 @@ impl ThreadCache {
         self.cached_bytes += MEDIUM_CLASSES[mclass];
         self.tier_cached_bytes += MEDIUM_CLASSES[mclass];
         if foreign {
+            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
             self.foreign_bytes += MEDIUM_CLASSES[mclass];
         }
         #[cfg(feature = "telemetry")]
@@ -1099,6 +1111,8 @@ impl ThreadCache {
         if chain.is_null() {
             return (ptr::null_mut(), false);
         }
+        crate::counters::bump(&crate::counters::VOLUME.big_refills, 1);
+        crate::counters::bump(&crate::counters::VOLUME.big_refill_blocks, count as u64);
         // Claim every span in the batch for this thread (drift-cap owner).
         {
             let mut b = chain;
@@ -1162,6 +1176,7 @@ impl ThreadCache {
         // (see `dealloc`).
         let mut foreign = false;
         if self.drift_gate_open() {
+            crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
             let owner = (*span).owner.load(Ordering::Relaxed);
             foreign = owner != 0 && owner != self.tid();
         }
@@ -1171,6 +1186,7 @@ impl ThreadCache {
             self.cached_bytes += BIG_CLASSES[bclass];
             self.tier_cached_bytes += BIG_CLASSES[bclass];
             if foreign {
+                crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
                 self.foreign_bytes += BIG_CLASSES[bclass];
             }
             #[cfg(all(feature = "telemetry", unix, feature = "std"))]
@@ -1187,6 +1203,7 @@ impl ThreadCache {
         self.cached_bytes += BIG_CLASSES[bclass];
         self.tier_cached_bytes += BIG_CLASSES[bclass];
         if foreign {
+            crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
             self.foreign_bytes += BIG_CLASSES[bclass];
         }
         #[cfg(all(feature = "telemetry", unix, feature = "std"))]
@@ -1260,6 +1277,7 @@ impl ThreadCache {
         if head.is_null() || len == 0 {
             return;
         }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
         let mut tail = head;
         while !(*tail.cast::<*mut u8>()).is_null() {
             tail = *tail.cast::<*mut u8>();
@@ -1290,6 +1308,7 @@ impl ThreadCache {
     unsafe fn trim(&mut self) {
         self.arm_exit_hook();
         self.refresh_budget();
+        crate::counters::bump(&crate::counters::VOLUME.trims, 1);
         let tier_allowance = self
             .tier_cached_bytes
             .min(self.budget.saturating_mul(2));
@@ -1392,9 +1411,11 @@ impl ThreadCache {
             return;
         }
         if len > FLUSH_CHUNK {
+            // Delegated: `flush_bin` counts the call.
             self.flush_bin(class, 0);
             return;
         }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
         let block_size = CLASSES_RUNTIME[class];
         let chain = self.bins[class].head;
         let mut groups: [MaybeUninit<PageReleaseChunk>; MAX_FLUSH_GROUPS] =
@@ -1450,6 +1471,10 @@ impl ThreadCache {
     /// needs only one lock acquisition per chunk.
     unsafe fn flush_bin(&mut self, class: usize, floor_blocks: u32) {
         let block_size = CLASSES_RUNTIME[class];
+        if self.bins[class].len <= floor_blocks {
+            return;
+        }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
         let bin = &mut self.bins[class];
 
         while bin.len > floor_blocks {
@@ -1521,6 +1546,10 @@ impl ThreadCache {
         const MAX_MFLUSH_GROUPS: usize = MFLUSH_CHUNK as usize + 4;
         let block_size = MEDIUM_CLASSES[mclass];
         let bin = &mut self.mbins[mclass];
+        if bin.len <= floor_blocks {
+            return;
+        }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
 
         while bin.len > floor_blocks {
             // Uninit: only 0..ng written (the old EMPTY array zeroed ~8 KiB
@@ -1617,6 +1646,7 @@ impl ThreadCache {
             self.bactive[bclass] = ActiveBig::empty();
             return;
         }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
         let mut tail = head;
         while !(*tail.cast::<*mut u8>()).is_null() {
             tail = *tail.cast::<*mut u8>();
@@ -1639,6 +1669,10 @@ impl ThreadCache {
         const MAX_BFLUSH_GROUPS: usize = BFLUSH_CHUNK as usize + 4;
         let block_size = BIG_CLASSES[bclass];
         let bin = &mut self.bigbins[bclass];
+        if bin.len <= floor_blocks {
+            return;
+        }
+        crate::counters::bump(&crate::counters::VOLUME.flushes, 1);
 
         while bin.len > floor_blocks {
             let mut groups: [MaybeUninit<BGroup>; MAX_BFLUSH_GROUPS] =
@@ -1794,6 +1828,7 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         {
             unsafe { (*slot.cache.get()).write(cache) };
             slot.state.store(RETIRED_READY, Ordering::Release);
+            crate::counters::bump(&crate::counters::VOLUME.retired_caches, 1);
             RETIRED_READY_COUNT.fetch_add(1, Ordering::AcqRel);
             return;
         }

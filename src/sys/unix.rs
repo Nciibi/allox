@@ -102,7 +102,21 @@ pub(crate) unsafe fn map_any(size: usize) -> *mut u8 {
 /// back (zero-filled) on next access. Best-effort — failure just means the
 /// caller must treat the range as still dirty.
 pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
-    madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED) == 0
+    // Instrumented at the single backend entry point so every retention
+    // tier (small cold pages, medium/big cold spans, large cold regions)
+    // is counted once, in one place. The counts are two relaxed adds; the
+    // timing needs a clock read and stays telemetry-only.
+    #[cfg(all(feature = "telemetry", feature = "std"))]
+    let t0 = std::time::Instant::now();
+    let discarded = madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED) == 0;
+    crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
+    crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
+    #[cfg(all(feature = "telemetry", feature = "std"))]
+    crate::counters::bump_ns(
+        &crate::counters::TIMING.purge_ns,
+        t0.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+    );
+    discarded
 }
 
 // ---------------------------------------------------------------------------
