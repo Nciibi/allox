@@ -1234,8 +1234,13 @@ impl ThreadCache {
     /// stash is full or over budget (caller falls back to the global shards).
     pub(crate) fn push_large_stash(&mut self, base: *mut u8, pages: u32) -> bool {
         let bytes = pages as usize * crate::page::PAGE_SIZE;
+        let cap = if bytes >= LARGE_STASH_HUGE_THRESHOLD {
+            LARGE_STASH_HUGE_CAP_BYTES
+        } else {
+            LARGE_STASH_CAP_BYTES
+        };
         if self.large_len as usize >= LARGE_STASH_SLOTS
-            || self.large_bytes + bytes > LARGE_STASH_CAP_BYTES
+            || self.large_bytes + bytes > cap
         {
             return false;
         }
