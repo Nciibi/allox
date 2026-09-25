@@ -946,12 +946,14 @@ impl ThreadCache {
             active.len = count - 1;
             active.virgin = if virgin { count - 1 } else { 0 };
             self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.big_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = 0;
         } else {
             let bin = &mut self.bigbins[bclass];
             bin.head = rest;
             bin.len += count - 1;
             self.cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
+            self.big_cached_bytes += BIG_CLASSES[bclass] * (count - 1) as usize;
             self.bvirgin[bclass] = if virgin { count - 1 } else { 0 };
         }
         (first, virgin)
