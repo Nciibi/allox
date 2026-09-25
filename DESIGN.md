@@ -255,7 +255,7 @@ paths, so fast paths pay nothing and threads that never allocate are untouched.
 `flush_current_thread()` remains for explicit reclamation (thread pools, the
 main thread on return-from-main). Measured: per-generation mapped growth went
 from +1050 mappings (linear leak) to flat, and focused `spawn-churn` improved
-from 2.61M to 4.16M ops/s in the capped production matrix.
+from 2.61M to 4.65M ops/s in the capped production matrix.
 
 ## 5. Public API
 

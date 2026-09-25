@@ -282,8 +282,8 @@ storm, and a flush-dominated exit path.
   later allocator slow paths reclaim at most one retired cache per cache
   generation. Caches over 8 MiB or a full queue use the synchronous flush path.
 - `spawn-churn` production runs (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup)
-  reached **4.16M Allox vs 12.22M mimalloc ops/s** (0.34x), with peak RSS
-  17.9 MiB vs 19.4 MiB. The deferred work overlaps worker execution and removes
+  reached **4.65M Allox vs 13.62M mimalloc ops/s** (0.34x), with peak RSS
+  17.6 MiB vs 19.4 MiB. The deferred work overlaps worker execution and removes
   most exit-time lock serialization, but does not eliminate the shared-page
   scan/first-touch cost; the remaining gap is still material.
 

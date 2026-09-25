@@ -289,9 +289,9 @@ allocator slow paths; oversized or overflow caches use the synchronous path.
 Small-page exit flushing also passes known tails, batches same-class releases,
 and lazily reinitializes fully-free pages.
 
-* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **4.16M vs
-  12.22M mimalloc** (0.34x), up from 2.61M vs 13.74M at the isolated baseline;
-  peak RSS 17.9 MiB vs 19.4 MiB.
+* `spawn-churn` (2 s × 5, `BENCH_SAFE_LIVE=1`, 2 GiB cgroup): **4.65M vs
+  13.62M mimalloc** (0.34x), up from 2.61M vs 13.74M at the isolated baseline;
+  peak RSS 17.6 MiB vs 19.4 MiB.
 * `spawn-empty` remains allocator-independent; `mixed-all 8T` and
   `mixed-small 8T` remain wins in capped checks. Full debug integration and
   thread-exit convergence tests pass.
