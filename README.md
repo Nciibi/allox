@@ -441,6 +441,17 @@ The Windows table predates the span/arena/exit-flush/fast-path work
 (re-verify via CI bench artifacts); macOS results pending CI runs on that
 platform.
 
+**Known measurement defects, stated here rather than buried.** The
+benchmark harness's per-event counters appear to lose their final batched
+window on some path: virginity telemetry reports ~50% of `calloc`s memsetting
+against 9 refills and 72 refill blocks, which cannot both be true. Until that
+is fixed, counter-derived conclusions — including the whole `zeroed-small
+8T` analysis — carry less weight than the throughput numbers. Separately,
+`spawn-churn` remains bimodal in every build and must not gate a release, and
+the tables above rest on 3 × 2 s samples against a ~10% noise floor; see
+[Measurement methodology](#measurement-methodology) for the protocol that
+replaces them.
+
 ## Development
 
 ```text
