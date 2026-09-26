@@ -19,6 +19,21 @@ no stack frame and no callee-saved registers. Paired A/B: **+5.9% on the
 process-global app benchmark at 1 and 4 threads**, and `tight-small 8T`
 +6.6%, `request 8T` +18.4%, `json-ish 8T` +4.5%, `tight-small 1T` +3.5%
 with no workload regressing outside its own noise band.
+**Retired-cache partial adoption DONE 2026-09-26** (§5a) — whole-cache
+adoption required an *empty* cache, which a busy worker never has, so under
+thread churn every retired cache was flushed back to the global heap (adoption
+sat at ~77%). Stealing only the classes whose bins we do not hold is O(1) per
+class and took adoption to **100%**: `spawn-churn` +18.6% median over 16
+paired samples, better at every order statistic, `prodcons 8T` +8.6% with RSS
+down 15–38%, `zeroed-small 8T` +5.0%, nothing else outside noise. **The
+bimodality itself is not fixed** — both builds still span 11–24M, and the low
+mode is a 64 KiB-per-call purge storm on the ordinary free path. **Provably-zero
+cold pages DONE 2026-09-26** (§5b) — a `discard`ed page may skip `calloc`'s
+memset; sound and sensitivity-checked, but measured *neutral* because the cold
+tier is not hot enough in these workloads. `zeroed-small 8T` therefore remains
+the one genuine direct-matrix loss, and its ~50%-memset telemetry contradicts
+its 9-refill/72-block refill count — debug the batched counters before
+attacking the row again.
 **Full 20-workload matrix re-measured 2026-09-26: 19/20 win-or-tie vs the
 best comparator** (fresh process per sample, 2 s × 3, `BENCH_SAFE_LIVE=1`,
 3 GiB cgroup, `taskset -c 0-7`; README table refreshed from that run). The
