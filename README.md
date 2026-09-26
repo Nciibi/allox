@@ -444,9 +444,29 @@ platform.
 ## Development
 
 ```text
-cargo test          # full test suite
+cargo test                      # full test suite (81 tests)
 cargo test --release
-cargo bench         # throughput comparison vs system allocator
+cargo test --features telemetry
+cargo build --no-default-features      # core-only, no_std
+cargo build --target wasm32-unknown-unknown
+RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
+cargo bench                     # throughput comparison vs system allocator
+```
+
+The gates this project holds itself to before calling a change landed, in
+order: the full suite green in **debug and release**, then `telemetry`,
+`no_std` and `wasm32` builds, then rustdoc with `-D warnings`, then
+`cargo package`, and only then the paired A/B described in
+[Measurement methodology](#measurement-methodology). A benchmark number from
+a build that has not cleared those gates is not evidence.
+
+```text
+# smoke one workload quickly
+BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
+
+# what a change has to beat, order-alternated, >=10 pairs, fresh process each
+BENCH_SECS=2 BENCH_REPS=1 BENCH_FRESH=1 BENCH_SAFE_LIVE=1 \
+  taskset -c 0-7 ./target/release/bench
 ```
 
 License: MIT OR Apache-2.0
