@@ -146,8 +146,11 @@ fn zero_across_threads() {
 #[test]
 fn calloc_from_a_discarded_cold_page_is_zeroed() {
     unsafe {
-        // 40k * 16 B = 640 KiB live, ~10 pages, so >4 of them are forced cold.
-        const N: usize = 40_000;
+        // 400k * 16 B = 6.4 MiB live, ~98 pages. `EMPTY_PAGE_CACHE_PER_CLASS`
+        // is 4 (~16k blocks) and is consulted *before* the cold list, so the
+        // count has to be far larger than that or the empty list would satisfy
+        // nearly every calloc below and the cold path would go untested.
+        const N: usize = 400_000;
         let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
         for _ in 0..N {
             let p = allox::malloc(16);
@@ -167,10 +170,13 @@ fn calloc_from_a_discarded_cold_page_is_zeroed() {
         // the cache hands them back. Force that.
         allox::flush_current_thread();
         let purges_after = allox::__diagnostics::volume().purge_calls;
+        // At least 8 pages discarded proves the cold list is deep enough to
+        // dominate the recycle loop below.
         assert!(
-            purges_after > purges_before,
-            "no page reached the cold tier, so the discarded-page path is untested \
-             (purge_calls {purges_before} -> {purges_after})"
+            purges_after >= purges_before + 8,
+            "only {} pages reached the cold tier, so the discarded-page path is \
+             barely exercised (purge_calls {purges_before} -> {purges_after})",
+            purges_after - purges_before
         );
 
         // Now recycle: every one of these must come back zeroed, whether it
