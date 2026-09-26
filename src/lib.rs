@@ -1250,61 +1250,10 @@ unsafe fn alloc_tiered(size: usize, align: usize) -> *mut u8 {
     alloc_small(class_for_size(size))
 }
 
-/// Above this length a `memset` call is the right tool: glibc's
-/// `memset` is vectorised and beats a scalar store loop by a wide margin,
-/// and its size dispatch is amortised over enough stores.
-const SMALL_ZERO_MAX: usize = 256;
-
-/// Zero `len` bytes at `p`, inlined for small blocks.
-///
-/// `ptr::write_bytes` compiles to a `call memset`, and for a 16-256 B block
-/// that is a PLT-indirect jump into an IFUNC-dispatched glibc `memset`: the
-/// call, the indirect branch (a misprediction source on a hot path) and
-/// memset's own size-class dispatch together cost as much as — for the
-/// smallest sizes more than — the stores they perform. mimalloc inlines its
-/// small-size clear for the same reason (`_mi_memzero_aligned`).
-///
-/// The 16-byte stores require `p` to be 16-byte aligned, which every
-/// allocator-returned block is (class offsets are 16-byte multiples of a
-/// 64 KiB-aligned page; large regions are page-aligned). Anything else, and
-/// anything long, falls back to `write_bytes`.
-///
-/// Stores only, never reads, and never writes past `len`: the main loop is
-/// bounded by `i + 16 <= len` and the tail is a binary decomposition
-/// (8/4/2/1) of the remainder.
-#[inline(always)]
-unsafe fn zero_bytes(p: *mut u8, len: usize) {
-    if len > SMALL_ZERO_MAX || (p as usize) & 15 != 0 {
-        ptr::write_bytes(p, 0, len);
-        return;
-    }
-    let mut i = 0usize;
-    while i + 16 <= len {
-        (p.add(i) as *mut u128).write(core::mem::zeroed());
-        i += 16;
-    }
-    let rem = len - i;
-    if rem & 8 != 0 {
-        (p.add(i) as *mut u64).write(0);
-        i += 8;
-    }
-    if rem & 4 != 0 {
-        (p.add(i) as *mut u32).write(0);
-        i += 4;
-    }
-    if rem & 2 != 0 {
-        (p.add(i) as *mut u16).write(0);
-        i += 2;
-    }
-    if rem & 1 != 0 {
-        *p.add(i) = 0;
-    }
-}
-
 #[inline]
 unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
     if !p.is_null() && !known_zeroed {
-        zero_bytes(p, size);
+        ptr::write_bytes(p, 0, size);
         #[cfg(feature = "telemetry")]
         note_zeroed(size);
     }
@@ -1316,7 +1265,7 @@ unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
 /// default build compiles this down to the bare memset.
 #[inline]
 unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
-    zero_bytes(p, size);
+    ptr::write_bytes(p, 0, size);
     #[cfg(feature = "telemetry")]
     note_zeroed(size);
 }
