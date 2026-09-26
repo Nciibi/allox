@@ -97,28 +97,28 @@ comparator runs the identical workload through its `GlobalAlloc` impl
 
 | Workload | allox | system | mimalloc | snmalloc | dlmalloc | talc | vs best | allox peak RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 54.10 M/s | 45.32 M/s | 48.81 M/s | 42.80 M/s | 20.95 M/s | 26.21 M/s | **1.11×** | 5.1 MiB |
-| mixed-small 1T (16–4096 B) | 37.48 M/s | 7.01 M/s | 14.34 M/s | 12.02 M/s | 5.90 M/s | 10.03 M/s | **2.61×** | 16.1 MiB |
-| tight-small 8T (64 B) | 250.28 M/s | 231.15 M/s | 234.24 M/s | 239.04 M/s | 1.60 M/s | 2.13 M/s | **1.05×** | 7.6 MiB |
-| mixed-small 8T (16–4096 B) | 193.45 M/s | 36.99 M/s | 40.85 M/s | 56.84 M/s | 705 K/s | 1.84 M/s | **3.40×** | 92.9 MiB |
-| mixed-all 1T (16–65536 B) | 17.54 M/s | 2.86 M/s | 5.37 M/s | 540 K/s | 516 K/s | 511 K/s | **3.27×** | 21.5 MiB |
-| mixed-all 8T (16–65536 B) | 41.81 M/s | 11.17 M/s | 22.71 M/s | 1.29 M/s | 427 K/s | 1.18 M/s | **1.84×** | 118.2 MiB |
-| medium-only 1T (16–64 K) | 19.39 M/s | 2.33 M/s | 5.44 M/s | 265 K/s | 270 K/s | 416 K/s | **3.56×** | 17.0 MiB |
-| medium-only 8T (16–64 K) | 47.34 M/s | 10.45 M/s | 24.38 M/s | 611 K/s | 424 K/s | 1.16 M/s | **1.94×** | 91.2 MiB |
-| large-only 1T (32 K–1 M) | 7.41 M/s | 350 K/s | 2.68 M/s | 16 K/s | 553 K/s | 280 K/s | **2.77×** | 7.2 MiB |
-| big-tail 1T (64 K–256 K) | 17.76 M/s | 343 K/s | 6.69 M/s | 22 K/s | 456 K/s | 300 K/s | **2.65×** | 6.5 MiB |
-| big-upper-tail 1T (256 K–1 M) | 10.85 M/s | 308 K/s | 1.78 M/s | 11 K/s | 519 K/s | 211 K/s | **6.10×** | 5.7 MiB |
-| large-only 8T (32 K–1 M) | 31.79 M/s | 1.14 M/s | 25.22 M/s | 139 K/s | 447 K/s | 983 K/s | **1.26×** | 34.6 MiB |
-| huge-only 1T (5–8 MiB) | 1.87 M/s | 167 K/s | 1.40 M/s | 1 K/s | 455 K/s | 130 K/s | **1.33×** | 5.2 MiB |
-| zeroed-small 1T (16–256 B) | 29.14 M/s | 18.53 M/s | 25.71 M/s | 24.79 M/s | 13.34 M/s | 17.95 M/s | **1.13×** | 5.3 MiB |
-| zeroed-small 8T (16–256 B) | 103.54 M/s | 113.50 M/s | 125.38 M/s | 149.77 M/s | 1.17 M/s | 1.49 M/s | **0.69×** | 8.5 MiB |
-| zeroed-large 1T | 206 K/s | 595.2 /s | 2 K/s | 951.7 /s | 2 K/s | 395.1 /s | **85.59×** | 5.2 MiB |
-| prodcons 8T (remote free) | 39.68 M/s | 6.84 M/s | 24.96 M/s | 39.31 M/s | 911 K/s | 927 K/s | **1.01×** | 361.3 MiB |
-| spawn-churn (thread churn) | 17.25 M/s | 2.66 M/s | 16.61 M/s | 6.95 M/s | 832 K/s | 1.51 M/s | **1.04×** | 18.6 MiB |
-| spawn-empty (calibration) | 35 K/s | 35 K/s | 35 K/s | 35 K/s | 35 K/s | 33 K/s | **1.01×** | 5.0 MiB |
-| json-ish 8T | 265.17 M/s | 244.95 M/s | 166.16 M/s | 226.10 M/s | 1.27 M/s | 2.07 M/s | **1.08×** | 6.0 MiB |
-| request 8T | 462.38 M/s | 190.83 M/s | 362.05 M/s | 409.73 M/s | 1.28 M/s | 2.10 M/s | **1.13×** | 8.0 MiB |
-| ecs 8T (realloc growth) | 92.33 M/s | 75.20 M/s | 1.81 M/s | 383 K/s | 1.03 M/s | 1.53 M/s | **1.23×** | 12.6 MiB |
+| tight-small 1T (64 B) | 52.52 M/s | 44.77 M/s | 48.00 M/s | 41.54 M/s | 20.48 M/s | 26.47 M/s | **1.09×** | 5.3 MiB |
+| mixed-small 1T (16–4096 B) | 38.16 M/s | 7.18 M/s | 14.78 M/s | 12.49 M/s | 6.08 M/s | 10.46 M/s | **2.58×** | 16.1 MiB |
+| tight-small 8T (64 B) | 257.18 M/s | 240.73 M/s | 216.89 M/s | 231.07 M/s | 1.62 M/s | 2.11 M/s | **1.07×** | 7.7 MiB |
+| mixed-small 8T (16–4096 B) | 196.03 M/s | 37.17 M/s | 40.42 M/s | 57.87 M/s | 707 K/s | 1.85 M/s | **3.39×** | 93.0 MiB |
+| mixed-all 1T (16–65536 B) | 17.51 M/s | 2.79 M/s | 5.10 M/s | 543 K/s | 424 K/s | 515 K/s | **3.43×** | 21.4 MiB |
+| mixed-all 8T (16–65536 B) | 41.85 M/s | 11.25 M/s | 22.21 M/s | 1.30 M/s | 440 K/s | 1.12 M/s | **1.88×** | 118.4 MiB |
+| medium-only 1T (16–64 K) | 19.55 M/s | 2.36 M/s | 5.54 M/s | 276 K/s | 395 K/s | 417 K/s | **3.53×** | 16.9 MiB |
+| medium-only 8T (16–64 K) | 47.62 M/s | 11.08 M/s | 24.41 M/s | 618 K/s | 413 K/s | 991 K/s | **1.95×** | 91.0 MiB |
+| large-only 1T (32 K–1 M) | 7.36 M/s | 340 K/s | 2.52 M/s | 17 K/s | 497 K/s | 279 K/s | **2.91×** | 7.3 MiB |
+| big-tail 1T (64 K–256 K) | 17.79 M/s | 344 K/s | 6.73 M/s | 22 K/s | 387 K/s | 308 K/s | **2.64×** | 6.6 MiB |
+| big-upper-tail 1T (256 K–1 M) | 10.98 M/s | 309 K/s | 1.75 M/s | 11 K/s | 516 K/s | 215 K/s | **6.28×** | 5.8 MiB |
+| large-only 8T (32 K–1 M) | 31.53 M/s | 1.14 M/s | 25.19 M/s | 141 K/s | 454 K/s | 1.02 M/s | **1.25×** | 34.5 MiB |
+| huge-only 1T (5–8 MiB) | 1.82 M/s | 166 K/s | 1.40 M/s | 1 K/s | 439 K/s | 130 K/s | **1.30×** | 5.2 MiB |
+| zeroed-small 1T (16–256 B) | 28.90 M/s | 18.63 M/s | 25.80 M/s | 21.38 M/s | 13.42 M/s | 18.40 M/s | **1.12×** | 5.4 MiB |
+| zeroed-small 8T (16–256 B) | 100.45 M/s | 111.86 M/s | 124.27 M/s | 148.91 M/s | 1.19 M/s | 1.49 M/s | **0.67×** | 8.6 MiB |
+| zeroed-large 1T | 206 K/s | 612.6 /s | 2 K/s | 980.0 /s | 1 K/s | 413.6 /s | **86.63×** | 5.3 MiB |
+| prodcons 8T (remote free) | 38.65 M/s | 7.16 M/s | 25.19 M/s | 31.45 M/s | 888 K/s | 1.10 M/s | **1.23×** | 384.5 MiB |
+| spawn-churn (thread churn) | 19.29 M/s | 2.96 M/s | 16.13 M/s | 6.89 M/s | 1.01 M/s | 1.59 M/s | **1.20×** | 18.5 MiB |
+| spawn-empty (calibration) | 36 K/s | 35 K/s | 35 K/s | 34 K/s | 35 K/s | 34 K/s | **1.02×** | 4.9 MiB |
+| json-ish 8T | 258.37 M/s | 238.08 M/s | 167.16 M/s | 219.43 M/s | 1.32 M/s | 2.02 M/s | **1.09×** | 6.0 MiB |
+| request 8T | 449.32 M/s | 191.74 M/s | 364.98 M/s | 405.00 M/s | 1.24 M/s | 2.15 M/s | **1.11×** | 8.0 MiB |
+| ecs 8T (realloc growth) | 93.03 M/s | 74.16 M/s | 2.07 M/s | 380 K/s | 1.05 M/s | 1.50 M/s | **1.25×** | 12.3 MiB |
 
 **21/22 win-or-tie against the best comparator.** `spawn-empty` is the
 pthread calibration row (allocator-independent by construction: every
@@ -132,16 +132,23 @@ churn sized to recycle, so every allocation takes the software-zeroing
 path. Adding it immediately exposed what it was built to find: the
 `zeroed_calls`/`zeroed_bytes` counters were two shared `lock xadd`s per
 `calloc` call, and moving them into the thread cache's batched telemetry
-took this row from 30.0 M/s to 103.5 M/s — a 3.4× improvement that is
-still not enough, because snmalloc reads 149.1 M/s and mimalloc 134.6 M/s.
-At this point the loop is dominated by the memset itself (allox sustains
-~14 GB/s of zeroing across 8 threads), so the remaining gap is per-operation
-overhead on a path where allox does strictly more bookkeeping than either
-comparator: a class-table lookup, `cached_bytes` + `len` + the `virgin`
-watermark on every operation, where mimalloc's small free is a pop and a
-16-bit `used--`. This is the same axis as the application-shape row in the
-next section, and it is the next thing to look at. Single-threaded
-(`zeroed-small 1T`) allox leads at 1.13×.
+took this row from 30.0 M/s to ~100 M/s — a 3.4× improvement that is still
+not enough: snmalloc reads ~149 M/s and mimalloc ~124 M/s. Single-threaded
+(`zeroed-small 1T`) allox leads at 1.12×.
+
+**Three explanations for the remainder were tested and all three are dead
+ends**, which is worth stating because the obvious one is not the answer:
+the per-operation `cached_bytes` accounting (ablated: −0.8% to +3.0%, i.e.
+noise — the byte counter is an independent accumulator off the critical
+dependency chain so it never stalls the core); the `memset` call itself
+(replaced with an inline 16-byte store loop, the way mimalloc inlines its
+small clear: **−12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
+and beats a scalar loop even at 16–256 B); and the relocation rate (parity,
+see the application-shape section). The one hypothesis left untested is the
+**virginity rate** — allox's `SmallBin::virgin` is a per-class count, so
+once a class is warm every subsequent `calloc` memsets, and a design that
+satisfies more of them from never-used memory does strictly less zeroing
+work. That is a policy question, not a tuning knob.
 
 `spawn-churn` is genuinely bimodal on a loaded host, in *every* build
 including the ones before this release: a run either retires its
