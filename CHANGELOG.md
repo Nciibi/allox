@@ -122,6 +122,13 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   i.e. noise in both directions. The byte counter is an independent
   accumulator off the critical dependency chain, so it never stalls the
   core. Recorded in REMAINING_PLAN 4d so the idea is not re-derived.
+- Measured and rejected: inlining the small-block zeroing to avoid the
+  `memset` call. The small recycled-zeroing path is a PLT-indirect tail jump
+  into an IFUNC-dispatched glibc `memset` for a 16-256 B block, and mimalloc
+  inlines its small clear, so this looked like free win. An inline 16-byte
+  store loop measured **-12.6% on `zeroed-small 8T` / -28.3% on 1T** — glibc's
+  vectorised `memset` beats a scalar store loop even at those lengths, where
+  its dispatch is fully amortised. `ptr::write_bytes` is correct here.
 - Two new benchmark workloads, `zeroed-small 1T` and `zeroed-small 8T`:
   `calloc` churn sized to recycle, so every allocation comes from
   non-virgin memory and takes the software-zeroing path. The matrix had

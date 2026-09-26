@@ -587,8 +587,20 @@ paired-A/B rule exists to catch; at 5 reps it is +1.3%.
 `cached_bytes` frozen the budget logic degenerates and they collapse 78-83%,
 which measures the breakage rather than the accounting.)
 
-**So this direction is closed.** The remaining `zeroed-small 8T` gap is not
-bookkeeping overhead. Since the row is memset-bound, the next thing to test
+A second hypothesis was tested and also falsified: that the cost was the
+`memset` *call* itself. Disassembly of the release binary shows the small
+recycled-zeroing path is a PLT-indirect tail jump into an IFUNC-dispatched
+glibc `memset` (`jmp *memset@GLIBC_2.2.5`) for a 16-256 B block, which
+looks wasteful — mimalloc inlines its small clear (`_mi_memzero_aligned`).
+Replacing it with an inline 16-byte store loop plus an 8/4/2/1 tail
+(`zero_bytes`, `SMALL_ZERO_MAX = 256`) measured **-12.6% on `zeroed-small 8T`
+and -28.3% on `zeroed-small 1T`** — i.e. clearly worse. glibc's `memset` is
+AVX2/ERMS-vectorised and beats a scalar store loop (one 16-byte store per
+cycle) by a wide margin even at these lengths, where the dispatch is fully
+amortised. Reverted; `ptr::write_bytes` is correct here.
+
+**So this direction is closed twice over.** The remaining `zeroed-small 8T`
+gap is neither the per-op bookkeeping nor the zeroing primitive. Since the row is memset-bound, the next thing to test
 is the **virginity rate** — how often each allocator can satisfy a
 `calloc` from never-used memory and skip the memset entirely. allox's
 `SmallBin::virgin` watermark is a per-class count, so once a class is warm
