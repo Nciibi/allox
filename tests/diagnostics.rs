@@ -126,6 +126,11 @@ fn calloc_on_recycled_memory_counts_zeroing() {
             allox::free(p);
         }
     }
+    // These counters moved from two shared atomics per call to the thread
+    // cache's `Pending` batch (REMAINING_PLAN 4d), so a read only sees them
+    // after a publish. Without this the assertions below pass trivially at
+    // zero and the test stops being sensitivity-checked.
+    publish_pending();
     let before = volume();
     unsafe {
         for _ in 0..64 {
@@ -134,16 +139,20 @@ fn calloc_on_recycled_memory_counts_zeroing() {
             allox::free(p);
         }
     }
+    publish_pending();
     let after = volume();
-    // Recycled blocks must be zeroed explicitly; virgin ones skip it, so
-    // assert only that the counter is wired and monotone.
+
+    // Recycled blocks must be zeroed explicitly, so after the cache is warm
+    // every one of these 64 calls must be counted: assert the counters
+    // actually move, not merely that they are monotone.
+    let calls = delta(before.zeroed_calls, after.zeroed_calls);
+    let bytes = delta(before.zeroed_bytes, after.zeroed_bytes);
+    assert!(calls > 0, "zeroed_calls did not move: {calls}");
+    assert!(bytes >= calls, "every software zeroing covers at least a byte");
+    // 64 B blocks, so bytes must be at least 64 per counted call.
     assert!(
-        after.zeroed_calls >= before.zeroed_calls,
-        "zeroed_calls went backwards"
-    );
-    assert!(
-        after.zeroed_bytes >= after.zeroed_calls,
-        "every software zeroing covers at least one byte"
+        bytes >= calls * 64,
+        "expected >= 64 bytes per 64-byte calloc, got {bytes} for {calls} calls"
     );
 }
 

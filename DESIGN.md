@@ -361,10 +361,32 @@ fuzz/     alloc_seq  zero_init_seq
    successful discard. `malloc` does not care. On arena-backed unix, evicted
    regions park as arena holes instead of `munmap`.
 
-Rejected optimization, recorded deliberately: in-place realloc growth into
-the adjacent free block requires taking the class lock to inspect the page
-free list (it is lock-protected), so every grow pays a lock acquisition to
-sometimes avoid a copy - expected net loss; alloc-copy-free stays.
+This is not a gap against the state of the art. Checked against mimalloc's
+source rather than assumed: `_mi_heap_realloc_zero` is identity only for a
+shrink that already fits (`newsize <= size && newsize >= size/2`) and
+otherwise does `umalloc + memcpy + free` - the same shape as allox. The
+mimalloc maintainer is explicit in microsoft/mimalloc#123: "the design is
+based on size segregated areas so it does *not* support further in-place
+expanding of blocks". glibc does grow in place, but via boundary-tag
+coalescing, which a segregated-page allocator has no structure for. A
+one-class-per-page design additionally cannot express most of our own class
+steps: 16/32/48/64/... means a 32 B block cannot become a 48 B class out of
+its own page (48/32 = 1.5); only the power-of-two steps are reachable.
+
+The related *shrink* tolerance that mimalloc does have is deliberately not
+implemented here, and the reason is a soundness invariant rather than a
+performance estimate. Our free path is layout-routed: the class comes from
+the caller's size and never from a header load (the SPAN_MAGIC load +
+sub-header follow was ~48% of free cycles on `mixed-all`). So after a
+`realloc` returns `p`, the caller frees with a layout sized to `new_size`,
+and that layout must still name the block's own class. Returning `p` for a
+cross-class shrink would route the caller's free into a bin the block does
+not belong to - which the debug validator aborts on, and which in release
+desynchronises the bin's `len`/`virgin` accounting so a later `alloc_zeroed`
+can skip a memset it owes. mimalloc is immune because it resolves the owning
+page from the pointer itself.
+`tests/basic.rs::realloc_cross_class_shrink_relocates_so_the_free_still_routes`
+pins this.
 
 ### Growable extents (big/large `realloc`, arena targets)
 

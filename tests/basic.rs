@@ -429,3 +429,71 @@ fn global_realloc_small_to_medium_and_back() {
         a.dealloc(np, Layout::from_size_align(8 * 1024, 16).unwrap());
     }
 }
+
+/// A cross-class `realloc` **must relocate**, even when it is a shrink that
+/// wastes less than half the block.
+///
+/// mimalloc returns the same pointer in that case (`newsize <= size &&
+/// newsize >= size/2`). allox deliberately cannot, and this test is the pin
+/// that keeps it from "fixing" that gap later: allox's free path is
+/// *layout-routed* (the class comes from the caller's size, never from a
+/// header load -- that was ~48% of free cycles on `mixed-all`, DESIGN 6), so
+/// after a `realloc` returns `p` the caller frees with a layout sized to
+/// `new_size`, and the free must still route to the block's own class.
+///
+/// Returning `p` for a 33248-byte class-5 medium block shrunk to 24576
+/// (class 3) would make the caller's `dealloc` route to `mbins[3]`; the
+/// `debug_assertions` validator catches that immediately as a corrupt
+/// pointer, and in release it would corrupt `bin.virgin` accounting and can
+/// hand OS-dirty memory to a later `alloc_zeroed`. The small tier has the
+/// same hazard through `bins[]` and `SmallBin::virgin`.
+///
+/// So: same class is identity, everything else copies. mimalloc is immune
+/// because it resolves the owning page from the pointer itself rather than
+/// trusting a caller-supplied size. See REMAINING_PLAN 4d.
+#[test]
+fn realloc_cross_class_shrink_relocates_so_the_free_still_routes() {
+    unsafe {
+        let a = allox::Allox;
+
+        // Small tier: 64 B is class 3, 48 B is class 2. Must move, and the
+        // post-realloc free below must not trip the layout/class validator.
+        let l64 = Layout::from_size_align(64, 16).unwrap();
+        let p = a.alloc(l64);
+        core::ptr::write_bytes(p, 0x33, 64);
+        let q = a.realloc(p, l64, 48);
+        assert_ne!(q, p, "64 -> 48 crosses a class and must relocate");
+        assert_eq!(
+            core::slice::from_raw_parts(q, 48),
+            &vec![0x33u8; 48][..],
+            "relocating shrink must preserve the live prefix"
+        );
+        a.dealloc(q, Layout::from_size_align(48, 16).unwrap());
+
+        // Medium tier: 32768 B is class 5 (33248), 24576 B is class 3 (26256).
+        let big = Layout::from_size_align(32 * 1024, 16).unwrap();
+        let p = a.alloc(big);
+        core::ptr::write_bytes(p, 0x11, 32 * 1024);
+        let q = a.realloc(p, big, 24 * 1024);
+        assert_ne!(q, p, "medium cross-class shrink must relocate");
+        assert_eq!(
+            core::slice::from_raw_parts(q, 24 * 1024),
+            &vec![0x11u8; 24 * 1024][..]
+        );
+        a.dealloc(q, Layout::from_size_align(24 * 1024, 16).unwrap());
+
+        // Free-function realloc: same rule, class from the block header.
+        let p = malloc(64);
+        let q = realloc(p, 48);
+        assert_ne!(q, p, "free-fn 64 -> 48 must relocate");
+        free(q);
+
+        // Sanity: a *same-class* resize is still identity, which is the whole
+        // reason growth within a class is free today.
+        let l48 = Layout::from_size_align(48, 16).unwrap();
+        let p = a.alloc(l48);
+        let q = a.realloc(p, l48, 48);
+        assert_eq!(q, p, "same-class resize must be identity");
+        a.dealloc(q, l48);
+    }
+}

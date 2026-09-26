@@ -95,6 +95,39 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   nothing, free nothing). `realloc`'s identity test stays in the inlined
   fast path and everything that can move memory is out of line, so an
   identity resize no longer pays a five-register frame.
+- **The two `calloc` counters are no longer shared atomics.**
+  `zeroed_calls` and `zeroed_bytes` were the last per-event counters still
+  updated unconditionally, with a `lock xadd` pair on *every* non-virgin
+  `calloc`/`alloc_zeroed` call. A software-zeroing memset is per *call* for
+  `calloc`-heavy code, not per page, so the plan's "only genuinely cold
+  counters stay always-on" did not hold for these two — and this is precisely
+  the shape that cost 33% on `mixed-all 8T` when the volume counters had it
+  (REMAINING_PLAN 4d). They now accumulate in the thread cache's existing
+  telemetry-gated `Pending` batch and publish every 8192 events, so a default
+  build compiles them away entirely. **Consequence for consumers:**
+  `__diagnostics::volume().zeroed_calls` / `.zeroed_bytes` now read 0 unless
+  the crate is built with `--features telemetry` (the field positions in
+  `VOLUME_FIELDS` are unchanged, so the positional ABI is intact).
+  Measured (paired A/B, two prebuilt binaries, order-alternating, 3 reps) on a
+  new `calloc`-churn workload added for this: **`zeroed-small 8T` +252%
+  (30.0M -> 105.7M ops/s)** and `zeroed-small 1T` +6-13%, with the guard rows
+  flat. The 8T figure is the contended case: eight threads were each doing
+  ~26M `lock xadd` pairs per second onto one shared cache line.
+- Two new benchmark workloads, `zeroed-small 1T` and `zeroed-small 8T`:
+  `calloc` churn sized to recycle, so every allocation comes from
+  non-virgin memory and takes the software-zeroing path. The matrix had
+  `zeroed-large` but nothing covering the small/medium zeroing path, which
+  is where the counter change above lives.
+- `tests/basic.rs::realloc_cross_class_shrink_relocates_so_the_free_still_routes`
+  pins an invariant that looks like a missed optimization. mimalloc returns
+  the same pointer for a cross-class `realloc` shrink within half a block;
+  allox must relocate, because its free path is layout-routed rather than
+  page-resolved, so the caller's post-`realloc` layout has to keep naming the
+  block's own class. Returning `p` for a 33248-byte class-5 medium block
+  shrunk to 24576 would route the caller's `dealloc` to a different class,
+  which the debug validator aborts on and which in release corrupts
+  `SmallBin`/`Bin` `virgin` accounting and can hand OS-dirty memory to a
+  later `alloc_zeroed`. See REMAINING_PLAN 4d.
 - Fixed the `wasm32-unknown-unknown` build: `tls::imp::flush` called
   `cache::reclaim_all` and `tls::imp::retire` called `cache::retire`
   unconditionally, but both are gated on `any(unix, windows)`, so the

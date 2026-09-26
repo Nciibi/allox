@@ -282,6 +282,13 @@ const _: () = assert!(VOLUME_FIELDS.len() == VOLUME_COUNT);
 
 /// Increment a volume counter. `#[inline]` and a single relaxed add; the
 /// counter is only reached on paths that already do far more work.
+///
+/// Gated because after the `zeroed_*` counters moved into the batched
+/// `Pending` (REMAINING_PLAN 4d) nothing on a target with neither telemetry
+/// nor a `sys` backend that counts purges calls it — wasm32 with the feature
+/// off — and an uncalled function is a `dead_code` warning the project does
+/// not accept. The unix/windows backends count purges with or without `std`.
+#[cfg(any(feature = "telemetry", unix, windows))]
 #[inline(always)]
 pub(crate) fn bump(counter: &AtomicU64, by: u64) {
     counter.fetch_add(by, Relaxed);

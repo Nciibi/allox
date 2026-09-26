@@ -128,6 +128,13 @@ impl Rng {
 enum Kind {
     /// Standard churn: each thread allocs/frees its own blocks.
     Standard,
+    /// `calloc`-heavy churn in the *small/medium* tiers, sized so the thread
+    /// cache stays warm and every allocation is served from recycled
+    /// (non-virgin) memory. That is the only way to reach the software-zeroing
+    /// path — a virgin block skips the memset entirely — so this is the row
+    /// that measures the cost of a `calloc` per call rather than per page.
+    /// `zeroed-large` covers the large tier; nothing covered small/medium.
+    ZeroedSmall,
     ZeroedLarge,
     /// Producer-consumer: thread i allocs, thread (i+1)%N frees half the
     /// blocks via a ring handoff. Exposes remote-free / cache-drift costs.
@@ -258,6 +265,20 @@ const WORKLOADS: &[Workload] = &[
         size_range: (5 * 1024 * 1024, 8 * 1024 * 1024),
         free_pct: 50,
         kind: Kind::Standard,
+    },
+    Workload {
+        name: "zeroed-small 1T",
+        threads: 1,
+        size_range: (16, 256),
+        free_pct: 50,
+        kind: Kind::ZeroedSmall,
+    },
+    Workload {
+        name: "zeroed-small 8T",
+        threads: 8,
+        size_range: (16, 256),
+        free_pct: 50,
+        kind: Kind::ZeroedSmall,
     },
     Workload {
         name: "zeroed-large 1T",
@@ -401,6 +422,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
     let start = Instant::now();
     let ops = match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
+        Kind::ZeroedSmall => run_zeroed_small(alloc, wl, seconds),
         Kind::ZeroedLarge => run_zeroed_large(alloc, wl, seconds),
         Kind::ProdCons => run_prodcons(alloc, wl, seconds),
         Kind::SpawnChurn => run_spawn_churn(alloc, wl, seconds),
@@ -484,6 +506,76 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
 
     let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     total
+}
+
+/// `calloc` churn sized to recycle: keep a bounded live set, free a fraction
+/// each step, and the cache hands the same blocks back over and over. Every
+/// one of those is a non-virgin block, so every one of them takes the
+/// software-zeroing path and (before 2026-09-26) two shared atomics.
+fn run_zeroed_small<A: GlobalAlloc + Sync + ?Sized>(
+    alloc: &'static A,
+    wl: &Workload,
+    seconds: u64,
+) -> u64 {
+    let stop = Instant::now() + Duration::from_secs(seconds);
+    let threads = wl.threads;
+    let size_range = wl.size_range;
+    let free_pct = wl.free_pct;
+    let live_batch = if std::env::var_os("BENCH_SAFE_LIVE").is_some() {
+        16
+    } else {
+        10_000
+    };
+    // Small enough to stay in one class's cache: the point is recycling the
+    // same block, not sampling the whole size range.
+    let max_live = 2048usize;
+
+    let handles: Vec<_> = (0..threads)
+        .map(|t| {
+            std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    let mut rng =
+                        Rng(0xD1B54A32D192ED03 ^ ((t as u64 + 1).wrapping_mul(0x9E3779B97F4A7C15)));
+                    let mut live: Vec<(*mut u8, usize)> = Vec::with_capacity(max_live);
+                    let mut ops = 0u64;
+                    while Instant::now() < stop {
+                        for _ in 0..live_batch {
+                            let size = if size_range.0 == size_range.1 {
+                                size_range.0
+                            } else {
+                                size_range.0 + (rng.next() as usize) % (size_range.1 - size_range.0)
+                            };
+                            let layout = Layout::from_size_align(size.max(1), 16).expect("layout");
+                            let p = unsafe { alloc.alloc_zeroed(layout) };
+                            if p.is_null() {
+                                return ops;
+                            }
+                            // Dirty it, so a recycled block is observably
+                            // non-zero and the allocator must really memset.
+                            unsafe { *p = ops as u8 };
+                            live.push((p, size));
+                            let over = live.len() > max_live;
+                            if over || (rng.next() % 100 < free_pct && !live.is_empty()) {
+                                let idx = (rng.next() as usize) % live.len();
+                                let (p, s) = live.swap_remove(idx);
+                                let l = Layout::from_size_align(s.max(1), 16).unwrap();
+                                unsafe { alloc.dealloc(p, l) };
+                            }
+                            ops += 1;
+                        }
+                    }
+                    for (p, s) in live {
+                        let l = Layout::from_size_align(s.max(1), 16).unwrap();
+                        unsafe { alloc.dealloc(p, l) };
+                    }
+                    ops
+                })
+                .unwrap()
+        })
+        .collect();
+
+    handles.into_iter().map(|h| h.join().unwrap()).sum()
 }
 
 fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(

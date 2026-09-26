@@ -6,7 +6,13 @@ promotion DONE 2026-09-25** (§4c). The tier-aware cache allowance and
 bounded benchmark matrix are validated: `large-only 1T` 2.88× mimalloc,
 `large-only 8T` 1.32×, and `mixed-all 1T` 2.90× on the 2 s × 3 safe
 fresh-process run. The 1T tail above 1 MiB is still on the large path.
-**Remote-free drift cap DONE 2026-09-23** (§4b). **Frameless fast paths +
+**Remote-free drift cap DONE 2026-09-23** (§4b). **Research pass
+2026-09-26: three candidate optimizations tested, one shipped (+252% on a new
+`calloc` row), two reverted with evidence; the app-shape "in-place growth"
+premise closed as not applicable** (§4d) — mimalloc and snmalloc relocate
+cross-class `realloc`s exactly as allox does, so allox's 27% relocation rate
+is parity, not a defect. New open item: `zeroed-small 8T` at 0.69× snmalloc,
+now the one genuine direct-matrix loss. **Frameless fast paths +
 single-visit `realloc` DONE 2026-09-26** (§4d) — the small/medium
 `alloc`/`free`/`realloc` fast paths no longer contain a call, so they carry
 no stack frame and no callee-saved registers. Paired A/B: **+5.9% on the
@@ -382,26 +388,214 @@ cost is the only lever that matters short of removing the relocations.
 
 Candidate levers, in measured order of promise:
 
-1. **Grow in place into the adjacent block** (what mimalloc/snmalloc do with
-   a per-page free bitmap). allox's pages are one class per 64 KiB, but the
-   free list is intrusive through the blocks and class-locked, so checking
-   and unlinking the neighbour is O(free blocks) under a lock — which is
-   exactly why DESIGN.md records it as "rejected: expected net loss". Making
-   it O(1) needs a per-page free **bitmap** (64 KiB page of 32 B blocks =
-   2048 bits = 256 B of page metadata) or a doubly-linked free list. This is
-   a real structural change to the small tier and is the only lever that
-   attacks the copies themselves. **STILL OPEN, and now the binding
-   constraint.** Note the arithmetic that makes it hard here specifically:
-   the classes are 16, 32, 48, 64, 80, … so a 32 B block cannot grow into a
-   48 B class out of its own page (48/32 = 1.5), even though 16→32 is
-   exactly 2:1. In-place growth within a one-class-per-page design only
-   works for the power-of-two steps, and this workload's chain
-   (16→32→64→128) happens to be all of them — but the class table also
-   produces 48/64/80/… in real doubling sequences, so a general solution
-   needs the bitmap, not a special case.
+1. ~~**Grow in place into the adjacent block**~~ — **CLOSED 2026-09-26 as
+   NOT APPLICABLE. Do not re-derive this.** The premise was wrong.
+
+   *mimalloc and snmalloc do not do this either.* Checked against mimalloc's
+   source rather than assumed: `_mi_heap_realloc_zero` is
+
+   ```c
+   if mi_unlikely(newsize <= size && newsize >= (size / 2) && newsize > 0) return p;
+   void* newp = mi_heap_umalloc(heap,newsize,usable_post);
+   _mi_memcpy(newp, p, copysize);
+   mi_free(p);
+   ```
+
+   i.e. identity only for a shrink within the existing block, otherwise
+   allocate + copy + free — the same shape as allox. The maintainer is
+   explicit in [mimalloc#123](https://github.com/microsoft/mimalloc/issues/123):
+   *"the design is based on size segregated areas so it does **not** support
+   further in-place expanding of blocks."* So **allox's 27% relocation rate is
+   parity with both C comparators, not a defect**, and a per-page free bitmap
+   would not make allox beat mimalloc at this workload — it would make it
+   differ from mimalloc.
+
+   glibc *does* grow in place, but because it coalesces with boundary tags
+   (Knuth), which is a different design family: a segregated page allocator
+   has no next-chunk size field to read and no coalescing to exploit.
+
+   The remaining objection stands on its own anyway: the classes are
+   16, 32, 48, 64, 80, …, so a 32 B block cannot become a 48 B class out of
+   its own page (48/32 = 1.5). Only the power-of-two steps are expressible
+   in a one-class-per-page design.
+
+   **What actually closed the 4-thread row instead** was per-operation cost
+   (the fast-path work below), not removing copies. Further gains on this
+   workload have to come from the fast path or from scaling, not from
+   eliminating relocations.
+
+   *Side effect worth knowing:* the research also surfaced a **parity gap that
+   is real but that allox cannot take** — see the shrink-tolerance note below.
 2. ~~**Cheaper relocation round trip**~~ — **DONE 2026-09-26.** See below.
 3. ~~Fast-path diet~~ — **DONE 2026-09-26, and it was worth more than
    expected.** See below.
+
+### The mimalloc `realloc` shrink tolerance: a real parity gap allox must not close
+
+mimalloc returns the *same pointer* for a cross-class shrink that wastes less
+than half the block (`newsize <= usable && newsize >= usable/2`).
+`newrealloc(p, 64, 48)` in mimalloc is a no-op; in allox it copies. That is a
+genuine difference, worth about a dozen instructions to close, and
+`Vec::shrink_to_fit` / `HashMap::shrink_to_fit` / C `realloc` all hit it.
+
+**It was implemented, measured against the soundness invariants, and
+reverted: it is not implementable here.** allox's free path is
+*layout-routed* — the class comes from the caller's size and never from a
+header load, which DESIGN §6 records as removing ~48% of free cycles on
+`mixed-all`. So after a `realloc` returns `p`, the caller frees with a layout
+sized to `new_size`, and that layout **must still name the block's own
+class**. Returning `p` for a 33248-byte class-5 medium block shrunk to 24576
+(class 3) makes the caller's `dealloc` route to `mbins[3]`, and:
+
+* the `debug_assertions` validator aborts on it immediately (this is how it
+  was caught — `corrupt_pointer()` on a class mismatch), and
+* in release it would put the block in a bin whose `len`/`virgin` accounting
+  no longer describes it, and a later `alloc_zeroed` popping that position
+  would **skip a memset it owes** — an information leak.
+
+mimalloc is immune because it resolves the owning page from the *pointer*
+(`_mi_ptr_page(p)`) and ignores the caller's size entirely.
+
+So the exact-class-equality identity test is load-bearing, not merely
+conservative. `tests/basic.rs::realloc_cross_class_shrink_relocates_so_the_free_still_routes`
+pins it: it asserts a 64→48 small shrink and a 32 KiB→24 KiB medium shrink
+both relocate, and that the post-`realloc` free does not trip the validator.
+It fails the moment anyone widens the identity test.
+
+The same reasoning kills the tolerance for the *large* tier in principle, but
+there `free_large` re-derives everything from the region's own header, so it
+would in fact be safe — and worthless, since large shrinks are rare.
+
+A separate, harmless part of the same investigation was also tried and
+**reverted**: hoisting the whole small tier out of `realloc_slow` into the
+inlined `realloc` fast path (so a relocation is a direct tail call and the tier
+test is not evaluated twice). It measured **-1.0% consistently** across
+`mixed-all 8T`, `medium-only 8T` and `mixed-small 8T` in a paired A/B, so it
+was dropped rather than kept for tidiness.
+
+### Exgen-Malloc's single-free-list result does not transfer (measured, reverted)
+
+[arXiv 2510.10219](https://arxiv.org/pdf/2510.10219) reports that collapsing
+mimalloc's three free lists per page into one gives **-18% / -19.5% L1 misses
+and -87.1% data TLB misses** against mimalloc, and attributes the win to
+*delayed reuse* — reuse deferred through `local_free` loses cache and TLB
+locality.
+
+allox has the same multi-list shape in its medium and big tiers: a per-class
+bin (`mbins` / `bigbins`) *plus* a per-class "active span" (`mactive` /
+`bactive`). §5 measured ActiveBig at **+19%** on `large-only 8T`, so the big
+tier's second list is a win here — but **the medium tier had never been A/B'd
+on its own.** Measured 2026-09-26 by collapsing the medium tier to a single
+list (alloc skip, free skip, and refill routing to the bin so nothing is
+stranded in a list nothing drains), paired A/B, 3 reps:
+
+| workload | active span | single list | delta |
+|---|---:|---:|---:|
+| `medium-only 1T` | 20.58M | 20.41M | -0.8% |
+| `medium-only 8T` | 47.80M | 47.14M | -1.4% |
+| `mixed-all 8T` | 46.22M | 46.03M | -0.4% |
+| `mixed-all 1T` | 17.57M | 17.63M | +0.4% |
+
+Flat to consistently non-positive, so the switch was removed. Exgen's
+mechanism does not apply to allox's medium tier, and the most likely reason is
+structural: mimalloc's `local_free` defers reuse *across* ownership changes
+(its pages are shared and its `local_free` is drained lazily), whereas
+allox's thread cache is thread-private and its active span is drained by the
+very next allocation from the same thread. There is no cross-thread deferred
+reuse for Exgen's penalty to attach to.
+
+### The new `zeroed-small 8T` row: what it found, and the gap it left
+
+Adding a `calloc`-churn workload to the matrix (`zeroed-small 1T` /
+`zeroed-small 8T` — sized to recycle, so every allocation is served from
+non-virgin memory and takes the software-zeroing path) immediately paid for
+itself and then some.
+
+**What it found:** `zeroed_calls` and `zeroed_bytes` were the last two
+per-event counters still updated unconditionally, with a `lock xadd` pair on
+every non-virgin `calloc`. The plan's justification was "only genuinely cold
+counters stay always-on — software zeroing is one per memset that had to
+run", but a memset is per *call* for `calloc`-heavy code, not per page. This
+is precisely the shape §4d records costing **-33% on `mixed-all 8T`** when
+the volume counters had it. Moving both into the existing telemetry-gated
+`Pending` batch (paired A/B, order-alternating, 3 reps):
+
+| workload | before | after | delta |
+|---|---:|---:|---:|
+| `zeroed-small 8T` | 30.0 M/s | 105.7 M/s | **+252%** |
+| `zeroed-small 1T` | 25.5–27.6 M/s | 28.8–29.2 M/s | +6% to +13% |
+| `tight-small 8T` | 250.7 M/s | 259.8 M/s | +3.6% (noise) |
+| `mixed-small 8T` | 200.3 M/s | 194.6 M/s | -2.9% (noise) |
+| `request 8T` | 447.8 M/s | 440.8 M/s | -1.6% (noise) |
+
+The 8-thread figure is the contended case: before, each of eight threads was
+doing ~26M atomic pairs per second onto one shared cache line. Verified the
+workload really exercises the path (telemetry build: `zeroed_calls=26,641,088`,
+`zeroed_bytes=3,609,944,738` in a 2 s single-threaded run), and the
+strengthened test fails if the counters stop moving.
+
+**The gap it left — the new open item.** 5-rep fresh-process run:
+
+| backend | ops/s | allox / this |
+|---|---:|---:|
+| allox | 102.2 M/s | 1.00× |
+| system | 112.7 M/s | 0.91× |
+| mimalloc | 134.6 M/s | 0.76× |
+| snmalloc | 149.1 M/s | **0.69×** |
+
+So `zeroed-small 8T` is now the one direct-matrix row allox genuinely loses,
+at 0.69×. Single-threaded (`zeroed-small 1T`) it leads at 1.13×. The loop is
+now memset-bound — allox sustains ~14 GB/s of zeroing across 8 threads — so
+what is left is per-operation overhead on a path where allox does strictly
+more bookkeeping than either comparator: a class-table lookup plus
+`cached_bytes`, `len` and the `virgin` watermark on every operation, where
+mimalloc's small free is a pop and a 16-bit `used--` (verified in its
+disassembly: 17 instructions, frameless, no byte accounting).
+
+**That makes "remove the per-operation byte accounting" the next candidate,
+and this is the row that will measure it.** It is the same axis as the
+remaining application-shape deficit, and it is now measured rather than
+suspected. It was considered and rejected on 2026-09-25 on the grounds that
+changing the budget from bytes to blocks would move the RSS tuning of 20
+validated workloads; the constraint is real and a replacement has to keep
+`cached_bytes` exact, so the options are narrower than "delete it" — e.g.
+carrying the per-class size in the bin, or deriving the byte total from the
+`len` watermarks already maintained. **OPEN.**
+
+### Checked and already optimal: TLS access
+
+`rimalloc` and `mnemosyne` both single out the thread-local storage accessor
+as the difference between an extra call and a single segment-relative load;
+`mnemosyne` ships a nightly `#[thread_local]` feature purely to get it, and
+`rimalloc` uses a dedicated pthread TSD slot on arm64 so `malloc`/`free` pay
+no `_tlv_get_addr`.
+
+**allox already has the optimum on stable Rust**, verified by disassembly of
+the release binary: `mov %fs:0x0,%rax` — a bare segment-relative read of the
+`#[thread_local]`, with no call, no `LocalKey::with` and no initialization
+guard. No work available here.
+
+### Transparent huge pages: deliberately deferred, with the evidence recorded
+
+* This box runs `transparent_hugepage/enabled = [madvise]`, and allox never
+  issues `MADV_HUGEPAGE` — so allox gets **no** huge pages at all.
+* mimalloc **v3** (2026-01) enables THP by default on Linux and raises its
+  minimum purge size to 2 MiB so `MADV_DONTNEED` stops breaking huge pages
+  apart. **The comparator in the matrix is mimalloc v2, not v3** —
+  `libmimalloc-sys` 0.1.49 bundles `/c_src/mimalloc/v2` — so this asymmetry
+  is *not* the current 4-thread gap. It is headroom, plus v3 future-proofing.
+* FoundationDB measured **+13.6% / +11.9%** throughput on a malloc-heavy
+  workload from THP; Exgen-Malloc measured **-87.1% data TLB misses**
+  vs mimalloc. TLB pressure is a real cost in this workload's shape.
+* **Blocker:** DESIGN §2 lists huge pages as an explicit v1 non-goal, and
+  `ARENA_ALIGN` is 64 KiB with 64 KiB-granular bump commits, so a
+  `MADV_HUGEPAGE` would need a 2 MiB commit-granularity decision first.
+  allox's `sys::discard` also madvises individual 64 KiB pages, so any huge
+  page established on the arena would be torn apart by the cold-retention
+  path without the mimalloc-v3 minimum-purge-size change.
+
+Not started. It is a policy decision (v1 non-goal) plus a commit-granularity
+change, not a tuning knob.
 
 **Landed 2026-09-26 (fast-path work).** No `perf` on the dev box (the nix
 store has only the unbuilt derivations), so the diagnosis came from

@@ -1018,6 +1018,20 @@ fn note_arena_event(park: bool) {
     with_cache(|cache| cache.note_arena_event(park), || ());
 }
 
+/// Record a `calloc`/`alloc_zeroed` call that had to zero in software, in
+/// the calling thread's batched counters.
+///
+/// These two counters were always-on shared atomics until 2026-09-26: two
+/// `lock xadd`s on *every* non-virgin zeroed allocation. A memset is per
+/// *call* for `calloc`-heavy code, not per page, so the "only genuinely cold
+/// counters stay always-on" rule did not hold for them — and that shape is
+/// the one that cost 33% on `mixed-all 8T` when the volume counters had it
+/// (see [`note_realloc`]). Worth +252% on `zeroed-small 8T`.
+#[cfg(feature = "telemetry")]
+fn note_zeroed(size: usize) {
+    with_cache(|cache| cache.note_zeroed(size), || ());
+}
+
 /// Record a relocating `realloc` in the calling thread's batched counters.
 ///
 /// This is deliberately *not* a shared atomic: at four threads, one
@@ -1240,19 +1254,20 @@ unsafe fn alloc_tiered(size: usize, align: usize) -> *mut u8 {
 unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
     if !p.is_null() && !known_zeroed {
         ptr::write_bytes(p, 0, size);
-        counters::bump(&counters::VOLUME.zeroed_calls, 1);
-        counters::bump(&counters::VOLUME.zeroed_bytes, size as u64);
+        #[cfg(feature = "telemetry")]
+        note_zeroed(size);
     }
 }
 
-/// Software zeroing of a recycled block: one memset plus the counters that
-/// make "how much zeroing did we actually do" measurable (the virgin
-/// fast paths above skip both).
+/// Software zeroing of a recycled block: one memset, plus the batched
+/// telemetry that makes "how much zeroing did we actually do" measurable (the
+/// virgin fast paths above skip both). The counters are feature-gated, so a
+/// default build compiles this down to the bare memset.
 #[inline]
 unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
     ptr::write_bytes(p, 0, size);
-    counters::bump(&counters::VOLUME.zeroed_calls, 1);
-    counters::bump(&counters::VOLUME.zeroed_bytes, size as u64);
+    #[cfg(feature = "telemetry")]
+    note_zeroed(size);
 }
 
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big

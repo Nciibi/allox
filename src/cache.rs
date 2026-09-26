@@ -356,6 +356,16 @@ pub(crate) struct Pending {
     realloc_copy_bytes: u64,
     #[cfg(feature = "telemetry")]
     realloc_promotions: u64,
+    /// `calloc`/`alloc_zeroed` calls that had to zero in software, and the
+    /// bytes they zeroed. These two were *always-on* shared atomics until
+    /// 2026-09-26 and are now batched like every other per-event counter:
+    /// one `lock xadd` per event is only affordable for events that are
+    /// genuinely cold, and a software-zeroing memset is per *call* for any
+    /// `calloc`-heavy code, not per page. See REMAINING_PLAN 4d.
+    #[cfg(feature = "telemetry")]
+    zeroed_calls: u64,
+    #[cfg(feature = "telemetry")]
+    zeroed_bytes: u64,
     // --- telemetry-only (feature-gated) ---
     #[cfg(feature = "telemetry")]
     allocs: u64,
@@ -408,6 +418,10 @@ impl Pending {
             realloc_copy_bytes: 0,
             #[cfg(feature = "telemetry")]
             realloc_promotions: 0,
+            #[cfg(feature = "telemetry")]
+            zeroed_calls: 0,
+            #[cfg(feature = "telemetry")]
+            zeroed_bytes: 0,
             #[cfg(feature = "telemetry")]
             allocs: 0,
             #[cfg(feature = "telemetry")]
@@ -505,6 +519,8 @@ impl ThreadCache {
         drain!(realloc_relocations, realloc_relocations);
         drain!(realloc_copy_bytes, realloc_copy_bytes);
         drain!(realloc_promotions, realloc_promotions);
+        drain!(zeroed_calls, zeroed_calls);
+        drain!(zeroed_bytes, zeroed_bytes);
         self.pending.diag_ops = 0;
     }
 
@@ -576,6 +592,19 @@ impl ThreadCache {
         }
         if self.pending.ops >= FLUSH_OPS {
             self.publish();
+        }
+    }
+
+    /// A `calloc`/`alloc_zeroed` call zeroed in software. Batched into
+    /// `Pending` rather than two shared atomics per call; see the field
+    /// comment in [`Pending`].
+    #[cfg(feature = "telemetry")]
+    pub(crate) fn note_zeroed(&mut self, size: usize) {
+        self.pending.zeroed_calls += 1;
+        self.pending.zeroed_bytes += size as u64;
+        self.pending.diag_ops += 1;
+        if self.pending.diag_ops >= DIAG_FLUSH_OPS {
+            self.publish_diagnostics();
         }
     }
 
