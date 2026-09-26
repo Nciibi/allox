@@ -141,28 +141,51 @@ took this row from 30.0 M/s to ~100 M/s — a 3.4× improvement that is still
 not enough: snmalloc reads ~149 M/s and mimalloc ~124 M/s. Single-threaded
 (`zeroed-small 1T`) allox leads at 1.12×.
 
-**Three explanations for the remainder were tested and all three are dead
+**Four explanations for the remainder were tested and all four are dead
 ends**, which is worth stating because the obvious one is not the answer:
 the per-operation `cached_bytes` accounting (ablated: −0.8% to +3.0%, i.e.
 noise — the byte counter is an independent accumulator off the critical
 dependency chain so it never stalls the core); the `memset` call itself
 (replaced with an inline 16-byte store loop, the way mimalloc inlines its
 small clear: **−12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
-and beats a scalar loop even at 16–256 B); and the relocation rate (parity,
-see the application-shape section). The one hypothesis left untested is the
-**virginity rate** — allox's `SmallBin::virgin` is a per-class count, so
-once a class is warm every subsequent `calloc` memsets, and a design that
-satisfies more of them from never-used memory does strictly less zeroing
-work. That is a policy question, not a tuning knob.
+and beats a scalar loop even at 16–256 B); the relocation rate (parity,
+see the application-shape section); and the **virginity rate** itself.
+
+That last one is a real mechanism and it is now implemented and sound, but it
+does not move this row. `park_empty_page` marks a page `FLAG_DISCARDED` only
+after `sys::discard` actually succeeded — `madvise(MADV_DONTNEED)` on Unix,
+`VirtualAlloc(MEM_RESET)` on Windows, and `false` on WASM, so WASM stays
+safely dirty — and a page carrying that flag may serve `calloc` without a
+memset. Measured: **+0.9%** on `zeroed-small 8T` in one paired A/B, −5.3% in
+another, i.e. neutral. The reason is structural rather than a tuning failure:
+this workload keeps 2048 blocks live per thread, so pages rarely become
+*fully* free, and parking a page is what requires exactly that. The cold tier
+is simply not hot enough here. The flag is kept — it is sound, it is
+sensitivity-checked, and it strictly reduces zeroing work in workloads that do
+recycle cold pages — but it earns nothing on this row.
+
+An upper-bound ablation confirms the row is winnable in principle: marking
+every recycled page virgin (deliberately incorrect, never used) reaches
+~201 M/s against snmalloc's ~149 M/s. So the gap is not a wall.
+
+**The instrumentation is currently not trustworthy, and that outranks any
+further tuning.** Virginity telemetry reports ~50% of `calloc`s taking the
+memset path against only 9 refills and 72 refill blocks observed. Both cannot
+be true, so the batched counters are almost certainly losing their last
+window on some path. Every hypothesis above was reasoned from those numbers,
+so fix the counters before spending more effort on this row.
 
 `spawn-churn` is genuinely bimodal on a loaded host, in *every* build
-including the ones before this release: a run either retires its
-short-lived thread caches into adoptable slots (~18–20 M ops/s, ~18.5 MiB
-peak RSS) or fails to, and the page releases that follow are purged
-rather than recycled (~8.8 M ops/s, ~14.8 MiB peak RSS). The 17.84 M/s
-above is the median of 10 paired fresh-process samples taken on a quiet
-box, where 9 of 10 landed in the fast mode. Do not gate a release on this
-row without a quiet host and enough repetitions to separate the modes.
+including the ones before this release. Retired-cache partial adoption (see
+Design) took `adopted_caches`/`retired_caches` from ~77% to a uniform 100% and
+`spawn-churn` from a 19.56M to a 23.20M median over 16 paired samples,
+improving every order statistic (min 11.01M → 11.87M, p10 11.21M → 12.10M).
+**The bimodality itself is not fixed.** Both builds still span 11–24M, and
+the slow mode is a purge storm on the ordinary free path — every purge is
+exactly 64 KiB, and slow samples run ~1000 purges against ~300 in fast ones.
+It is not a retirement problem: adoption is 100% in the slow mode too. Do not
+gate a release on this row without a quiet host and enough repetitions to
+separate the modes.
 
 `prodcons 8T` peak RSS is the one number here that moves a lot between
 runs (238 MiB to 731 MiB observed): remote frees push the drift cap, and
