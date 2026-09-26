@@ -832,6 +832,92 @@ original blocking flush. Re-measure the ratio on a quiet host before using it
 as a release gate. The next possible lever is reducing first-touch cost for
 workers that cannot adopt a cache, not another refill or flush-size guess.
 
+### 5a. Retired-cache partial adoption (DONE 2026-09-26, +18.6% median)
+
+The "next possible lever" above is now measured, and it was the retirement
+path rather than first-touch cost.
+
+**Diagnosis.** Whole-cache adoption required `cached_bytes == 0 &&
+large_len == 0`. A busy worker essentially never has an empty cache, so
+under thread churn that path almost never fired and every retired cache fell
+through to `reclaim_one` -> `flush_all` -> the global heap. The counters said
+so directly: `adopted_caches`/`retired_caches` sat at **~77%** even in the
+fast mode, and purging ran 25–36 MB per 2 s sample.
+
+**Fix (`cache.rs::reclaim_retired`, `steal_empty_bins`).** A worker only holds
+blocks for the few classes it is actively using, so most of its 64 bins are
+empty. Steal the chain for exactly those classes: O(1) each, no walk, no lock,
+no allocation, carrying the byte accounting and the virgin watermark with the
+chain. Only the classes we could not use are still flushed, and they are now
+the minority. The whole-cache path is untouched, so the empty-cache case is
+unchanged.
+
+**Results** (2 s, `BENCH_SAFE_LIVE=1`, 3 GiB cgroup, `taskset -c 0-7`, fresh
+process per sample):
+
+| | base | steal | delta |
+|---|---|---|---|
+| `adopted_caches`/`retired_caches` | ~77% | **100%** | — |
+| `spawn-churn` median (16 paired) | 19.56M | **23.20M** | **+18.6%** |
+| `spawn-churn` mean | 18.47M | 19.92M | +7.8% |
+| `spawn-churn` min / p10 | 11.01M / 11.21M | 11.87M / 12.10M | +7.8% / +7.9% |
+| `prodcons 8T` throughput | 35.10M | 38.12M | +8.6% |
+| `prodcons 8T` RSS | 346 MiB | 293 MiB | **−15%** (a second run: 509 -> 313, −38.6%) |
+| `zeroed-small 8T` median (10 paired) | 94.67M | 99.36M | +5.0% |
+| `mixed-all 8T` median (10 paired) | 38.01M | 38.11M | flat |
+| `tight-small 8T`, `request 8T`, `json-ish 8T`, `ecs 8T` | — | — | within noise |
+
+The change dominates `spawn-churn` at *every* order statistic, so the win is
+not a lucky-mode artifact. A 3-rep sweep initially showed `mixed-all 8T` −5.3%
+and `zeroed-small 8T` −4.5%; both were noise and both reversed to flat and
++5.0% under 10-sample distributions. Report distributions, not 3-rep means,
+on this host — its run-to-run spread is ~10%.
+
+**Bimodality is NOT fixed.** Both builds still span 11–24M on `spawn-churn`.
+The low mode is a purge storm: every purge is exactly 64 KiB, and slow samples
+run ~1000 purges against ~300 in fast samples. It originates on the ordinary
+free path, not in retirement (adoption is 100% in the low mode too), so the
+`discard`-on-empty-page amplifier is the next thing to attack. §5's 1.33× claim
+still needs a quiet host before it is used as a release gate.
+
+### 5b. Provably-zero cold pages (DONE 2026-09-26, measured NEUTRAL)
+
+`FLAG_DISCARDED` (bit 8) marks a page whose contents the backend has promised
+are zero. `park_empty_page` sets it only after `sys::discard` returns true —
+`madvise(MADV_DONTNEED)` on unix, `VirtualAlloc(MEM_RESET)` on Windows, and
+`false` on wasm, so wasm stays safely dirty. The flag is read *before*
+`PageHeader::init` clears the flags, and only a successful discard keeps
+`FLAG_VIRGIN`, so `calloc` skips the memset only for memory the kernel zeroed.
+
+**Measured neutral, and kept anyway.** Paired A/B: `zeroed-small 8T` +0.9%
+(one run) / −5.3% (another), `zeroed-small 1T` +2.2% / −5.5%, `tight-small 8T`
++10.5% (noise, base read 208M against 250M on a quiet box). The cold tier is
+simply not hot enough in these workloads: `zeroed-small` keeps 2048 blocks per
+thread live, so few pages ever become *fully* free, which is what parking one
+requires. This is sound, sensitivity-checked, and strictly reduces memset work
+in workloads that do recycle cold pages, so it stays — but it does **not** move
+the `zeroed-small 8T` row.
+
+`tests/zero_init.rs::calloc_from_a_discarded_cold_page_is_zeroed` covers it and
+is **sensitivity-checked**: injecting the disclosure (set the flag, skip the
+discard) makes it fail, and it passes on the correct code. It asserts
+`purge_calls` grew by ≥ 8 so the test cannot silently degrade into not
+exercising the cold path — the first version of it passed *with* the bug
+injected, because 40k blocks only made ~10 pages and the 4-page `empty` cache
+(consulted before `cold`) satisfied nearly every `calloc`. `allox::free` also
+had to be followed by `allox::flush_current_thread()`, or the blocks sit in the
+thread cache and no page ever reaches the cold tier.
+
+`zeroed-small 8T` stays the one genuine direct-matrix loss. The upper-bound
+ablation (always claim virgin; intentionally incorrect) reached ~201M, so the
+row is winnable, but every mechanism tried so far is either unsound or
+perf-neutral: per-op byte accounting, inline zeroing (12.6–28.3% slower than
+glibc `memset`), relocation rate, and now cold-page proof. The remaining
+discrepancy is that virginity telemetry reports ~50% of `calloc`s memsetting
+against only 9 refills / 72 refill blocks, which cannot both be true; the
+batched counters are likely losing their last window. Debug that before
+attacking the row again.
+
 ## 6. mixed-all 8T per-op latency (~0.7x mimalloc)
 
 **Local profiling unblocked 2026-09-23** (dev box has `perf` via nix
