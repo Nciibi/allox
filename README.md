@@ -187,11 +187,16 @@ It is not a retirement problem: adoption is 100% in the slow mode too. Do not
 gate a release on this row without a quiet host and enough repetitions to
 separate the modes.
 
-`prodcons 8T` peak RSS is the one number here that moves a lot between
-runs (238 MiB to 731 MiB observed): remote frees push the drift cap, and
-the cap's shed target is a fraction of a per-thread budget, so how much
-virtual the arena holds on to depends on which threads happened to be
-remote-freeing. Throughput is stable across that range.
+`prodcons 8T` peak RSS used to be the number here that moved most between runs
+(238 MiB to 731 MiB observed): remote frees push the drift cap, and the cap's
+shed target is a fraction of a per-thread budget, so how much virtual the
+arena holds on to depended on which threads happened to be remote-freeing.
+Retired-cache partial adoption (see Design) largely settled it, because
+short-lived producer caches now hand their blocks to a live consumer instead
+of returning them to the global heap: two independent paired runs put allox
+at **293 MiB and 313 MiB against baselines of 346 MiB and 509 MiB**, a 15–38%
+reduction at neutral-to-better throughput. Throughput was already stable
+across the old RSS range.
 
 `ecs 8T` is the growable-extent workload: a 64 KiB buffer realloc-doubled
 to 1 MiB, four at a time per thread, plus small-component churn. It used
