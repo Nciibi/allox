@@ -126,7 +126,7 @@ allocator reads the same 35 K/s, so the row measures the host's
 thread-creation rate, not the allocator) and `spawn-churn` is a near-tie
 inside its own run-to-run spread — see the note on that row below.
 
-**The one real loss, `zeroed-small 8T` at 0.69×, is a row added on
+**The one real loss, `zeroed-small 8T` at 0.67×, is a row added on
 2026-09-26 and it is the honest result of adding it.** 8-thread `calloc`
 churn sized to recycle, so every allocation takes the software-zeroing
 path. Adding it immediately exposed what it was built to find: the
