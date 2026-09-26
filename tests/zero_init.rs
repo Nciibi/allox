@@ -131,3 +131,60 @@ fn zero_across_threads() {
         h.join().unwrap();
     }
 }
+
+/// A cold small page whose backend `discard` actually landed is provably
+/// zero again, so `calloc` may serve from it without a memset. This is the
+/// fast path added 2026-09-26; the test is built to catch the opposite bug,
+/// which is a **memory disclosure**: if the "provably zero" flag were ever
+/// set for a page that was not really discarded, `calloc` would hand back the
+/// `0xFF` written below.
+///
+/// It forces the page all the way cold rather than relying on the empty-page
+/// cache: `EMPTY_PAGE_CACHE_PER_CLASS` is 4, and a 64 KiB page of 16 B blocks
+/// holds ~4095 of them, so this allocates and frees ~40k blocks to push at
+/// least six pages into the cold tier where the discard runs.
+#[test]
+fn calloc_from_a_discarded_cold_page_is_zeroed() {
+    unsafe {
+        // 40k * 16 B = 640 KiB live, ~10 pages, so >4 of them are forced cold.
+        const N: usize = 40_000;
+        let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+        for _ in 0..N {
+            let p = allox::malloc(16);
+            assert!(!p.is_null());
+            // Poison every byte, so a non-zeroed reuse is unmistakable.
+            core::ptr::write_bytes(p, 0xFF, 16);
+            ptrs.push(p);
+        }
+        // Confirm the discard path actually ran, so this test cannot pass
+        // vacuously by never reaching the cold tier.
+        let purges_before = allox::__diagnostics::volume().purge_calls;
+        for p in ptrs.drain(..) {
+            allox::free(p);
+        }
+        let purges_after = allox::__diagnostics::volume().purge_calls;
+        assert!(
+            purges_after > purges_before,
+            "no page reached the cold tier, so the discarded-page path is untested \
+             (purge_calls {purges_before} -> {purges_after})"
+        );
+
+        // Now recycle: every one of these must come back zeroed, whether it
+        // came from the empty-page cache, a discarded cold page, or fresh.
+        for i in 0..N {
+            let p = allox::calloc(1, 16);
+            assert!(!p.is_null(), "calloc {i} returned null");
+            for b in 0..16 {
+                assert_eq!(
+                    *p.add(b),
+                    0,
+                    "calloc {i} returned stale data at byte {b} (0x{:02X})",
+                    *p.add(b)
+                );
+            }
+            // Dirty it again so the next round cannot be served by luck.
+            core::ptr::write_bytes(p, 0xFF, 16);
+            allox::free(p);
+        }
+    }
+}
