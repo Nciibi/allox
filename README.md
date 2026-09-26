@@ -184,6 +184,38 @@ process; fresh-process output is JSONL and gives per-process RSS values.
 Use `BENCH_SAFE_LIVE=1` with a memory cgroup for large runs to bound the
 benchmark's transient live set to 16 operations per drain check.
 
+### Measurement methodology
+
+Read this before trusting any single number above, including the ones that
+flatter allox.
+
+**The noise floor on this host is ~10% run-to-run.** Repeated samples of the
+same workload against the same binary spread by roughly a tenth, because it
+is a shared dev box whose load average wanders between 2 and 12 during a
+session. A median of 3 samples cannot resolve a 10% effect. A large share of
+the early "wins" *and* "regressions" recorded in this project were that
+artifact, and the honest ones were caught only by re-measuring.
+
+Worked example, one day, one pair of binaries: `mixed-all 8T` measured
+**−5.3%** on a 3-rep A/B and **flat** (median 38.01 → 38.11) on a 10-sample
+distribution. `zeroed-small 8T` measured **−4.5%** on 3 reps and **+5.0%**
+(median 94.67 → 99.36) on 10. Both 3-rep readings were noise; both reversed
+once there were enough samples to see it.
+
+**Protocol required before a change is believed:**
+
+- Paired A/B of two prebuilt binaries, alternated within each repetition so
+  neither build permanently owns the better position in the load cycle.
+- **N ≥ 10 pairs, reporting median, mean, min and p10** — never a 3-rep mean.
+  A change has to win on the order statistics, not only the average.
+- One fresh process per sample; release binaries, verified byte-for-byte
+  against the measured artifact so it is provable which code produced a number.
+- `BENCH_SAFE_LIVE=1` inside a memory cgroup, on `taskset`-pinned cores.
+
+**`spawn-churn` cannot gate a release at any sample size on a loaded host.**
+It is bimodal in every build, pre-release ones included, and the mode is not
+reliably visible in a 2 s sample. Report its distribution or do not report it.
+
 ### Latency and diagnostics
 
 `BENCH_P99=1024` samples 1-in-1024 allocator calls and reports per-call
