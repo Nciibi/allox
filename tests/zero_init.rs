@@ -162,6 +162,10 @@ fn calloc_from_a_discarded_cold_page_is_zeroed() {
         for p in ptrs.drain(..) {
             allox::free(p);
         }
+        // Freeing only files the blocks into this thread's cache; the pages
+        // do not become fully free (and so never reach the cold tier) until
+        // the cache hands them back. Force that.
+        allox::flush_current_thread();
         let purges_after = allox::__diagnostics::volume().purge_calls;
         assert!(
             purges_after > purges_before,
