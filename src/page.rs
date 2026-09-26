@@ -35,6 +35,21 @@ pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
 /// block is returned to the page.
 pub(crate) const FLAG_VIRGIN: u16 = 2;
 pub(crate) const FLAG_NEEDS_REINIT: u16 = 4;
+/// Flag: this page is parked cold and the backend's `discard` **succeeded**,
+/// so the OS has dropped the physical pages and every byte of the page reads
+/// as zero again on next touch.
+///
+/// This is a strictly stronger statement than "we no longer know what is in
+/// here", and it is what lets a recycled cold page serve `calloc` without a
+/// memset. It is only ever set from a successful backend discard
+/// (`MADV_DONTNEED` on unix, `VirtualAlloc(MEM_RESET)` on windows — both
+/// guarantee zero-fill), and never on a backend where discard is a no-op
+/// (wasm returns false), so the invariant stays sound everywhere.
+///
+/// Written *after* the discard call, because the discard zeroes the page —
+/// header included — so a flag set beforehand would be erased by its own
+/// proof. Read before `PageHeader::init` rewrites the header.
+pub(crate) const FLAG_DISCARDED: u16 = 8;
 
 // magic + prev + next + free_head + free_count/used/class/flags + owner = 44
 // bytes, padded by align(16) to 48 (HEADER_SIZE unchanged).
