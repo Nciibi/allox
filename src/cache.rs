@@ -730,10 +730,72 @@ impl ThreadCache {
                     return;
                 }
             }
+            // Partial adoption. The whole-cache path above needs an *empty*
+            // cache, which a busy worker essentially never has, so under thread
+            // churn it almost never fired and every retired cache instead went
+            // through `reclaim_one` -> `flush_all` -> the global heap. That is
+            // the bimodality's cost: the same workload measured 35 MB purged in
+            // its fast mode against 811 MB in its slow one, because a flush
+            // empties pages and empty pages get discarded.
+            //
+            // A worker only holds blocks for the few classes it is actively
+            // using, so most of its 64 bins are empty. Steal the chains for
+            // exactly those classes: O(1) each, no walk, no lock, and the
+            // blocks never leave thread-private memory. Whatever we could not
+            // use is still flushed below, but it is now the minority.
+            if let Some(mut adopted) = take_one() {
+                let stolen = unsafe { self.steal_empty_bins(&mut adopted) };
+                // Publish its batched counters, then hand back only the part
+                // we had no room for.
+                adopted.publish();
+                unsafe { adopted.flush_all() };
+                if stolen > 0 {
+                    crate::counters::bump(&crate::counters::VOLUME.adopted_caches, 1);
+                }
+                self.retired_reclaimed = true;
+                return;
+            }
             if reclaim_one() {
                 self.retired_reclaimed = true;
             }
         }
+    }
+
+    /// Take over `other`'s chain for every small class this cache's bin is
+    /// empty for, carrying the byte accounting and the virgin watermark with
+    /// it. O(1) per class — no walk, no lock, no allocation.
+    ///
+    /// The virgin count moves with the chain because it describes those exact
+    /// blocks: it is a count of never-allocated blocks at the bottom of *this*
+    /// list, and the list is what we are taking. A retired cache's pages are on
+    /// the global partial list and belong to no thread, so there is no
+    /// ownership to violate.
+    ///
+    /// # Safety
+    /// `other` must not be reachable from anywhere else (it came from
+    /// `take_one`, i.e. a dead thread's retired cache).
+    unsafe fn steal_empty_bins(&mut self, other: &mut ThreadCache) -> usize {
+        let mut stolen = 0usize;
+        for class in 0..NUM_CLASSES {
+            if other.bins[class].head.is_null() || !self.bins[class].head.is_null() {
+                continue;
+            }
+            let src = &mut other.bins[class];
+            let len = src.len;
+            let virgin = src.virgin;
+            let head = src.head;
+            src.head = ptr::null_mut();
+            src.len = 0;
+            src.virgin = 0;
+            let dst = &mut self.bins[class];
+            dst.head = head;
+            dst.len = len;
+            dst.virgin = virgin;
+            let bytes = CLASSES_RUNTIME[class] * len as usize;
+            self.cached_bytes += bytes;
+            stolen += bytes;
+        }
+        stolen
     }
 
     /// This thread's ownership id, assigned on first use (slow paths only).
