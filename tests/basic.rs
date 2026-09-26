@@ -349,3 +349,83 @@ fn many_small_churn() {
         }
     }
 }
+
+/// The small-tier `realloc` fast path resolves the size class once and serves
+/// the relocation from a single thread-cache visit (one TLS read, one bin pop
+/// and one bin push) instead of routing through the generic
+/// allocate/copy/free pair. This pins the two properties that split makes
+/// load-bearing: the contents survive every step of a doubling chain that
+/// crosses classes on both sides, and the pointer really does move (so the
+/// test would still notice if the identity test grew too eager).
+#[test]
+fn global_realloc_small_class_chain_preserves_contents() {
+    unsafe {
+        let a = allox::Allox;
+        // 8 B is a class-0 block; doubling walks class 0 -> 1 -> 3 -> 7 -> 11,
+        // i.e. every step is a genuine cross-class relocation inside the small
+        // tier (16 KiB cap), which is exactly the path under test.
+        let mut size = 8usize;
+        let mut p = a.alloc(Layout::from_size_align(size, 16).unwrap());
+        assert!(!p.is_null());
+        let mut expected: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        core::ptr::copy_nonoverlapping(expected.as_ptr(), p, size);
+
+        let mut moved = 0usize;
+        while size < 8192 {
+            let new_size = size * 2;
+            let np = a.realloc(p, Layout::from_size_align(size, 16).unwrap(), new_size);
+            assert!(!np.is_null());
+            assert_eq!(
+                core::slice::from_raw_parts(np, size),
+                &expected[..],
+                "contents lost growing {size} -> {new_size}"
+            );
+            if np != p {
+                moved += 1;
+            }
+            // The tail is ours to write; fill it so the next step's copy has
+            // to move real data rather than zeros.
+            core::ptr::write_bytes(np.add(size), 0x5A, new_size - size);
+            expected.resize(new_size, 0x5A);
+            p = np;
+            size = new_size;
+        }
+        assert!(
+            moved >= 3,
+            "doubling chain should relocate repeatedly, moved {moved}"
+        );
+        a.dealloc(p, Layout::from_size_align(size, 16).unwrap());
+    }
+}
+
+/// A small block grown past the small cap leaves the single-visit fast path
+/// mid-chain and lands on the generic allocate/copy/free route; the tail must
+/// still be relocated correctly, and shrinking back across the tier boundary
+/// must not lose what is still live. This is the boundary case between the two
+/// routes, not coverage of the fast path itself (see
+/// `global_realloc_small_class_chain_preserves_contents` for that).
+#[test]
+fn global_realloc_small_to_medium_and_back() {
+    unsafe {
+        let a = allox::Allox;
+        let mut size = 4096usize;
+        let mut p = a.alloc(Layout::from_size_align(size, 16).unwrap());
+        let mut expected: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+        core::ptr::copy_nonoverlapping(expected.as_ptr(), p, size);
+
+        // 4 KiB -> 32 KiB: crosses the small cap, so the class changes tier.
+        let np = a.realloc(p, Layout::from_size_align(size, 16).unwrap(), 32 * 1024);
+        assert!(!np.is_null());
+        assert_eq!(core::slice::from_raw_parts(np, size), &expected[..]);
+        core::ptr::write_bytes(np.add(size), 0x33, 32 * 1024 - size);
+        expected.resize(32 * 1024, 0x33);
+        p = np;
+        size = 32 * 1024;
+
+        // Back down into the small tier, keeping the first 8 KiB live.
+        let np = a.realloc(p, Layout::from_size_align(size, 16).unwrap(), 8 * 1024);
+        assert!(!np.is_null());
+        assert_eq!(core::slice::from_raw_parts(np, 8 * 1024), &expected[..8192]);
+        a.dealloc(np, Layout::from_size_align(8 * 1024, 16).unwrap());
+    }
+}

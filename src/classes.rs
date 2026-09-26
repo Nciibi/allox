@@ -68,11 +68,17 @@ const fn class_for_size_scan(size: usize) -> usize {
 /// Index of the smallest size class that fits `size`.
 ///
 /// Requires `1 <= size <= MAX_SMALL_SIZE`.
+///
+/// The trailing `& (NUM_CLASSES - 1)` is a provable no-op — both the LUT and
+/// the saturating branch already yield an index below `NUM_CLASSES` — but it
+/// is what lets the optimizer see the range. Without it every
+/// `self.bins[class_for_size(size)]` on the allocation and free fast paths
+/// keeps a compare-and-branch bounds check that can never fire.
 #[inline]
 #[allow(clippy::manual_div_ceil)] // div_ceil not const-stable at MSRV
 pub(crate) const fn class_for_size(size: usize) -> usize {
     if size <= MAX_SMALL_SIZE {
-        CLASS_LUT[(size + MIN_ALIGN - 1) / MIN_ALIGN] as usize
+        CLASS_LUT[(size + MIN_ALIGN - 1) / MIN_ALIGN] as usize & (NUM_CLASSES - 1)
     } else {
         NUM_CLASSES - 1
     }

@@ -510,6 +510,41 @@ fn main() {
             }
         }
         println!("RESULT_COUNTERS {}", parts.join(" "));
+        // With `--features telemetry` the per-class histogram turns "slower
+        // than mimalloc" into a work mix: which tiers and which class sizes
+        // the application shape actually spends its allocations in.
+        #[cfg(feature = "telemetry")]
+        {
+            let t = allox::telemetry::snapshot();
+            println!(
+                "RESULT_TELEMETRY allocs={} frees={} alloc_bytes={} free_bytes={} \
+                 live_peak={} large={} maps={} unmaps={}",
+                t.total_allocs,
+                t.total_frees,
+                t.allocated_bytes,
+                t.freed_bytes,
+                t.peak_live_bytes,
+                t.large_allocs,
+                t.map_calls,
+                t.unmap_calls
+            );
+            let total: u64 = t.per_class_allocs.iter().sum();
+            let mut rows: Vec<(usize, u64)> = t
+                .per_class_allocs
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0)
+                .map(|(c, n)| (c, *n))
+                .collect();
+            // Busiest classes first: the head of this list is the work mix.
+            rows.sort_by_key(|(_, n)| core::cmp::Reverse(*n));
+            for (class, n) in rows.into_iter().take(16) {
+                println!(
+                    "RESULT_CLASS class={class} allocs={n} share={:.2}%",
+                    n as f64 * 100.0 / total.max(1) as f64
+                );
+            }
+        }
     }
     // Threads are joined and the workload is dropped; skip teardown so the
     // reported peak RSS is the steady-state figure, not teardown noise.

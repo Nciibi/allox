@@ -97,31 +97,48 @@ comparator runs the identical workload through its `GlobalAlloc` impl
 
 | Workload | allox | system | mimalloc | snmalloc | dlmalloc | talc | vs best | allox peak RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 50.25 M/s | 44.84 M/s | 49.45 M/s | 42.53 M/s | 18.60 M/s | 27.73 M/s | **1.02×** | 5.0 MiB |
-| mixed-small 1T (16–4096 B) | 36.23 M/s | 7.02 M/s | 13.99 M/s | 12.47 M/s | 6.03 M/s | 10.22 M/s | **2.59×** | 15.7 MiB |
-| tight-small 8T (64 B) | 225.9 M/s | 237.4 M/s | 220.7 M/s | 226.8 M/s | 1.60 M/s | 2.11 M/s | 0.95× | 7.5 MiB |
-| mixed-small 8T (16–4096 B) | 185.8 M/s | 36.6 M/s | 41.4 M/s | 55.8 M/s | 728 K/s | 1.82 M/s | **3.33×** | 92.6 MiB |
-| mixed-all 1T (16–65536 B) | 16.86 M/s | 2.70 M/s | 4.97 M/s | 504 K/s | 433 K/s | 501 K/s | **3.39×** | 21.1 MiB |
-| mixed-all 8T (16–65536 B) | 40.78 M/s | 11.03 M/s | 21.27 M/s | 1.28 M/s | 434 K/s | 1.19 M/s | **1.92×** | 117.7 MiB |
-| medium-only 1T (16–64 K) | 18.56 M/s | 2.31 M/s | 5.25 M/s | 256 K/s | 372 K/s | 402 K/s | **3.53×** | 16.7 MiB |
-| medium-only 8T (16–64 K) | 41.98 M/s | 10.22 M/s | 22.50 M/s | 607 K/s | 445 K/s | 1.01 M/s | **1.87×** | 90.8 MiB |
-| large-only 1T (32K–1M) | 7.17 M/s | 327 K/s | 2.50 M/s | 14.9 K/s | 509 K/s | 265 K/s | **2.87×** | 7.0 MiB |
-| big-tail 1T (64K–256K) | 17.76 M/s | 343 K/s | 6.68 M/s | 22.5 K/s | 409 K/s | 302 K/s | **2.66×** | 6.2 MiB |
-| big-upper-tail 1T (256K–1M) | 11.23 M/s | 311 K/s | 1.79 M/s | 11.1 K/s | 579 K/s | 213 K/s | **6.29×** | 5.6 MiB |
-| large-only 8T (32K–256K) | 32.02 M/s | 1.11 M/s | 24.45 M/s | 137 K/s | 434 K/s | 1.01 M/s | **1.31×** | 34.1 MiB |
-| huge-only 1T (5–8 MiB) | 1.97 M/s | 171 K/s | 1.39 M/s | 1.3 K/s | 495 K/s | 129 K/s | **1.42×** | 5.0 MiB |
-| zeroed-large 1T | 209 K/s | 0.6 K/s | 2.4 K/s | 1.0 K/s | 0.9 K/s | 0.4 K/s | **87.3×** | 5.0 MiB |
-| prodcons 8T (remote free) | 41.10 M/s | 6.44 M/s | 27.11 M/s | 32.93 M/s | 895 K/s | 1.04 M/s | **1.25×** | 238.8 MiB |
-| spawn-churn | 18.96 M/s | 2.22 M/s | 15.50 M/s | 6.60 M/s | 864 K/s | 1.46 M/s | **1.22×** | 18.2 MiB |
-| spawn-empty (calibration) | 35.5 K/s | 35.5 K/s | 34.2 K/s | 34.4 K/s | 35.1 K/s | 34.4 K/s | 1.00× | 4.7 MiB |
-| json-ish 8T | 242.2 M/s | 245.9 M/s | 165.3 M/s | 224.9 M/s | 1.38 M/s | 2.03 M/s | 0.98× | 5.8 MiB |
-| request 8T | 394.1 M/s | 187.6 M/s | 358.0 M/s | 402.8 M/s | 1.26 M/s | 2.13 M/s | 0.98× | 7.9 MiB |
-| ecs 8T (realloc growth) | 92.09 M/s | 74.69 M/s | 1.85 M/s | 370 K/s | 783 K/s | 1.52 M/s | **1.23×** | 12.2 MiB |
+| tight-small 1T (64 B) | 54.53 M/s | 40.04 M/s | 46.89 M/s | 42.46 M/s | 20.60 M/s | 27.97 M/s | **1.16×** | 5.2 MiB |
+| mixed-small 1T (16–4096 B) | 37.14 M/s | 7.40 M/s | 14.76 M/s | 12.42 M/s | 6.15 M/s | 10.64 M/s | **2.52×** | 16.0 MiB |
+| tight-small 8T (64 B) | 257.56 M/s | 243.26 M/s | 218.66 M/s | 236.57 M/s | 1.56 M/s | 2.14 M/s | **1.06×** | 7.7 MiB |
+| mixed-small 8T (16–4096 B) | 196.59 M/s | 37.41 M/s | 43.14 M/s | 57.36 M/s | 702 K/s | 1.87 M/s | **3.43×** | 92.9 MiB |
+| mixed-all 1T (16–65536 B) | 17.43 M/s | 2.86 M/s | 5.50 M/s | 534 K/s | 435 K/s | 518 K/s | **3.17×** | 21.4 MiB |
+| mixed-all 8T (16–65536 B) | 43.20 M/s | 11.39 M/s | 22.62 M/s | 1.31 M/s | 458 K/s | 1.26 M/s | **1.91×** | 117.9 MiB |
+| medium-only 1T (16–64 K) | 19.68 M/s | 2.39 M/s | 5.60 M/s | 273 K/s | 366 K/s | 416 K/s | **3.51×** | 17.0 MiB |
+| medium-only 8T (16–64 K) | 46.89 M/s | 11.16 M/s | 24.42 M/s | 618 K/s | 403 K/s | 1.25 M/s | **1.92×** | 91.2 MiB |
+| large-only 1T (32 K–1 M) | 7.62 M/s | 345 K/s | 2.67 M/s | 17 K/s | 607 K/s | 279 K/s | **2.85×** | 7.1 MiB |
+| big-tail 1T (64 K–256 K) | 17.77 M/s | 353 K/s | 6.71 M/s | 22 K/s | 469 K/s | 296 K/s | **2.65×** | 6.4 MiB |
+| big-upper-tail 1T (256 K–1 M) | 11.24 M/s | 312 K/s | 1.79 M/s | 11 K/s | 467 K/s | 215 K/s | **6.26×** | 5.7 MiB |
+| large-only 8T (32 K–1 M) | 31.54 M/s | 1.13 M/s | 24.78 M/s | 140 K/s | 458 K/s | 1.04 M/s | **1.27×** | 34.3 MiB |
+| huge-only 1T (5–8 MiB) | 1.87 M/s | 171 K/s | 1.41 M/s | 1.3 K/s | 462 K/s | 131 K/s | **1.32×** | 5.2 MiB |
+| zeroed-large 1T | 205 K/s | 0.6 /s | 2.4 K/s | 1.0 /s | 0.9 /s | 0.4 /s | **87×** | 5.2 MiB |
+| prodcons 8T (remote free) | 37.87 M/s | 7.11 M/s | 30.17 M/s | 36.38 M/s | 901 K/s | 938 K/s | **1.04×** | 730.7 MiB |
+| spawn-churn (thread churn) | 17.84 M/s | 2.47 M/s | 18.40 M/s | 7.00 M/s | 1.15 M/s | 1.51 M/s | **0.97×** | 15.1 MiB |
+| spawn-empty (calibration) | 35 K/s | 35 K/s | 35 K/s | 34 K/s | 35 K/s | 34 K/s | **0.98×** | 4.9 MiB |
+| json-ish 8T | 263.72 M/s | 239.47 M/s | 168.40 M/s | 221.02 M/s | 1.30 M/s | 2.05 M/s | **1.10×** | 6.0 MiB |
+| request 8T | 453.87 M/s | 191.60 M/s | 361.60 M/s | 406.64 M/s | 1.24 M/s | 2.15 M/s | **1.12×** | 8.0 MiB |
+| ecs 8T (realloc growth) | 92.75 M/s | 74.63 M/s | 1.92 M/s | 388 K/s | 1.05 M/s | 1.54 M/s | **1.24×** | 12.3 MiB |
 
-**20/20 win-or-tie against the best comparator.** The three near-ties
-(`tight-small 8T` 0.95×, `json-ish 8T` 0.98×, `request 8T` 0.98×) are
-inside the run-to-run spread of the row they lose, and `spawn-empty` is
-the pthread calibration row (allocator-independent by construction).
+**19/20 win-or-tie against the best comparator**, and the twentieth
+(`spawn-churn`, 0.97×) is a near-tie inside its own run-to-run spread —
+see the note on that row below. `spawn-empty` is the pthread calibration
+row (allocator-independent by construction: every allocator reads the
+same 35 K/s, so the row measures the host's thread-creation rate, not
+the allocator).
+
+`spawn-churn` is genuinely bimodal on a loaded host, in *every* build
+including the ones before this release: a run either retires its
+short-lived thread caches into adoptable slots (~18–20 M ops/s, ~18.5 MiB
+peak RSS) or fails to, and the page releases that follow are purged
+rather than recycled (~8.8 M ops/s, ~14.8 MiB peak RSS). The 17.84 M/s
+above is the median of 10 paired fresh-process samples taken on a quiet
+box, where 9 of 10 landed in the fast mode. Do not gate a release on this
+row without a quiet host and enough repetitions to separate the modes.
+
+`prodcons 8T` peak RSS is the one number here that moves a lot between
+runs (238 MiB to 731 MiB observed): remote frees push the drift cap, and
+the cap's shed target is a fraction of a per-thread budget, so how much
+virtual the arena holds on to depends on which threads happened to be
+remote-freeing. Throughput is stable across that range.
 
 `ecs 8T` is the growable-extent workload: a 64 KiB buffer realloc-doubled
 to 1 MiB, four at a time per thread, plus small-component churn. It used
@@ -177,13 +194,30 @@ APP_SECS=10 APP_THREADS=8 scripts/app_bench.sh
 APP_P99=1024 scripts/app_bench.sh       # per-call latency
 ```
 
-This is where allox is **not** ahead: 238.9k docs/s against mimalloc's
-270.4k and snmalloc's 279.5k (system 203.1k, talc 12.3k) — 0.88× mimalloc.
-Single-threaded the three tie; the gap is scaling plus the fact that 76% of
-this workload's `realloc` calls relocate (containers double, every doubling
-crosses a size class). See REMAINING_PLAN §4d for the profile and the
-candidate fixes. It is reported here because a scoreboard that only
-contains the flattering mode is not a scoreboard.
+| threads | allox | system | mimalloc | snmalloc | vs mimalloc | vs snmalloc | allox peak RSS |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | **78.6k** | 53.8k | 74.3k | 74.3k | **1.06×** | **1.06×** | 3.1 MiB |
+| 4 | **250.8k** | 205.0k | 268.1k | 280.1k | 0.94× | 0.90× | 4.0 MiB |
+
+Median of 3–5 × 2 s, fresh process per sample, `taskset -c 0-7`,
+interleaved with the comparators inside each repetition.
+
+**This is the one mode allox does not lead, and it is reported here because
+a scoreboard that only contains the flattering mode is not a scoreboard.**
+Single-threaded allox now leads both C comparators; the 4-thread row is
+still behind, and the deficit is a scaling effect, not a per-operation one
+— the same build is 1.06× mimalloc at one thread and 0.94× at four.
+
+What was fixed to get here (paired A/B, two prebuilt binaries, order-
+alternating, 3 reps: +5.9% on this workload at both 1 and 4 threads):
+the small `alloc`/`free`/`realloc` fast paths were carrying a stack frame
+and five callee-saved register pairs that existed only for their slow-path
+bodies, and the bounds check on the bin array survived every inlining
+decision. See REMAINING_PLAN §4d for the measurements, the disassembly
+before/after, and what is left — chiefly that 27% of this workload's
+allocations are `realloc` relocations, and eliminating those needs a
+per-page free bitmap (a structural change to the small tier, not a
+tuning change).
 
 ## Design
 
@@ -197,6 +231,19 @@ mimalloc-inspired, adapted for Rust's world:
 - **Per-thread free lists**: allocation and deallocation fast paths take no
   locks and perform no atomic operations. Freed blocks stay in the freeing
   thread's cache — they almost always come back to the same thread.
+- **Frameless fast paths**: the small/medium `alloc`, `free` and `realloc`
+  fast paths contain no calls at all, so they compile to a leaf with no
+  stack frame and no callee-saved registers. Every slow path (refill,
+  medium/big refill, drift-cap probe, exit-hook install, trim) is
+  `#[inline(never)]` and reached by a tail jump, and a small allocation
+  costs one TLS read, one class-table load and one bin pop. This is not
+  cosmetic: it was worth 5–19% across the benchmark matrix, because a
+  single `call` anywhere in a hot path forces the register allocator to
+  spill every live value around it.
+- **Single-visit `realloc`**: a cross-class resize inside the small tier
+  resolves both classes once and does the allocate, copy and free under
+  one thread-cache visit, instead of redoing the tier dispatch and TLS
+  read for each half.
 - **Byte-budgeted caches**: thread caches grow freely and are trimmed only
   when a thread's total exceeds its budget (biggest bin first); flush/refill
   round-trips through the global heap were measured to cost 5× on mixed
@@ -264,12 +311,17 @@ node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_sm
 
 ## Status
 
-v0.1 — working and tested (unit, integration as `#[global_allocator]`,
-multi-threaded randomized stress with full integrity verification, C ABI).
-Fastest pure-Rust allocator on the benchmarked hosted workloads as of the
-tables above. Not yet audited; API may still change before 0.2.
-Windows table predates the span/arena/exit-flush work (re-verify via CI
-bench artifacts); macOS results pending CI runs on that platform.
+v0.1.0 released — working and tested (unit, integration as
+`#[global_allocator]`, multi-threaded randomized stress with full integrity
+verification, C ABI, zero-size and double-free validation). Green in
+debug, release, `telemetry` and `--no-default-features`, warning-free, and
+`cargo package` verifies clean. Fastest allocator measured on 19 of the 20
+direct-call workloads, and on the process-global application workload
+single-threaded; the 4-thread application row is the one place it does
+not lead (see above). Not yet audited; API may still change before 0.2.
+The Windows table predates the span/arena/exit-flush/fast-path work
+(re-verify via CI bench artifacts); macOS results pending CI runs on that
+platform.
 
 ## Development
 

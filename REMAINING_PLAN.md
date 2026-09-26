@@ -6,22 +6,31 @@ promotion DONE 2026-09-25** (§4c). The tier-aware cache allowance and
 bounded benchmark matrix are validated: `large-only 1T` 2.88× mimalloc,
 `large-only 8T` 1.32×, and `mixed-all 1T` 2.90× on the 2 s × 3 safe
 fresh-process run. The 1T tail above 1 MiB is still on the large path.
-**Remote-free drift cap DONE 2026-09-23** (§4b; prodcons 8T 1.20×
-mimalloc). **Full 20-workload matrix 2026-09-25: 20/20 win-or-tie vs the
-best comparator** on Linux x86-64 (fresh process per sample, 2 s × 3,
-`BENCH_SAFE_LIVE=1`, 3 GiB cgroup, `taskset -c 0-7`; README table
-refreshed from that run). The last structural loss is gone: `ecs 8T` used
-to be 0.06× the system allocator because glibc grows with zero-copy
-`mremap` while allox copied every step of a doubling chain — the promotion
-in §4c makes it 1.20–1.23×. Full suite + telemetry + no_std + release
-green and warning-free. **The direct-call matrix is not the whole story:
-§4d (2026-09-25) adds a process-global application benchmark, and there
-allox is 0.88× mimalloc / 0.85× snmalloc on a realloc-heavy app shape —
-the first mode where it is not ahead.** Contra remaining gaps below, each
-capable of closing independently, ordered by ROI. Methodology everywhere:
-≥2 s × 3 reps, `__debug_map_split` + `peakRSS` probe columns,
-sensitivity-checked tests (disable-the-feature must fail), one point
-measured before the next starts.
+**Remote-free drift cap DONE 2026-09-23** (§4b). **Frameless fast paths +
+single-visit `realloc` DONE 2026-09-26** (§4d) — the small/medium
+`alloc`/`free`/`realloc` fast paths no longer contain a call, so they carry
+no stack frame and no callee-saved registers. Paired A/B: **+5.9% on the
+process-global app benchmark at 1 and 4 threads**, and `tight-small 8T`
++6.6%, `request 8T` +18.4%, `json-ish 8T` +4.5%, `tight-small 1T` +3.5%
+with no workload regressing outside its own noise band.
+**Full 20-workload matrix re-measured 2026-09-26: 19/20 win-or-tie vs the
+best comparator** (fresh process per sample, 2 s × 3, `BENCH_SAFE_LIVE=1`,
+3 GiB cgroup, `taskset -c 0-7`; README table refreshed from that run). The
+twentieth is `spawn-churn` at 0.97×, which is bimodal in *every* build
+including `v0.0.1276` and is not usable as a gate without a quiet host.
+**Still open and now the binding constraint: the 4-thread app-shape row**
+(0.94× mimalloc / 0.90× snmalloc, though 1.06× each at one thread and 0.99×
+mimalloc on four distinct physical cores). Single-threaded allox leads
+every comparator on the app shape; what remains is a scaling deficit, and
+the structural fix is a per-page free bitmap to make `realloc` grow in
+place (§4d candidate 1). Full suite green and warning-free in debug,
+release, telemetry and no_std; the `wasm32` build, broken before this
+session, is fixed (§4d). Contra remaining gaps below, each capable of
+closing independently, ordered by ROI. Methodology everywhere: ≥2 s × 3
+reps, paired A/B between two prebuilt binaries with order-alternating runs
+for anything under ~5%, `peakRSS` probe columns, sensitivity-checked tests
+(disable-the-feature must fail), one point measured before the next
+starts.
 
 ## 1. Arena: wire spans (DONE 2026-09-23)
 
@@ -319,7 +328,8 @@ bytes (bounded by the arena's own caps and by the big cap), which is
 virtual-only but does consume arena reservation. No `mremap` wrapper is
 involved — none is needed.
 
-## 4d. Process-global app shape: the first workload allox loses (OPEN)
+## 4d. Process-global app shape: the first workload allox loses
+   (FAST-PATH WORK LANDED 2026-09-26; per-page bitmap still OPEN)
 
 The direct-call matrix (`benches/alloc.rs`) measures allocator loops. The
 process-global app benchmark (`examples/app_workload.rs`, one binary per
@@ -338,10 +348,18 @@ Measured (4 threads, 4 s, fresh process per backend, Ryzen 5 1600):
 | snmalloc | 279,504 | 3,578 | 6.9 MiB |
 | talc | 12,272 | 81,486 | 2.7 MiB |
 
-allox is 1.18× system but **0.88× mimalloc / 0.85× snmalloc**. Single
-threaded the three fast allocators tie (allox 72.1k, mimalloc 72.9k,
-snmalloc 72.7k docs/s), so the gap is entirely scaling: allox 2.90× from 1
+allox was 1.18× system but **0.88× mimalloc / 0.85× snmalloc**. Single
+threaded the three fast allocators tied (allox 72.1k, mimalloc 72.9k,
+snmalloc 72.7k docs/s), so the gap was entirely scaling: allox 2.90× from 1
 to 4 threads, mimalloc 3.59×, snmalloc 3.87×.
+
+**Status after the 2026-09-26 fast-path work: the per-operation cost is no
+longer the problem, the scaling still is.** Paired A/B (two prebuilt
+binaries, order-alternating, 3 reps, `taskset -c 0-7`): **+5.9% at both 1
+and 4 threads**. Single-threaded allox now *leads* both C comparators
+(78.6k vs 74.3k / 74.3k = 1.06× each); the 4-thread row moved 0.88× →
+**0.94× mimalloc / 0.90× snmalloc**. What is left is candidate 1 below, and
+it is a structural change rather than a tuning change.
 
 Where it goes (`perf`, same binary/workload, 4T): allox spends **25.6%** of
 samples in allocator code against mimalloc's **18.6%** — `alloc_impl` 7.6%
@@ -350,6 +368,17 @@ samples in allocator code against mimalloc's **18.6%** — `alloc_impl` 7.6%
 **31.1M relocating `realloc`s copying 1.03 GB** in the same run, ~33 bytes
 each, 76% of all `realloc` calls. App containers double, and every doubling
 crosses a size class, so each growth is a full alloc + copy + free.
+
+**What the workload actually is** (measured, not assumed — build the
+example with `--features app-allox,telemetry`; the histogram dump added for
+this is in the CHANGELOG). 69.6M allocations in 2 s at 4 threads, 158
+allocations per document, and **98.9% of them land in small classes 0–11
+(16 B–192 B)**: `medium_refills=4`, `big_refills=0`, `large=0`, 33 map
+calls, 0 unmaps. There is no medium/big/large story here at all. **27% of
+all allocations are relocating `realloc`s** (19.0M of 69.6M, copying
+626 MB, ~33 B each) — containers double and every doubling crosses a class.
+So this is a pure small-tier, realloc-heavy benchmark, and per-operation
+cost is the only lever that matters short of removing the relocations.
 
 Candidate levers, in measured order of promise:
 
@@ -361,13 +390,93 @@ Candidate levers, in measured order of promise:
    it O(1) needs a per-page free **bitmap** (64 KiB page of 32 B blocks =
    2048 bits = 256 B of page metadata) or a doubly-linked free list. This is
    a real structural change to the small tier and is the only lever that
-   attacks the 5.6% memmove directly.
-2. **Cheaper relocation round trip**: the generic path does two TLS visits
-   (one for alloc, one for free) plus both budget checks around what is
-   net-zero bookkeeping. One `with_cache` covering alloc+copy+free, with the
-   checks folded, is a contained change; expected a few percent.
-3. Fast-path diet (already partly done, see below): `alloc_impl` tier order
-   and one-cache-line bins.
+   attacks the copies themselves. **STILL OPEN, and now the binding
+   constraint.** Note the arithmetic that makes it hard here specifically:
+   the classes are 16, 32, 48, 64, 80, … so a 32 B block cannot grow into a
+   48 B class out of its own page (48/32 = 1.5), even though 16→32 is
+   exactly 2:1. In-place growth within a one-class-per-page design only
+   works for the power-of-two steps, and this workload's chain
+   (16→32→64→128) happens to be all of them — but the class table also
+   produces 48/64/80/… in real doubling sequences, so a general solution
+   needs the bitmap, not a special case.
+2. ~~**Cheaper relocation round trip**~~ — **DONE 2026-09-26.** See below.
+3. ~~Fast-path diet~~ — **DONE 2026-09-26, and it was worth more than
+   expected.** See below.
+
+**Landed 2026-09-26 (fast-path work).** No `perf` on the dev box (the nix
+store has only the unbuilt derivations), so the diagnosis came from
+disassembling the release binary rather than a profile, and it was not the
+algorithmic story anyone expected. Before:
+
+* `alloc_impl`'s small fast path began `push %r14; push %rbx; sub $0x18,%rsp`
+  and ended with the matching epilogue — six instructions of frame traffic on
+  every small allocation, holding registers for the large/medium/big bodies
+  it never runs. Cause: `refill`, `mrefill` and `bigrefill` were marked
+  `#[inline]`, so LLVM inlined the class lock, the owner-claim walk and the
+  chain split into the fast path.
+* The small free was an out-of-line tail jump to `ThreadCache::dealloc`,
+  which itself carried `push r15/r14/rbx`. Two causes: `dealloc` had no
+  `#[inline]`, and `arm_exit_hook` inlined a `call ensure_hook` into it — a
+  single call anywhere in the hot path forces every live value into
+  callee-saved registers around it.
+* `bins[class]` kept a `cmp $0x3f; ja` bounds check that can never fire, on
+  both the alloc and the free path.
+* `GlobalAlloc::realloc` carried a five-register frame for the big-block
+  promotion and frontier-growth paths, paid even by identity resizes that
+  move nothing.
+
+After: `alloc`, `dealloc` and the `realloc` identity test are call-free
+leaves (verified by disassembly of the release binary — no `push`, no
+`sub rsp`, no bounds check); every slow path is `#[inline(never)]` and
+reached by a tail jump; the class index is masked so its range is provable
+(a no-op, but it deletes the check); the small refill claims the page owner
+once per *page* rather than once per block, since `fill_from_list` carves a
+run from one page before moving on; and `realloc_small` resolves both
+classes once and does allocate + copy + free under a single `with_cache`.
+
+**Measured, paired A/B (two prebuilt binaries, order-alternating pairs, 3
+reps, `taskset -c 0-7` — the rule below, applied):**
+
+| workload | before | after | delta |
+|---|---:|---:|---:|
+| app 1T (docs/s) | 73.9k | 78.2k | **+5.7%** |
+| app 4T (docs/s) | 238.2k | 252.1k | **+5.9%** |
+| `tight-small 8T` | 236.8M | 252.3M | **+6.6%** |
+| `request 8T` | 378.5M | 448.1M | **+18.4%** |
+| `json-ish 8T` | 256.0M | 267.5M | +4.5% |
+| `tight-small 1T` | 51.8M | 53.6M | +3.5% |
+| `ecs 8T` | 93.3M | 94.8M | +1.6% |
+| `mixed-small 8T` | 198.2M | 200.8M | +1.3% |
+| `mixed-all 8T` | 45.9M | 46.2M | +0.7% |
+| `medium-only 8T` | 48.1M | 48.4M | +0.6% |
+| `prodcons 8T` | 38.7M | 38.1M | −1.5% (peak RSS 456 → 434 MiB) |
+
+`request 8T` is the row §4d's earlier A/B recorded as regressing 4.4% from
+the fast-path change; it is now **+18.4%**, which settles that open question
+— the trade the plan was weighing does not exist once the frame is gone.
+
+**`prodcons 8T` and `spawn-churn` are the two rows that lie.** A single
+sweep showed `prodcons` −16.7% and `spawn-churn` −4.6%; the paired A/B put
+`prodcons` at −1.5% with *better* RSS, so the first was host noise, as §4d
+warned. `spawn-churn` is genuinely bimodal in **every** build, including
+`v0.0.1276`: eight paired fresh-process samples of each build produced
+base {8.5, 8.8, 9.1, 19.7, 19.8, 20.0, 20.0} and
+new {8.3, 8.6, 8.9, 11.7, 12.7, 13.2, 14.6, 20.0} M/s — fully overlapping
+distributions. The slow mode is identifiable in the counters: when
+short-lived thread caches cannot be adopted, their page releases are purged
+rather than recycled, and `purge_bytes` runs 35 MB in the fast mode versus
+811 MB in the slow one. On a quiet box, 10 paired samples gave allox 17.84M
+vs mimalloc 18.40M. Not a gate without a quiet host.
+
+**One measurement caveat worth recording.** This box has 4 physical cores
+with SMT, and `taskset -c 0-7` is a *mixed* set (CPUs 0 and 1 each have a
+sibling in the set, CPUs 2–5 are distinct cores). The app-shape 4-thread
+ratio is sensitive to that: on `taskset -c 0-3` (4 distinct physical cores,
+no SMT sharing) the same two binaries read allox 0.99× mimalloc, versus
+0.90× on `0-7`. allox loses ~9% when SMT siblings share a core and
+mimalloc loses ~2%. The README keeps `0-7` for comparability with every
+earlier measurement, but the honest reading of the 4-thread row is "at
+parity on distinct physical cores, behind on an SMT-shared set".
 
 Landed while measuring this (v0.0.1270): the virgin count moved from a
 parallel `ThreadCache::virgin` array into the small `Bin` (it fits the
@@ -434,6 +543,12 @@ the fast-path change**: it buys +3.3% on `tight-small 8T` and ~+1% on the
 app shape, and costs ~4% on `request 8T`. Both rows are scoreboard-critical
 (0.96× system and 0.94× snmalloc as measured on 2026-09-25), so this is a
 genuine small trade rather than a clear win.
+
+**RESOLVED 2026-09-26 (§4d): the trade does not exist.** `request 8T` was
+the row paying for that change, and once the fast paths stopped carrying a
+frame for their slow-path bodies the same work reads **+18.4%** on
+`request 8T` and **+6.6%** on `tight-small 8T`. The cost was never the
+change; it was the register spills the change made the compiler add.
 
 **Rule this establishes:** a counter's cost is a property of its event rate,
 not of where it sits. Before believing any benchmark that a change helped,

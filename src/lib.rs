@@ -113,10 +113,21 @@ mod tls {
         }
 
         pub(crate) fn flush() {
+            // The retirement queue is an OS-thread-lifecycle feature: it needs
+            // a place to park a dying thread's cache, which only the
+            // pthread/Fls backends have. Elsewhere (wasm32, no_std) there is
+            // nothing to reclaim, so the call is compiled out rather than
+            // failing the build.
+            #[cfg(all(feature = "std", any(unix, windows)))]
             crate::cache::reclaim_all();
             with(|c| unsafe { c.flush_all() }, || {});
         }
 
+        /// Hand the calling thread's cache to the retirement queue. Paired
+        /// with the `cfg` on the re-export below: the queue and
+        /// [`crate::cache::retire`] only exist where there is an OS thread
+        /// lifecycle to hook.
+        #[cfg(all(feature = "std", any(unix, windows)))]
         pub(crate) unsafe fn retire() {
             let _ = CACHE.try_with(|c| {
                 let cache = core::ptr::read(c.get());
@@ -254,6 +265,66 @@ unsafe fn dealloc_small(p: *mut u8) {
             HEAP.release_blocks(page, p, 1);
         },
     );
+}
+
+/// Relocating small-tier `realloc`: both sides are in the small tier and the
+/// classes differ, so the block must move.
+///
+/// Both halves run under a **single** thread-cache visit. The generic route
+/// (`self.alloc` then `self.dealloc`) redid the tier dispatch, the class LUT
+/// and the TLS read for each half; application containers double, so ~27% of
+/// an allocation-heavy workload's allocations arrive here and every saved
+/// visit shows up straight in the scoreboard.
+///
+/// `old_class != new_class` is the caller's precondition, which is what makes
+/// the in-closure copy safe: `p` is live in `bins[old_class]` and can never be
+/// the block `c.alloc(new_class)` hands back, so source and destination
+/// cannot overlap.
+///
+/// A zero `old_size` is Rust's dangling-pointer convention (`Vec` never does
+/// it, but the contract allows it): allocate, copy nothing, free nothing.
+#[inline]
+unsafe fn realloc_small(
+    p: *mut u8,
+    old_size: usize,
+    new_size: usize,
+    old_class: usize,
+    new_class: usize,
+) -> *mut u8 {
+    with_cache(
+        |c| {
+            let new_p = c.alloc(new_class);
+            if new_p.is_null() {
+                return ptr::null_mut();
+            }
+            if old_size != 0 {
+                let copy = old_size.min(new_size);
+                ptr::copy_nonoverlapping(p, new_p, copy);
+                c.dealloc(p, old_class);
+            }
+            #[cfg(feature = "telemetry")]
+            if old_size != 0 {
+                note_realloc(old_size.min(new_size), false);
+            }
+            new_p
+        },
+        || {
+            // No TLS (thread teardown): go straight to the heap for both
+            // halves, exactly as the generic route would.
+            let new_p = take_one_small(new_class).0;
+            if new_p.is_null() {
+                return ptr::null_mut();
+            }
+            if old_size != 0 {
+                let copy = old_size.min(new_size);
+                ptr::copy_nonoverlapping(p, new_p, copy);
+                let page = page::PageHeader::of(p);
+                *p.cast::<*mut u8>() = ptr::null_mut();
+                HEAP.release_blocks(page, p, 1);
+            }
+            new_p
+        },
+    )
 }
 
 unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
@@ -1104,6 +1175,14 @@ fn corrupt_pointer() -> ! {
 }
 
 /// Core dispatch used by every public entry point.
+///
+/// `#[inline]` with the non-small tiers pushed into [`alloc_tiered`]: the
+/// small tier is the overwhelmingly common case and is worth inlining into
+/// every `__rust_alloc` call site, but the large/big/medium bodies need
+/// callee-saved registers and a stack frame. Inlined together, every small
+/// allocation paid `push/push/sub rsp` + the matching epilogue for code it
+/// never executes.
+#[inline]
 unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
@@ -1117,6 +1196,13 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     if size <= MAX_SMALL_SIZE && align <= MIN_ALIGN {
         return alloc_small(class_for_size(size));
     }
+    alloc_tiered(size, align)
+}
+
+/// Everything above the small tier. Out of line so the small fast path needs
+/// no stack frame; see [`alloc_impl`].
+#[inline(never)]
+unsafe fn alloc_tiered(size: usize, align: usize) -> *mut u8 {
     // Big spans exist only in the arena (unix + std): elsewhere sizes past
     // the medium cap route straight to large, and the big machinery below
     // doesn't exist (gated out, so no dead code either).
@@ -1144,6 +1230,9 @@ unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     if size > MAX_SMALL_SIZE {
         return alloc_medium(medium_class_for_size(size));
     }
+    // Only reachable when the tier tests above all declined, i.e. a small
+    // size with an over-minimum alignment that the large path took and
+    // declined; the small tier is the documented last resort.
     alloc_small(class_for_size(size))
 }
 
@@ -1342,8 +1431,41 @@ unsafe fn dealloc_impl(p: *mut u8) {
 /// no masked loads at all — so unaligned large bases cannot fault dispatch,
 /// and the hot paths shed branches. Debug builds verify the layout against
 /// the pointer and abort on mismatch (contract violation).
+///
+/// `#[inline]` with everything above the small tier pushed into
+/// [`dealloc_tiered`], mirroring [`alloc_impl`]: the small body inlines into
+/// `__rust_dealloc`, and the medium/big/large bodies — which need five
+/// callee-saved registers between them — stay in their own frame.
+#[inline]
 unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     debug_assert!(align.is_power_of_two());
+    if size <= MAX_SMALL_SIZE && align <= MIN_ALIGN {
+        // Class from size; page header only on the cold fallback path.
+        let class = class_for_size(size);
+        #[cfg(debug_assertions)]
+        {
+            let page = page::PageHeader::of(p);
+            if (*page).magic != page::PAGE_MAGIC || (*page).class as usize != class {
+                corrupt_pointer();
+            }
+        }
+        with_cache(
+            |c| c.dealloc(p, class),
+            || {
+                let page = page::PageHeader::of(p);
+                *p.cast::<*mut u8>() = ptr::null_mut();
+                HEAP.release_blocks(page, p, 1);
+            },
+        );
+        return;
+    }
+    dealloc_tiered(p, size, align)
+}
+
+/// Everything above the small tier of a layout-routed free. Out of line so
+/// the small fast path needs no stack frame; see [`dealloc_with_layout`].
+#[inline(never)]
+unsafe fn dealloc_tiered(p: *mut u8, size: usize, align: usize) {
     if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
         // Big-span range on arena targets routes below; everywhere else
         // (and for true large sizes/alignments) this is the large path.
@@ -1392,53 +1514,36 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
         dealloc_big(p, big);
         return;
     }
-    if size > MAX_SMALL_SIZE {
-        // Layout-routed: class comes from size (LUT), never from a header
-        // load — the SPAN_MAGIC load + sub-header follow was ~48% of free
-        // cycles on mixed-all (perf annotate 2026-09-23). The span is only
-        // needed on the cold no-TLS fallback.
-        let mclass = medium_class_for_size(size);
-        #[cfg(debug_assertions)]
-        {
-            let span = SpanMaster::of(p);
-            if span.is_null() || !(*span).contains(p) || (*span).mclass as usize != mclass {
-                corrupt_pointer();
-            }
-        }
-        with_cache(
-            |c| c.dealloc_medium(p, mclass),
-            || {
-                let span = SpanMaster::of(p);
-                *p.cast::<*mut u8>() = ptr::null_mut();
-                MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
-            },
-        );
-        return;
-    }
-    // Small: class from size; page header only on the cold fallback path.
-    let class = class_for_size(size);
+    // Layout-routed: class comes from size (LUT), never from a header load —
+    // the SPAN_MAGIC load + sub-header follow was ~48% of free cycles on
+    // mixed-all (perf annotate 2026-09-23). The span is only needed on the
+    // cold no-TLS fallback. The caller guarantees `size > MAX_SMALL_SIZE`
+    // here, having already handled the small tier.
+    let mclass = medium_class_for_size(size);
     #[cfg(debug_assertions)]
     {
-        let page = page::PageHeader::of(p);
-        if (*page).magic != page::PAGE_MAGIC || (*page).class as usize != class {
+        let span = SpanMaster::of(p);
+        if span.is_null() || !(*span).contains(p) || (*span).mclass as usize != mclass {
             corrupt_pointer();
         }
     }
     with_cache(
-        |c| c.dealloc(p, class),
+        |c| c.dealloc_medium(p, mclass),
         || {
-            let page = page::PageHeader::of(p);
+            let span = SpanMaster::of(p);
             *p.cast::<*mut u8>() = ptr::null_mut();
-            HEAP.release_blocks(page, p, 1);
+            MEDIUM_HEAP.release_blocks(mclass, span, p, p, 1);
         },
     );
 }
 
 unsafe impl GlobalAlloc for Allox {
+    #[inline]
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         alloc_impl(layout.size(), layout.align())
     }
 
+    #[inline]
     unsafe fn dealloc(&self, p: *mut u8, layout: core::alloc::Layout) {
         if layout.size() == 0 {
             return;
@@ -1446,6 +1551,14 @@ unsafe impl GlobalAlloc for Allox {
         dealloc_with_layout(p, layout.size(), layout.align())
     }
 
+    /// Resize an allocation, keeping the pointer when the size class does not
+    /// change and otherwise relocating.
+    ///
+    /// `#[inline]`, and only the identity test stays in it: everything that
+    /// can move memory needs callee-saved registers (a relocation calls
+    /// `memcpy`), and inlined together those registers were pushed and popped
+    /// on *every* `realloc`, including the identity ones that move nothing.
+    #[inline]
     unsafe fn realloc(&self, p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
         if new_size == 0 {
             self.dealloc(p, layout);
@@ -1454,7 +1567,7 @@ unsafe impl GlobalAlloc for Allox {
         // Same-class identity fires only for real (nonzero) allocations: a
         // zero-size layout's pointer is dangling by Rust convention, and
         // handing it back for a nonzero size would alias address ~align as
-        // live memory. Zero sizes fall through to fresh alloc below (the
+        // live memory. Zero sizes fall through to the relocation below (the
         // copy is skipped and the dealloc is a no-op for them).
         if !p.is_null()
             && layout.size() != 0
@@ -1465,81 +1578,102 @@ unsafe impl GlobalAlloc for Allox {
         {
             return p;
         }
-        // Medium same-class resize is identity too (spans never move).
-        if !p.is_null()
-            && layout.align() <= MIN_ALIGN
-            && layout.size() > MAX_SMALL_SIZE
-            && layout.size() <= MAX_MEDIUM_BLOCK
-            && new_size > MAX_SMALL_SIZE
-            && new_size <= MAX_MEDIUM_BLOCK
-            && medium_class_for_size(layout.size()) == medium_class_for_size(new_size)
-        {
-            return p;
-        }
-        // Big same-class resize is identity too (big spans never move;
-        // arena targets only — elsewhere these sizes are large-routed and
-        // never reach here as big).
-        #[cfg(all(unix, feature = "std"))]
-        if !p.is_null()
-            && layout.align() <= MIN_ALIGN
-            && layout.size() > MAX_MEDIUM_BLOCK
-            && layout.size() <= MAX_BIG_BLOCK
-            && new_size > MAX_MEDIUM_BLOCK
-            && new_size <= MAX_BIG_BLOCK
-            && big_class_for_size(layout.size()) == big_class_for_size(new_size)
-        {
-            return p;
-        }
-        // Big/large growth. Two cases share this size range:
-        //  - a packed big block crossing classes: promote once into a slack
-        //    reserve so the rest of the doubling chain runs in place;
-        //  - an already-promoted (large) block whose requested size still sits
-        //    in the big range: grow it in place inside its reserve.
-        // Arena targets only; elsewhere these sizes are large-routed and the
-        // frontier path below handles them.
-        #[cfg(all(unix, feature = "std"))]
-        if !p.is_null()
-            && layout.align() <= MIN_ALIGN
-            && layout.size() > MAX_MEDIUM_BLOCK
-            && new_size > MAX_MEDIUM_BLOCK
-        {
-            if new_size <= MAX_BIG_BLOCK && layout.size() <= MAX_BIG_BLOCK {
-                if let Some(np) = try_promote_big_grow(p, new_size, layout.align()) {
-                    return np;
-                }
-            }
-            if try_grow_large_frontier(p, new_size) {
-                return p;
-            }
-        }
-        #[cfg(all(unix, feature = "std"))]
-        if !p.is_null()
-            && (layout.align() > MIN_ALIGN || layout.size() > MAX_BIG_BLOCK)
-            && try_grow_large_frontier(p, new_size)
-        {
-            return p;
-        }
-        let new_p = self.alloc(core::alloc::Layout::from_size_align_unchecked(
-            new_size,
-            layout.align(),
-        ));
-        if new_p.is_null() {
-            return ptr::null_mut();
-        }
-        let copy = layout.size().min(new_size);
-        if copy > 0 {
-            ptr::copy_nonoverlapping(p, new_p, copy);
-            #[cfg(feature = "telemetry")]
-            #[cfg(feature = "telemetry")]
-        note_realloc(copy, false);
-        }
-        self.dealloc(p, layout);
-        new_p
+        realloc_slow(p, layout, new_size)
     }
 
     unsafe fn alloc_zeroed(&self, layout: core::alloc::Layout) -> *mut u8 {
         alloc_zeroed_impl(layout.size(), layout.align())
     }
+}
+
+/// Everything above the small tier of a `realloc`, plus the alloc-copy-free
+/// fallback that every cross-class resize ends in. Out of line; see
+/// [`GlobalAlloc::realloc`].
+#[inline(never)]
+unsafe fn realloc_slow(p: *mut u8, layout: core::alloc::Layout, new_size: usize) -> *mut u8 {
+    // Small tier on both sides but the classes differ: relocate, without ever
+    // leaving the thread cache. Containers double, so this is the common case
+    // for an application-shaped `realloc`.
+    if layout.align() <= MIN_ALIGN
+        && layout.size() <= MAX_SMALL_SIZE
+        && new_size <= MAX_SMALL_SIZE
+    {
+        return realloc_small(
+            p,
+            layout.size(),
+            new_size,
+            class_for_size(layout.size()),
+            class_for_size(new_size),
+        );
+    }
+    // Medium same-class resize is identity too (spans never move).
+    if !p.is_null()
+        && layout.align() <= MIN_ALIGN
+        && layout.size() > MAX_SMALL_SIZE
+        && layout.size() <= MAX_MEDIUM_BLOCK
+        && new_size > MAX_SMALL_SIZE
+        && new_size <= MAX_MEDIUM_BLOCK
+        && medium_class_for_size(layout.size()) == medium_class_for_size(new_size)
+    {
+        return p;
+    }
+    // Big same-class resize is identity too (big spans never move;
+    // arena targets only — elsewhere these sizes are large-routed and
+    // never reach here as big).
+    #[cfg(all(unix, feature = "std"))]
+    if !p.is_null()
+        && layout.align() <= MIN_ALIGN
+        && layout.size() > MAX_MEDIUM_BLOCK
+        && layout.size() <= MAX_BIG_BLOCK
+        && new_size > MAX_MEDIUM_BLOCK
+        && new_size <= MAX_BIG_BLOCK
+        && big_class_for_size(layout.size()) == big_class_for_size(new_size)
+    {
+        return p;
+    }
+    // Big/large growth. Two cases share this size range:
+    //  - a packed big block crossing classes: promote once into a slack
+    //    reserve so the rest of the doubling chain runs in place;
+    //  - an already-promoted (large) block whose requested size still sits
+    //    in the big range: grow it in place inside its reserve.
+    // Arena targets only; elsewhere these sizes are large-routed and the
+    // frontier path below handles them.
+    #[cfg(all(unix, feature = "std"))]
+    if !p.is_null()
+        && layout.align() <= MIN_ALIGN
+        && layout.size() > MAX_MEDIUM_BLOCK
+        && new_size > MAX_MEDIUM_BLOCK
+    {
+        if new_size <= MAX_BIG_BLOCK && layout.size() <= MAX_BIG_BLOCK {
+            if let Some(np) = try_promote_big_grow(p, new_size, layout.align()) {
+                return np;
+            }
+        }
+        if try_grow_large_frontier(p, new_size) {
+            return p;
+        }
+    }
+    #[cfg(all(unix, feature = "std"))]
+    if !p.is_null()
+        && (layout.align() > MIN_ALIGN || layout.size() > MAX_BIG_BLOCK)
+        && try_grow_large_frontier(p, new_size)
+    {
+        return p;
+    }
+    let new_p = alloc_impl(new_size, layout.align());
+    if new_p.is_null() {
+        return ptr::null_mut();
+    }
+    let copy = layout.size().min(new_size);
+    if copy > 0 {
+        ptr::copy_nonoverlapping(p, new_p, copy);
+        #[cfg(feature = "telemetry")]
+        note_realloc(copy, false);
+    }
+    if layout.size() != 0 {
+        dealloc_with_layout(p, layout.size(), layout.align());
+    }
+    new_p
 }
 
 // ---------------------------------------------------------------------------

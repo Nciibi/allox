@@ -650,13 +650,25 @@ impl ThreadCache {
 
     /// Arm the OS thread-exit flush once per thread. Called on slow paths and
     /// when a block enters the cache.
+    ///
+    /// The `call` to `ensure_hook` lives in [`Self::install_exit_hook`],
+    /// out of line, and that split is load-bearing: a call anywhere in the
+    /// small free path forces the register allocator to spill every live
+    /// value into callee-saved registers around it, which cost the hot path
+    /// five push/pop pairs on every single free.
     #[inline]
     pub(crate) fn arm_exit_hook(&mut self) {
         if !self.exit_armed {
-            self.refresh_budget();
-            if crate::thread_exit::ensure_hook() {
-                self.exit_armed = true;
-            }
+            self.install_exit_hook();
+        }
+    }
+
+    /// Cold half of [`Self::arm_exit_hook`]: one call per thread, ever.
+    #[inline(never)]
+    fn install_exit_hook(&mut self) {
+        self.refresh_budget();
+        if crate::thread_exit::ensure_hook() {
+            self.exit_armed = true;
         }
     }
 
@@ -805,6 +817,7 @@ impl ThreadCache {
     }
 
     /// Fast-path allocation. Returns null only when the heap is out of memory.
+    #[inline]
     pub(crate) unsafe fn alloc(&mut self, class: usize) -> *mut u8 {
         let bin = &mut self.bins[class];
         if let Some(p) = pop_block(&mut bin.head) {
@@ -828,6 +841,7 @@ impl ThreadCache {
 
     /// Allocation that also reports whether the block is still OS-zero,
     /// letting `alloc_zeroed` skip the memset.
+    #[inline]
     pub(crate) unsafe fn alloc_zeroed(&mut self, class: usize) -> (*mut u8, bool) {
         let bin = &mut self.bins[class];
         if let Some(p) = pop_block(&mut bin.head) {
@@ -851,7 +865,14 @@ impl ThreadCache {
     }
 
     /// Slow path: pull a batch of blocks from the global heap.
-    #[inline]
+    ///
+    /// `#[inline(never)]` is load-bearing, not cosmetic. Inlined into `alloc`
+    /// it drags the class lock, the claim walk and the chain split into the
+    /// fast path, which then needs two callee-saved registers and a stack
+    /// frame to hold them — six wasted instructions on every small allocation
+    /// and free. Refills are one batch per `REFILL_BATCH` allocations, so
+    /// there is nothing to gain from inlining this into them.
+    #[inline(never)]
     unsafe fn refill(&mut self, class: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.refresh_budget();
@@ -881,13 +902,25 @@ impl ThreadCache {
         note_diag!(self, small_refills, 1);
         note_diag!(self, small_refill_blocks, count);
         // Claim every page in the batch for this thread (drift-cap owner).
+        //
+        // `fill_from_list` carves a run of blocks from one page before moving
+        // to the next, so the chain is page-grouped: skip the header load and
+        // the store while the page is unchanged. Re-deriving the page for
+        // every block made this one page-header touch and one atomic store
+        // per *allocation* on the refill path; grouped, it is one per page,
+        // and a refill batch is normally a single page.
         {
             let mut b = chain;
+            let mut last_page = ptr::null_mut();
             for _ in 0..count {
                 if b.is_null() {
                     break;
                 }
-                self.claim_page(PageHeader::of(b));
+                let page = PageHeader::of(b);
+                if page != last_page {
+                    self.claim_page(page);
+                    last_page = page;
+                }
                 b = *b.cast::<*mut u8>();
             }
         }
@@ -904,37 +937,81 @@ impl ThreadCache {
         (first, virgin)
     }
 
+    /// Drift-cap ownership probe, reached only while the gate is open (cache
+    /// over half its budget). Kept out of line so the free path stays small
+    /// enough to inline into its caller: `tid()` alone can need a `lock xadd`
+    /// on first use, and inlined that costs *every* small free two
+    /// callee-saved registers and a stack frame.
+    #[inline(never)]
+    unsafe fn note_foreign_free(&mut self, p: *mut u8) -> bool {
+        note_diag!(self, owner_probes, 1);
+        let page = PageHeader::of(p);
+        let owner = (*page).owner.load(Ordering::Relaxed);
+        owner != 0 && owner != self.tid()
+    }
+
+    /// Steady state for the small free path: the exit hook is armed (so no
+    /// per-thread setup call is needed) and the drift cap's owner probe can be
+    /// skipped.
+    ///
+    /// Both terms are loop-invariant for a thread recycling inside its
+    /// budget, so this collapses to one well-predicted branch and lets the
+    /// entire cold half of [`Self::dealloc`] — hook arming, the owner probe,
+    /// the foreign-byte accounting — live behind a single outlined call.
+    /// That matters because a `call` anywhere in the free path forces the
+    /// register allocator to spill every live value into callee-saved
+    /// registers around it, which measured as five push/pop pairs on every
+    /// single small free.
+    #[inline]
+    fn small_free_is_warm(&self) -> bool {
+        self.exit_armed && self.cached_bytes <= self.budget / DRIFT_GATE_DIV
+    }
+
     /// Free into the thread cache with a class already known from the
     /// pointer's header (`free()` path) or from layout size (fast path).
     /// Class is a parameter so layout-routed frees never load a header.
+    #[inline]
     pub(crate) unsafe fn dealloc(&mut self, p: *mut u8, class: usize) {
-        self.arm_exit_hook();
         #[cfg(debug_assertions)]
         debug_validate_free(p);
 
-        // Drift cap (ROADMAP P1 step 4): under cache pressure, a free of a
-        // block whose page/span was claimed by another thread is counted as
-        // foreign. Sheds run through `trim` (chunked + page-grouped) once the
-        // foreign or total budget is hit — never a lock-per-free
-        // `release_blocks`, which serialized prodcons and thrashed the arena.
-        // The ownership load only runs when the gate is already open.
         let budget = self.budget;
-        let mut foreign = false;
-        if self.drift_gate_open_small(budget) {
-            note_diag!(self, owner_probes, 1);
-            let page = PageHeader::of(p);
-            let owner = (*page).owner.load(Ordering::Relaxed);
-            foreign = owner != 0 && owner != self.tid();
+        let size = CLASSES_RUNTIME[class];
+        if self.small_free_is_warm() {
+            let bin = &mut self.bins[class];
+            push_block(&mut bin.head, p);
+            bin.len += 1;
+            self.cached_bytes += size;
+            #[cfg(feature = "telemetry")]
+            self.note_free(class);
+            // `shed` is a tail call: nothing is live across it, so the trim
+            // never costs this path a callee-saved register.
+            if self.cached_bytes > budget || self.foreign_bytes >= budget / FOREIGN_SHED_DIV {
+                self.shed();
+            }
+            return;
         }
+        self.dealloc_cold(p, class, size);
+    }
 
+    /// Cold half of [`Self::dealloc`]: arm the exit hook, run the drift-cap
+    /// owner probe when the gate is open, then the same push-and-shed. Out of
+    /// line; see [`Self::small_free_is_warm`].
+    #[inline(never)]
+    unsafe fn dealloc_cold(&mut self, p: *mut u8, class: usize, size: usize) {
+        self.arm_exit_hook();
+        // Read the budget *after* arming: on a thread's first free, arming is
+        // what refreshes it, and the gate and the shed limit must both see
+        // the refreshed value (as they did when this ran as one function).
+        let budget = self.budget;
+        if self.drift_gate_open_small(budget) && self.note_foreign_free(p) {
+            note_diag!(self, remote_frees, 1);
+            self.foreign_bytes += size;
+        }
         let bin = &mut self.bins[class];
         push_block(&mut bin.head, p);
         bin.len += 1;
-        self.cached_bytes += CLASSES_RUNTIME[class];
-        if foreign {
-            note_diag!(self, remote_frees, 1);
-            self.foreign_bytes += CLASSES_RUNTIME[class];
-        }
+        self.cached_bytes += size;
         #[cfg(feature = "telemetry")]
         self.note_free(class);
         if self.should_shed_small(budget) {
@@ -980,6 +1057,7 @@ impl ThreadCache {
     }
 
     /// Medium fast-path allocation. Returns null only on OS exhaustion.
+    #[inline]
     pub(crate) unsafe fn alloc_medium(&mut self, mclass: usize) -> *mut u8 {
         let (p, _) = self.active_medium_alloc(mclass);
         if !p.is_null() {
@@ -1011,6 +1089,7 @@ impl ThreadCache {
     }
 
     /// Medium allocation reporting OS-zero status for `alloc_zeroed`.
+    #[inline]
     pub(crate) unsafe fn alloc_medium_zeroed(&mut self, mclass: usize) -> (*mut u8, bool) {
         let (p, zeroed) = self.active_medium_alloc(mclass);
         if !p.is_null() {
@@ -1043,7 +1122,9 @@ impl ThreadCache {
     }
 
     /// Medium slow path: pull one span's worth of blocks from the heap.
-    #[inline]
+    /// Kept out of line for the same reason as [`Self::refill`]: the span
+    /// claim and free-head splice force a frame on the medium fast path.
+    #[inline(never)]
     unsafe fn mrefill(&mut self, mclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.refresh_budget();
@@ -1136,6 +1217,7 @@ impl ThreadCache {
     /// `free()` callers pass `(*span).mclass` after their own header load).
     /// No span load here — the span is only needed on the cold no-TLS
     /// fallback, which re-derives it from the pointer.
+    #[inline]
     pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, mclass: usize) {
         self.arm_exit_hook();
         #[cfg(debug_assertions)]
@@ -1225,6 +1307,7 @@ impl ThreadCache {
     /// Big fast-path allocation. Returns null when the arena is unavailable
     /// (callers fall back to the large path) or on OS exhaustion.
     #[cfg(all(unix, feature = "std"))]
+    #[inline]
     pub(crate) unsafe fn alloc_big(&mut self, bclass: usize) -> *mut u8 {
         let (p, _) = self.active_big_alloc(bclass);
         if !p.is_null() {
@@ -1255,6 +1338,7 @@ impl ThreadCache {
 
     /// Big allocation reporting OS-zero status for `alloc_zeroed`.
     #[cfg(all(unix, feature = "std"))]
+    #[inline]
     pub(crate) unsafe fn alloc_big_zeroed(&mut self, bclass: usize) -> (*mut u8, bool) {
         let (p, zeroed) = self.active_big_alloc(bclass);
         if !p.is_null() {
@@ -1286,8 +1370,9 @@ impl ThreadCache {
 
     /// Big slow path: pull one span's worth of blocks from the heap.
     /// Null means arena-unavailable or exhausted (caller routes large).
+    /// Out of line for the same reason as [`Self::refill`].
     #[cfg(all(unix, feature = "std"))]
-    #[inline]
+    #[inline(never)]
     unsafe fn bigrefill(&mut self, bclass: usize) -> (*mut u8, bool) {
         self.arm_exit_hook();
         self.refresh_budget();
@@ -1376,6 +1461,7 @@ impl ThreadCache {
     }
 
     #[cfg(all(unix, feature = "std"))]
+    #[inline]
     pub(crate) unsafe fn dealloc_big(&mut self, p: *mut u8, span: *mut BigMaster) {
         self.arm_exit_hook();
         #[cfg(debug_assertions)]

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unpublished)
+## 0.1.0 — 2026-09-26
 
 Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
 
@@ -62,6 +62,49 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   line instead of two, and `alloc` tests the small tier first with a single
   comparison. Neutral on the allocator-loop matrix, +2.5%/+1.3% on the
   process-global application benchmark at 1/4 threads.
+- **Frameless fast paths.** The small/medium `alloc`, `free` and `realloc`
+  fast paths now contain no calls, so they compile to leaves with no stack
+  frame and no callee-saved registers; every slow path (refill, medium/big
+  refill, drift-cap owner probe, exit-hook install, trim) is
+  `#[inline(never)]` and reached by a tail jump. The cause was mechanical,
+  not algorithmic: the slow paths were marked `#[inline]`, so inlining them
+  into the fast paths forced two-to-five `push`/`pop` pairs and a 24-byte
+  frame onto *every* small allocation and free to hold state that path never
+  executes. A `call` to the exit-hook installer alone was enough to make the
+  allocator spill every live value around it. Also removed: the bin-array
+  bounds check, by masking the class index (a provable no-op, since the LUT
+  and its saturating branch already yield an index below `NUM_CLASSES`) so
+  the optimizer can see the range; and the per-block page-owner claim in the
+  small refill, which re-derived the page header for every block in a batch
+  that `fill_from_list` had carved from a single page.
+  Measured (paired A/B, two prebuilt binaries, order-alternating, 3 reps,
+  `taskset -c 0-7`): +5.9% on the process-global application benchmark at
+  both 1 and 4 threads, and across the direct-call matrix `tight-small 8T`
+  +6.6%, `request 8T` +18.4%, `json-ish 8T` +4.5%, `tight-small 1T` +3.5%,
+  `ecs 8T` +1.6%, `mixed-small 8T` +1.3%, `mixed-all 8T` +0.7%,
+  `medium-only 8T` +0.6%, `prodcons 8T` -1.5% (inside its documented ±15%
+  bimodal spread, with slightly lower peak RSS). No workload regressed
+  outside its own noise band. `spawn-churn` is bimodal on a loaded host in
+  every build and is not usable as a gate without a quiet box.
+- **Single-visit `realloc`.** A cross-class resize inside the small tier
+  resolves both classes once and performs the allocate, copy and free under
+  a single thread-cache visit, rather than redoing the tier dispatch, the
+  class LUT and the TLS read for each half. Application containers double,
+  so ~27% of an allocation-heavy workload's allocations arrive here.
+  Zero-size layouts keep their dangling-pointer contract (allocate, copy
+  nothing, free nothing). `realloc`'s identity test stays in the inlined
+  fast path and everything that can move memory is out of line, so an
+  identity resize no longer pays a five-register frame.
+- Fixed the `wasm32-unknown-unknown` build: `tls::imp::flush` called
+  `cache::reclaim_all` and `tls::imp::retire` called `cache::retire`
+  unconditionally, but both are gated on `any(unix, windows)`, so the
+  library did not compile for wasm32 despite the documented support. Both
+  call sites now carry the same gate.
+- `examples/app_workload.rs` can dump the per-class allocation histogram and
+  allocation totals from `telemetry` (build with `--features app-allox,
+  telemetry`); this is what identified the application workload as a pure
+  small-tier shape (98.9% of allocations in classes 0–11, 16 B–192 B) with
+  no medium, big or large traffic at all.
 - Opt-in telemetry feature with per-class histograms (~4% worst-case
   overhead, zero when disabled). NOTE: the telemetry array dimension
   covers small + medium + big classes on arena targets and may still

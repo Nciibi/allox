@@ -11,8 +11,8 @@
 
 use allox::malloc;
 use allox::__diagnostics::volume;
+#[cfg(feature = "telemetry")]
 use std::alloc::{GlobalAlloc, Layout};
-
 
 fn delta(before: u64, after: u64) -> u64 {
     after.saturating_sub(before)
@@ -20,7 +20,9 @@ fn delta(before: u64, after: u64) -> u64 {
 
 /// Force the calling thread's counter batch out to the global counters.
 /// They are published every 8192 operations, so a test that does less work
-/// than that would otherwise read zeros.
+/// than that would otherwise read zeros. Only the telemetry-gated counters
+/// need this, and they only exist in a telemetry build.
+#[cfg(feature = "telemetry")]
 fn publish_pending() {
     allox::flush_current_thread();
 }
