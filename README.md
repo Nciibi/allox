@@ -357,7 +357,7 @@ v0.1.0 released — working and tested (unit, integration as
 `#[global_allocator]`, multi-threaded randomized stress with full integrity
 verification, C ABI, zero-size and double-free validation). Green in
 debug, release, `telemetry` and `--no-default-features`, warning-free, and
-`cargo package` verifies clean. Fastest allocator measured on 19 of the 20
+`cargo package` verifies clean. Fastest allocator measured on 21 of the 22
 direct-call workloads, and on the process-global application workload
 single-threaded; the 4-thread application row is the one place it does
 not lead (see above). Not yet audited; API may still change before 0.2.
