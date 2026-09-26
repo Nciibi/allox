@@ -13,7 +13,8 @@ use crate::classes::{big_span_pages_for, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
 use crate::page::{
-    pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_NEEDS_REINIT, FLAG_VIRGIN, PAGE_SIZE,
+    pop_block, PageHeader, SpanMaster, FLAG_DISCARDED, FLAG_IN_PARTIAL, FLAG_NEEDS_REINIT,
+    FLAG_VIRGIN, PAGE_SIZE,
 };
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
@@ -278,7 +279,14 @@ unsafe fn park_empty_page(list: &mut ListHead, page: *mut PageHeader) -> PageFat
         list.cold[idx] = page;
         list.cold_len += 1;
         list.cold_bytes += PAGE_SIZE;
-        sys::discard(page.cast::<u8>(), PAGE_SIZE);
+        // A successful discard is a *proof* that the page reads as zero
+        // again, so record it and let `calloc` skip the memset on reuse.
+        // Set after the call because the discard zeroes the header too.
+        if sys::discard(page.cast::<u8>(), PAGE_SIZE) {
+            (*page).flags |= FLAG_DISCARDED;
+        } else {
+            (*page).flags &= !FLAG_DISCARDED;
+        }
         PageFate::Cold
     } else {
         PageFate::Unmap
@@ -354,18 +362,28 @@ impl GlobalHeap {
             }
 
             if count == 0 && list.cold_len > 0 {
-                // Cold page: virtual survived, contents didn't (discard
-                // zeroes the header and free list too). Re-carve and treat
-                // as non-virgin so calloc always memsets — sound even where
-                // discard is a no-op (wasm).
+                // Cold page: virtual survived. If the backend's discard
+                // actually landed, the OS guarantees the range reads as zero
+                // again, so the page is virgin once more and `calloc` can
+                // skip the memset. Where discard is a no-op (wasm) the flag
+                // was never set, so we fall back to treating it as dirty and
+                // memsetting — sound on every backend, not just the ones
+                // where discard works.
                 list.cold_len -= 1;
                 let cidx = list.cold_len as usize;
                 let page = list.cold[cidx];
                 list.cold[cidx] = ptr::null_mut();
                 list.cold_bytes -= PAGE_SIZE;
+                // Read before `init`, which rewrites `flags`.
+                let provably_zero = (*page).flags & FLAG_DISCARDED != 0;
                 (*page).init(class);
-                (*page).flags &= !FLAG_VIRGIN;
-                virgin = false;
+                if provably_zero {
+                    // `init` already set FLAG_VIRGIN; keep it.
+                    virgin = true;
+                } else {
+                    (*page).flags &= !FLAG_VIRGIN;
+                    virgin = false;
+                }
                 link_partial(&mut list.head, page);
                 fill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin);
             }
