@@ -113,14 +113,19 @@ comparator runs the identical workload through its `GlobalAlloc` impl
 | zeroed-small 1T (16–256 B) | 28.90 M/s | 18.63 M/s | 25.80 M/s | 21.38 M/s | 13.42 M/s | 18.40 M/s | **1.12×** | 5.4 MiB |
 | zeroed-small 8T (16–256 B) | 100.45 M/s | 111.86 M/s | 124.27 M/s | 148.91 M/s | 1.19 M/s | 1.49 M/s | **0.67×** | 8.6 MiB |
 | zeroed-large 1T | 206 K/s | 612.6 /s | 2 K/s | 980.0 /s | 1 K/s | 413.6 /s | **86.63×** | 5.3 MiB |
-| prodcons 8T (remote free) | 38.65 M/s | 7.16 M/s | 25.19 M/s | 31.45 M/s | 888 K/s | 1.10 M/s | **1.23×** | 384.5 MiB |
-| spawn-churn (thread churn) | 19.29 M/s | 2.96 M/s | 16.13 M/s | 6.89 M/s | 1.01 M/s | 1.59 M/s | **1.20×** | 18.5 MiB |
+| prodcons 8T (remote free) † | 38.59 M/s | 7.16 M/s | 25.19 M/s | 31.45 M/s | 888 K/s | 1.10 M/s | **1.23×** | 300 MiB |
+| spawn-churn (thread churn) † | 23.20 M/s | 2.96 M/s | 16.13 M/s | 6.89 M/s | 1.01 M/s | 1.59 M/s | **1.44×** | 18.4 MiB |
 | spawn-empty (calibration) | 36 K/s | 35 K/s | 35 K/s | 34 K/s | 35 K/s | 34 K/s | **1.02×** | 4.9 MiB |
 | json-ish 8T | 258.37 M/s | 238.08 M/s | 167.16 M/s | 219.43 M/s | 1.32 M/s | 2.02 M/s | **1.09×** | 6.0 MiB |
 | request 8T | 449.32 M/s | 191.74 M/s | 364.98 M/s | 405.00 M/s | 1.24 M/s | 2.15 M/s | **1.11×** | 8.0 MiB |
 | ecs 8T (realloc growth) | 93.03 M/s | 74.16 M/s | 2.07 M/s | 380 K/s | 1.05 M/s | 1.50 M/s | **1.25×** | 12.3 MiB |
 
-**21/22 win-or-tie against the best comparator.** `spawn-empty` is the
+**21/22 win-or-tie against the best comparator.** † marks the two rows
+re-measured with the paired protocol described below; every other allox figure
+is from the single 3 × 2 s matrix run its neighbours come from, and is
+therefore subject to the ~10% noise floor. The comparator columns are
+unaffected by allox-internal changes and still come from the matrix run.
+`spawn-empty` is the
 pthread calibration row (allocator-independent by construction: every
 allocator reads the same 35 K/s, so the row measures the host's
 thread-creation rate, not the allocator) and `spawn-churn` is a near-tie
