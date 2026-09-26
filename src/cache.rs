@@ -877,10 +877,7 @@ impl ThreadCache {
             let below = bin.len - 1;
             bin.len = below;
             self.cached_bytes -= CLASSES_RUNTIME[class];
-            let zeroed = below < bin.virgin;
-            if zeroed {
-                bin.virgin -= 1;
-            }
+            let zeroed = true;
             #[cfg(feature = "telemetry")]
             self.note_alloc(class);
             return (p, zeroed);
