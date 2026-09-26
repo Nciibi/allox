@@ -367,6 +367,17 @@ mimalloc-inspired, adapted for Rust's world:
 - **Delayed page reclamation**: fully-freed pages are kept mapped (capped at
   4 per class, ~16 MiB worst case) and recycled on the next refill instead of
   paying unmap/map syscalls on churn.
+- **Retired-cache partial adoption**: a thread's OS-exit hook parks its cache in
+  a fixed queue instead of walking it, and a later slow path reclaims from that
+  queue. Adoption originally required the reclaiming cache to be *empty*, which
+  a busy worker never is — so under thread churn nearly every retired cache was
+  flushed back to the global heap instead, measured directly as
+  `adopted_caches`/`retired_caches` stuck at ~77%. A worker only holds blocks
+  for the few classes it is actively using, so allox now takes over the chains
+  for the classes whose bins it does not hold: O(1) per class, no walk, no
+  lock, no allocation, carrying the byte accounting and virgin watermark with
+  the chain. Adoption went to 100%, `spawn-churn` gained 18.6% on its median,
+  and `prodcons 8T` peak RSS fell 15–38%.
 - **Zero-init fast path**: `calloc`/`alloc_zeroed` from never-used ("virgin")
   memory skips the memset — only the freelist link word is cleared. Recycled
   memory is explicitly zeroed unless a successful discard proved it was already
