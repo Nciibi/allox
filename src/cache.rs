@@ -852,6 +852,7 @@ impl ThreadCache {
         if let Some(p) = pop_block(&mut bin.head) {
             let below = bin.len - 1;
             bin.len = below;
+            self.cached_bytes -= CLASSES_RUNTIME[class];
             if below < bin.virgin {
                 bin.virgin -= 1;
             }
@@ -1009,6 +1010,7 @@ impl ThreadCache {
             let bin = &mut self.bins[class];
             push_block(&mut bin.head, p);
             bin.len += 1;
+            self.cached_bytes += size;
             #[cfg(feature = "telemetry")]
             self.note_free(class);
             // `shed` is a tail call: nothing is live across it, so the trim
