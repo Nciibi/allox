@@ -113,6 +113,15 @@ Initial release. Pure Rust, zero dependencies, no build script. MSRV 1.79.
   (30.0M -> 105.7M ops/s)** and `zeroed-small 1T` +6-13%, with the guard rows
   flat. The 8T figure is the contended case: eight threads were each doing
   ~26M `lock xadd` pairs per second onto one shared cache line.
+- Measured and rejected: removing the per-operation `cached_bytes` byte
+  accounting from the small fast paths. It is the obvious suspect for the
+  remaining `zeroed-small 8T` gap — the same shape as the counter change
+  above, and 4 of ~27 fast-path instructions. Ablated and paired A/B'd over
+  5 reps, it is worth nothing: `tight-small 8T` -0.8%, `tight-small 1T`
+  +2.5%, `mixed-small 8T` +3.0%, `request 8T` +1.3%, `json-ish 8T` -3.0%,
+  i.e. noise in both directions. The byte counter is an independent
+  accumulator off the critical dependency chain, so it never stalls the
+  core. Recorded in REMAINING_PLAN 4d so the idea is not re-derived.
 - Two new benchmark workloads, `zeroed-small 1T` and `zeroed-small 8T`:
   `calloc` churn sized to recycle, so every allocation comes from
   non-virgin memory and takes the software-zeroing path. The matrix had

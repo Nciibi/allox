@@ -552,15 +552,50 @@ more bookkeeping than either comparator: a class-table lookup plus
 mimalloc's small free is a pop and a 16-bit `used--` (verified in its
 disassembly: 17 instructions, frameless, no byte accounting).
 
-**That makes "remove the per-operation byte accounting" the next candidate,
-and this is the row that will measure it.** It is the same axis as the
-remaining application-shape deficit, and it is now measured rather than
-suspected. It was considered and rejected on 2026-09-25 on the grounds that
-changing the budget from bytes to blocks would move the RSS tuning of 20
-validated workloads; the constraint is real and a replacement has to keep
-`cached_bytes` exact, so the options are narrower than "delete it" — e.g.
-carrying the per-class size in the bin, or deriving the byte total from the
-`len` watermarks already maintained. **OPEN.**
+### The leading candidate for that gap — measured, and closed at ~0%
+
+The obvious explanation was the per-operation bookkeeping allox does that
+neither comparator does: a class-table lookup plus `cached_bytes`, `len` and
+the `virgin` watermark on every operation, where mimalloc's small free is a
+pop and a 16-bit `used--` (17 instructions, frameless, no byte accounting;
+allox's small free is ~27 including the frame-free class LUT and three
+read-modify-writes). `zeroed_calls`/`zeroed_bytes` had just been shown to be
+worth 252% on this very row for exactly this reason, so this was the obvious
+next move.
+
+**It was ablated and it is worth nothing.** Deleting the `cached_bytes`
+update (and its `CLASSES_RUNTIME` load) from both small fast paths — which
+breaks the cache budget and is therefore a measurement, not a change — paired
+A/B, order-alternating, 5 reps:
+
+| workload | with byte accounting | without | delta |
+|---|---:|---:|---:|
+| `tight-small 8T` | 233.5 M/s | 231.5 M/s | -0.8% |
+| `tight-small 1T` | 45.2 M/s | 46.3 M/s | +2.5% |
+| `mixed-small 8T` | 160.0 M/s | 164.8 M/s | +3.0% |
+| `request 8T` | 392.6 M/s | 397.7 M/s | +1.3% |
+| `json-ish 8T` | 239.5 M/s | 232.2 M/s | -3.0% |
+
+All noise, in both directions. **The four instructions are free**: the byte
+counter is an independent accumulator, not on the critical dependency chain
+(the chain is `mov %fs:0x0` -> bin load -> store), so the core has spare
+issue slots and never waits on it. An earlier 3-rep run showed +7.6% on
+`request 8T`, which is exactly the kind of single-workload artifact the
+paired-A/B rule exists to catch; at 5 reps it is +1.3%.
+
+(The ablated `zeroed-small` rows are *not* usable as a ceiling: with
+`cached_bytes` frozen the budget logic degenerates and they collapse 78-83%,
+which measures the breakage rather than the accounting.)
+
+**So this direction is closed.** The remaining `zeroed-small 8T` gap is not
+bookkeeping overhead. Since the row is memset-bound, the next thing to test
+is the **virginity rate** — how often each allocator can satisfy a
+`calloc` from never-used memory and skip the memset entirely. allox's
+`SmallBin::virgin` watermark is a per-class count, so once a class is warm
+every subsequent allocation memsets; a design that recycles more lazily
+toward the OS (or a page-granular virginity map) would memset strictly less
+often. That is a *policy* question, not a bookkeeping one, and it has not
+been measured. **OPEN, but the hypothesis is virginity, not accounting.**
 
 ### Checked and already optimal: TLS access
 
