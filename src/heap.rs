@@ -282,7 +282,11 @@ unsafe fn park_empty_page(list: &mut ListHead, page: *mut PageHeader) -> PageFat
         // A successful discard is a *proof* that the page reads as zero
         // again, so record it and let `calloc` skip the memset on reuse.
         // Set after the call because the discard zeroes the header too.
-        (*page).flags |= FLAG_DISCARDED; // INJECTED BUG: claim zero, never discard
+        if sys::discard(page.cast::<u8>(), PAGE_SIZE) {
+            (*page).flags |= FLAG_DISCARDED;
+        } else {
+            (*page).flags &= !FLAG_DISCARDED;
+        }
         PageFate::Cold
     } else {
         PageFate::Unmap
