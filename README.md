@@ -315,8 +315,8 @@ alternating, 3 reps: +5.9% on this workload at both 1 and 4 threads):
 the small `alloc`/`free`/`realloc` fast paths were carrying a stack frame
 and five callee-saved register pairs that existed only for their slow-path
 bodies, and the bounds check on the bin array survived every inlining
-decision. See REMAINING_PLAN §4d for the measurements, the disassembly
-before/after, and what is left — chiefly that 27% of this workload's
+decision. The `frameless fast paths` entry under [Design](#design) records
+the measurements and the reasoning — chiefly that 27% of this workload's
 allocations are `realloc` relocations, and eliminating those needs a
 per-page free bitmap (a structural change to the small tier, not a
 tuning change).
