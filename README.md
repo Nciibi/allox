@@ -390,8 +390,11 @@ mimalloc-inspired, adapted for Rust's world:
   thread-local state; a spin-then-yield internal mutex that cannot allocate;
   explicit `flush_current_thread()` for thread pools.
 
-See [DESIGN.md](DESIGN.md) for the full architecture document, research
-notes, and rationale.
+The architecture is documented in the module headers themselves — `src/arena.rs`
+(reservation/commit split and its rules), `src/heap.rs` (sharding and
+invariants), `src/cache.rs` (byte-budgeted per-thread bins) and
+`src/counters.rs` (why per-event counters are telemetry-gated) — with the
+summary above as the map.
 
 ## Why not X?
 
