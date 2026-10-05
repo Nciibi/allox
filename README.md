@@ -460,7 +460,7 @@ replaces them.
 ## Development
 
 ```text
-cargo test                      # full test suite (81 tests)
+cargo test                      # full test suite (84 tests: 37 unit + 47 integration)
 cargo test --release
 cargo test --features telemetry
 cargo build --no-default-features      # core-only, no_std
