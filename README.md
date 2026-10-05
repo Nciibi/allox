@@ -432,6 +432,10 @@ cargo build --target wasm32-unknown-unknown --example wasm_smoke
 node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
 ```
 
+Build `--release` too and run the same script: the debug smoke only proves
+the target compiles, and release codegen reaches different alignment and
+inlining decisions.
+
 ## Status
 
 v0.1.0 released — working and tested (unit, integration as
@@ -476,6 +480,15 @@ order: the full suite green in **debug and release**, then `telemetry`,
 [Measurement methodology](#measurement-methodology). A benchmark number from
 a build that has not cleared those gates is not evidence.
 
+Every one of those gates runs in CI. `ci.yml` splits into the checks that
+gate a push (`test`, `lint`, `docs`, `features`, `wasm32`, `bit32`, `msrv`,
+`package`) and the heavy or informational work that does not (`miri`,
+`fuzz`, `kani`, `coverage`, and the benchmark matrix on a weekly schedule)
+— the benchmarks in particular are excluded from the push path because the
+full matrix takes tens of minutes per OS and a shared runner cannot host a
+meaningful measurement anyway. See
+[Continuous integration](#continuous-integration).
+
 ```text
 # smoke one workload quickly
 BENCH_SECS=1 BENCH_REPS=1 BENCH_ONLY="tight-small 1T" cargo bench
@@ -485,4 +498,53 @@ BENCH_SECS=2 BENCH_REPS=1 BENCH_FRESH=1 BENCH_SAFE_LIVE=1 \
   taskset -c 0-7 ./target/release/bench
 ```
 
-License: MIT OR Apache-2.0
+The `taskset` pinning and a memory cgroup matter: without them the sample
+mixes scheduler migration and cgroup pressure into the number, which is
+exactly the ~10% noise floor described above. Unpinned runs on a loaded
+shared runner are not comparable to anything.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` is split by what should be able to block a
+change.
+
+**Gates a push** — fast, deterministic, no timing claims:
+
+| Job | What it proves |
+|---|---|
+| `test` | suite green on Windows/Linux/macOS, debug **and** release |
+| `lint` | `cargo fmt --all --check`, `clippy --all-targets -D warnings` |
+| `docs` | rustdoc clean under `-D warnings`, including intra-doc links |
+| `features` | `telemetry` build+tests, `no_std` on Unix and wasm32 |
+| `wasm32` | the wasm example builds and passes its host smoke test, debug and release |
+| `bit32` | i686 builds and tests, proving the 32-bit ALU paths |
+| `msrv` | the crate still compiles on the declared 1.79 MSRV |
+| `package` | `cargo package` produces a clean published artifact |
+
+**Everything else runs on a schedule** and is reported, not enforced, because
+each is either slow, needs hardware the runner may not have, or produces
+numbers that mean nothing on a shared VM:
+
+- `bench` — the comparison matrix, per OS, with artifacts uploaded rather
+  than gates asserted.
+- `jemalloc-bench` — the extra comparator column (needs make+autoconf).
+- `miri` — UB and provenance checking under nightly. Runs `--lib` only;
+  Miri cannot execute the allocator's raw syscalls, so the mmap-dependent
+  tests are `cfg_attr(miri, ignore)`d by design.
+- `fuzz` — builds the `libfuzzer-sys` targets and smoke-runs each briefly.
+- `kani` — formal proofs for the span/big-carving arithmetic.
+- `coverage` — LCOV for reviewing which paths the suite actually reaches.
+- `profile` — `perf` counters; informational only, since perf availability
+  varies by runner kernel.
+
+Two details worth knowing if you touch the benchmarks in CI: they run
+`set -o pipefail` around the `tee` that captures output, because without it
+a failed `cargo bench` exits zero (`tee` is last in the pipeline) and a
+broken build gets uploaded as though it were a result; and `coverage`
+deliberately does not use `--all-features`, which would enable every
+`app-*` backend at once and trip the `compile_error!` in
+`examples/app_workload.rs`.
+
+## License
+
+MIT OR Apache-2.0
