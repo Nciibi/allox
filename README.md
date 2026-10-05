@@ -7,6 +7,8 @@ target it, `allox` builds for it — Windows, Linux, macOS, and any
 cross-compilation target, without `cc`, without CMake, without per-target
 C library setup.
 
+MSRV 1.79 · license MIT OR Apache-2.0 · stable channel only
+
 ```toml
 [dependencies]
 allox = "0.1"
