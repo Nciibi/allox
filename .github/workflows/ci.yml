@@ -167,8 +167,12 @@ jobs:
           toolchain: stable
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
+      # Deliberately NOT --all-features: it enables every app-* backend at
+      # once, which trips the compile_error! in examples/app_workload.rs,
+      # and pulls in bench-jemalloc without make/autoconf installed. The
+      # measured surface is the library and its tests.
       - name: Generate LCOV report
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --lib --tests --lcov --output-path lcov.info
       - name: Summary
         run: cargo llvm-cov report --summary-only
       - uses: actions/upload-artifact@v4
