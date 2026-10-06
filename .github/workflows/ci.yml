@@ -131,9 +131,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-fuzz
+      # actions-rs/install is archived and node12-based; taiki-e is the
+      # maintained replacement and installs a prebuilt cargo-fuzz.
+      - uses: taiki-e/install-action@cargo-fuzz
       - run: cargo fuzz build
       - name: Smoke-run fuzz targets
         run: |
