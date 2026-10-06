@@ -60,6 +60,14 @@ jobs:
         with:
           toolchain: stable
           targets: i686-unknown-linux-gnu
+      # i686-unknown-linux-gnu ships prebuilt std, but linking still needs a
+      # 32-bit libc and a 32-bit-capable gcc. Without these the job dies at
+      # link time with an unhelpful \"cannot find -lgcc_s\" style error.
+      - name: Install 32-bit toolchain
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-multilib libc6-dev-i386
       # 32-bit ALU: 512 MiB arena const + frequent (safe) legacy fallback.
       # Runs natively on x86_64 runners; arena unit tests use small isolated
       # instances on any pointer width, so exhaustion/fallback shapes are
