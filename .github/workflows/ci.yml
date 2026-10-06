@@ -81,12 +81,21 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
-      - run: cargo bench -- --nocapture 2>&1 | tee bench-${{ matrix.os }}.txt
+      # pipefail is load-bearing: without it a failed `cargo bench` exits
+      # zero because `tee` is last in the pipeline, and a broken build gets
+      # uploaded as though it were a measurement.
+      - name: Run matrix
+        run: |
+          set -o pipefail
+          cargo bench -- --nocapture 2>&1 | tee bench-${{ matrix.os }}.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bench-${{ matrix.os }}
@@ -195,6 +204,9 @@ jobs:
   # for re-scoring against the other OS bench artifacts.
   jemalloc-bench:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -203,7 +215,9 @@ jobs:
       - name: Install make + autoconf (jemalloc build)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq make autoconf
       - name: Bench with jemalloc column
-        run: cargo bench --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
+        run: |
+          set -o pipefail
+          cargo bench --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bench-jemalloc
