@@ -152,12 +152,13 @@ jobs:
       # Miri cannot execute real syscalls for map/unmap; unit tests that
       # need raw mmap are cfg_attr(miri, ignore). Span/big carve and
       # large_header_of probes use std::alloc buffers and run here.
-      # -Zmiri-strict-provenance: pointer-int casts in header probes must
-      # stay in-bounds of their allocations.
+      #
+      # No MIRIFLAGS: strict provenance is the default now, and passing the
+      # old -Zmiri-strict-provenance flag makes current nightly reject it
+      # as an unknown option. The pointer-int casts in the header probes
+      # are covered by the default strict mode.
       - run: cargo +nightly miri setup
       - run: cargo +nightly miri test --lib
-        env:
-          MIRIFLAGS: "-Zmiri-strict-provenance"
 
   # Phase 0.3: Windows Fls path is exercised by the 3-OS `test` matrix
   # (windows-latest runs tests/thread_exit.rs + stress.rs) and the 3-OS
