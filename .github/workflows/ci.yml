@@ -11,9 +11,19 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -22,35 +32,34 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-      - run: cargo build --verbose
-      - run: cargo test --verbose
-      - run: cargo test --release --verbose
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked --verbose
+      - run: cargo test --locked --verbose
+      - run: cargo test --locked --release --verbose
 
   lint:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy, rustfmt
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
 
   # Separate from lint because rustdoc under -D warnings also validates
   # intra-doc links, and a broken link in a public crate is a release bug.
   docs:
+    timeout-minutes: 15
     name: docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-      - run: cargo doc --no-deps
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc --locked --no-deps
         env:
           RUSTDOCFLAGS: -Dwarnings
 
@@ -58,66 +67,66 @@ jobs:
   # green on default features and break either. The README lists both as
   # gates, so CI has to run them.
   features:
+    timeout-minutes: 20
     name: telemetry + no_std
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           targets: wasm32-unknown-unknown
       - name: Telemetry build + tests
         run: |
-          cargo build --features telemetry
-          cargo test --features telemetry
+          cargo build --locked --features telemetry
+          cargo test --locked --features telemetry
       - name: no_std build (unix)
-        run: cargo build --no-default-features
+        run: cargo build --locked --no-default-features
       - name: no_std build (wasm32)
-        run: cargo build --no-default-features --target wasm32-unknown-unknown
+        run: cargo build --locked --no-default-features --target wasm32-unknown-unknown
 
   # The declared MSRV is a promise in Cargo.toml; this is what keeps it one.
   msrv:
+    timeout-minutes: 20
     name: msrv 1.79
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.79.0
-      - run: cargo build --verbose
-      - run: cargo build --no-default-features --verbose
+      - run: cargo build --locked --verbose
+      - run: cargo build --locked --no-default-features --verbose
 
   package:
+    timeout-minutes: 15
     name: package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-      - run: cargo package
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo package --locked
 
   wasm:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: cargo build --target wasm32-unknown-unknown --example wasm_smoke
+      - run: cargo build --locked --target wasm32-unknown-unknown --example wasm_smoke
       - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
       - run: cargo build --release --target wasm32-unknown-unknown --example wasm_smoke
       - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/examples/wasm_smoke.wasm
 
   bit32:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           targets: i686-unknown-linux-gnu
       # i686-unknown-linux-gnu ships prebuilt std, but linking still needs a
       # 32-bit libc and a 32-bit-capable gcc. Without these the job dies at
@@ -131,10 +140,11 @@ jobs:
       # Runs natively on x86_64 runners; arena unit tests use small isolated
       # instances on any pointer width, so exhaustion/fallback shapes are
       # covered here too.
-      - run: cargo build --target i686-unknown-linux-gnu --verbose
-      - run: cargo test --target i686-unknown-linux-gnu --verbose
+      - run: cargo build --locked --target i686-unknown-linux-gnu --verbose
+      - run: cargo test --locked --target i686-unknown-linux-gnu --verbose
 
   bench:
+    timeout-minutes: 90
     # Scheduled only. The full matrix is ~22 workloads x 6 allocators x
     # 5 reps x 3s plus warmup per OS, which is tens of minutes on a
     # shared runner that cannot host a meaningful measurement anyway
@@ -151,22 +161,21 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+      - uses: dtolnay/rust-toolchain@stable
       # pipefail is load-bearing: without it a failed `cargo bench` exits
       # zero because `tee` is last in the pipeline, and a broken build gets
       # uploaded as though it were a measurement.
       - name: Run matrix
         run: |
           set -o pipefail
-          cargo bench -- --nocapture 2>&1 | tee bench-${{ matrix.os }}.txt
+          cargo bench --locked -- --nocapture 2>&1 | tee bench-${{ matrix.os }}.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bench-${{ matrix.os }}
           path: bench-*.txt
 
   profile:
+    timeout-minutes: 45
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Informational only: perf availability varies by runner kernel; this job
@@ -176,20 +185,18 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install perf (best effort)
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq linux-tools-common linux-tools-generic
       - name: Build benches
-        run: cargo bench --no-run
+        run: cargo bench --locked --no-run
       - name: perf stat on mixed-all 8T + spawn-churn
         continue-on-error: true
         run: |
           for wl in "mixed-all 8T" "spawn-churn"; do
             safe=$(echo "$wl" | tr ' ' '-');
-            BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses -o "perf-${safe}.txt" cargo bench --bench alloc -- --nocapture || true;
+            BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses -o "perf-${safe}.txt" cargo bench --locked --bench alloc -- --nocapture || true;
           done
           ls perf-*.txt 2>/dev/null || echo "no perf output captured" > perf-unavailable.txt
       - name: Upload profiles
@@ -200,13 +207,15 @@ jobs:
           path: perf-*.txt
 
   fuzz:
+    timeout-minutes: 45
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
         with:
-          toolchain: nightly
+          workspaces: fuzz
       # actions-rs/install is archived and node12-based; taiki-e is the
       # maintained replacement and installs a prebuilt cargo-fuzz.
       - uses: taiki-e/install-action@cargo-fuzz
@@ -218,13 +227,13 @@ jobs:
           cargo fuzz run tier_boundary_seq -- -max_total_time=60
 
   miri:
+    timeout-minutes: 45
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
           components: miri
       # Miri cannot execute real syscalls for map/unmap; unit tests that
       # need raw mmap are cfg_attr(miri, ignore). Span/big carve and
@@ -237,29 +246,28 @@ jobs:
       - run: cargo +nightly miri setup
       - run: cargo +nightly miri test --lib
 
-  # Phase 0.3: Windows Fls path is exercised by the 3-OS `test` matrix
+  # The Windows Fls path is exercised by the 3-OS `test` matrix
   # (windows-latest runs tests/thread_exit.rs + stress.rs) and the 3-OS
   # `bench` matrix — no separate job needed; kept as a comment so the
   # coverage is visible when reviewing CI.
-  #
-  # Phase 0.7: 3-OS bench matrix is the existing `bench` job above.
 
   coverage:
+    timeout-minutes: 40
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
       # Deliberately NOT --all-features: it enables every app-* backend at
       # once, which trips the compile_error! in examples/app_workload.rs,
       # and pulls in bench-jemalloc without make/autoconf installed. The
       # measured surface is the library and its tests.
       - name: Generate LCOV report
-        run: cargo llvm-cov --lib --tests --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --lib --tests --lcov --output-path lcov.info
       - name: Summary
         run: cargo llvm-cov report --summary-only
       - uses: actions/upload-artifact@v4
@@ -268,10 +276,11 @@ jobs:
           name: coverage-lcov
           path: lcov.info
 
-  # Phase 0.4: jemalloc comparator — CI box has make+autoconf (dev box does
-  # not). Runs the full 14-workload scoreboard with the extra column; upload
-  # for re-scoring against the other OS bench artifacts.
+  # jemalloc comparator — CI box has make+autoconf (dev box does not).
+  # Runs the scoreboard with the extra column; uploaded for re-scoring
+  # against the other OS bench artifacts.
   jemalloc-bench:
+    timeout-minutes: 90
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
@@ -279,31 +288,28 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install make + autoconf (jemalloc build)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq make autoconf
       - name: Bench with jemalloc column
         run: |
           set -o pipefail
-          cargo bench --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
+          cargo bench --locked --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bench-jemalloc
           path: bench-jemalloc.txt
 
-  # Phase 0.6: Kani proofs for DESIGN_SPANS_BIG §6 P1–P6 (arithmetic bounds)
-  # + medium-page packing. Nightly + kani-verifier; proofs live in
-  # src/page.rs `kani_proofs` under `#[cfg(all(kani, unix, feature = "std"))]`.
+  # Kani proofs for the span/big-carving arithmetic and medium-page packing.
+  # Proofs live in src/page.rs `kani_proofs` under
+  # `#[cfg(all(kani, unix, feature = "std"))]`.
   kani:
+    timeout-minutes: 60
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@nightly
       - name: Install Kani
         run: |
           cargo install --locked kani-verifier
