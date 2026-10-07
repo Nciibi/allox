@@ -81,6 +81,29 @@ fn growth_shape_over_many_generations() {
         println!("gen {:>2} delta={}", g, d);
     }
 
+    // The decisive measurement: are retired caches actually being adopted?
+    // If every retired cache is reclaimed, there is no dead cache and the
+    // growth is bounded retention filling up. If adoption lags, there is a
+    // genuine leak and the threshold is irrelevant.
+    let v = allox::__diagnostics::volume();
+    println!("\n--- thread-exit accounting ---");
+    println!("exit_flushes   = {}", v.exit_flushes);
+    println!("retired_caches = {}", v.retired_caches);
+    println!("adopted_caches = {}", v.adopted_caches);
+    println!(
+        "adoption rate  = {:.1}%",
+        100.0 * v.adopted_caches as f64 / v.retired_caches.max(1) as f64
+    );
+    println!("map_calls      = {}", v.map_calls);
+    println!("unmap_calls    = {}", v.unmap_calls);
+    println!("purge_calls    = {}", v.purge_calls);
+    println!("purge_bytes    = {}", v.purge_bytes);
+    println!("arena_parks    = {}", v.arena_parks);
+    println!("arena_fallbacks= {}", v.arena_fallbacks);
+
+    // Thread count actually created, for comparison against exit_flushes.
+    println!("\nthreads spawned (should equal exit_flushes) = {}", GENERATIONS * 4);
+
     // Tail window: last third of the run, which is the part that would expose
     // linear (leak) versus flat (bounded retention).
     let tail_start = (GENERATIONS * 2) / 3;
