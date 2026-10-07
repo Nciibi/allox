@@ -481,7 +481,7 @@ order: the full suite green in **debug and release**, then `telemetry`,
 a build that has not cleared those gates is not evidence.
 
 Every one of those gates runs in CI. `ci.yml` splits into the checks that
-gate a push (`test`, `lint`, `docs`, `features`, `wasm32`, `bit32`, `msrv`,
+gate a push (`test`, `lint`, `docs`, `features`, `wasm`, `bit32`, `msrv`,
 `package`) and the heavy or informational work that does not (`miri`,
 `fuzz`, `kani`, `coverage`, and the benchmark matrix on a weekly schedule)
 — the benchmarks in particular are excluded from the push path because the
@@ -516,7 +516,7 @@ change.
 | `lint` | `cargo fmt --all --check`, `clippy --all-targets -D warnings` |
 | `docs` | rustdoc clean under `-D warnings`, including intra-doc links |
 | `features` | `telemetry` build+tests, `no_std` on Unix and wasm32 |
-| `wasm32` | the wasm example builds and passes its host smoke test, debug and release |
+| `wasm` | the wasm example builds and passes its host smoke test, debug and release |
 | `bit32` | i686 builds and tests, proving the 32-bit ALU paths |
 | `msrv` | the crate still compiles on the declared 1.79 MSRV |
 | `package` | `cargo package` produces a clean published artifact |
