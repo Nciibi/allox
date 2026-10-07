@@ -40,6 +40,61 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
 
+  # Separate from lint because rustdoc under -D warnings also validates
+  # intra-doc links, and a broken link in a public crate is a release bug.
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
+  # telemetry and no_std are separate compile universes: a change can be
+  # green on default features and break either. The README lists both as
+  # gates, so CI has to run them.
+  features:
+    name: telemetry + no_std
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Telemetry build + tests
+        run: |
+          cargo build --features telemetry
+          cargo test --features telemetry
+      - name: no_std build (unix)
+        run: cargo build --no-default-features
+      - name: no_std build (wasm32)
+        run: cargo build --no-default-features --target wasm32-unknown-unknown
+
+  # The declared MSRV is a promise in Cargo.toml; this is what keeps it one.
+  msrv:
+    name: msrv 1.79
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.79.0
+      - run: cargo build --verbose
+      - run: cargo build --no-default-features --verbose
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - run: cargo package
+
   wasm:
     runs-on: ubuntu-latest
     steps:
