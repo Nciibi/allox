@@ -104,6 +104,10 @@ compile_error!(
 );
 
 /// Which allocator this binary was built with, for `APP_ALLOC` verification.
+///
+/// The final arm is the no-backend-feature default, not `app-talc`: with
+/// no feature, `Backend` is `SystemAlloc`, and reporting "talc" made a
+/// plain `cargo build` name the wrong backend to `scripts/app_bench.sh`.
 const BACKEND_NAME: &str = if cfg!(feature = "app-allox") {
     "allox"
 } else if cfg!(feature = "app-system") {
@@ -112,8 +116,11 @@ const BACKEND_NAME: &str = if cfg!(feature = "app-allox") {
     "mimalloc"
 } else if cfg!(feature = "app-snmalloc") {
     "snmalloc"
-} else {
+} else if cfg!(feature = "app-talc") {
     "talc"
+} else {
+    // No backend feature selected: Backend is SystemAlloc above.
+    "system"
 };
 
 /// Forwards every `GlobalAlloc` call to [`BACKEND`]. `SAMPLING` is a const
