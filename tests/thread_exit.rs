@@ -110,10 +110,17 @@ fn short_lived_threads_do_not_accumulate() {
     // retention as "dead caches?" and went red on Linux, macOS and Windows
     // alike, none of which leak here. Saturating the retention budget to
     // observe a plateau would take thousands of generations and gigabytes.
+    // `exit_flushes` is process-wide, and `cargo test` runs the integration
+    // binaries concurrently, so other tests' threads land in this count too
+    // (observed: 22 against an expected 20). A lower bound is the race-free
+    // form of the invariant — it still fails if the hook never fires or skips
+    // threads, which is what a dead cache would look like.
     let flushes = allox::__diagnostics::volume().exit_flushes - flushes_before;
-    assert_eq!(
-        flushes, (GENERATIONS * WORKERS) as u64,
-        "every short-lived thread must run its exit hook"
+    assert!(
+        flushes >= (GENERATIONS * WORKERS) as u64,
+        "expected at least one exit hook per short-lived thread, got {} for {} threads",
+        flushes,
+        GENERATIONS * WORKERS
     );
 
     // Page growth stays a small multiple of one generation's live footprint
