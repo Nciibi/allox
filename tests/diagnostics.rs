@@ -9,8 +9,8 @@
 //! wiring regression (counter incremented on the wrong path, or not at all)
 //! fails here rather than silently reporting zeros in a benchmark run.
 
-use allox::malloc;
 use allox::__diagnostics::volume;
+use allox::malloc;
 #[cfg(feature = "telemetry")]
 use std::alloc::{GlobalAlloc, Layout};
 
@@ -58,8 +58,7 @@ fn small_churn_moves_refill_and_flush_counters() {
         "every refill delivers at least one block"
     );
     assert!(
-        delta(before.flushes, after.flushes) > 0
-            || delta(before.trims, after.trims) > 0,
+        delta(before.flushes, after.flushes) > 0 || delta(before.trims, after.trims) > 0,
         "cache pressure produced neither a trim nor a flush"
     );
     allox::set_thread_cache_budget(32 * 1024 * 1024);
@@ -99,7 +98,10 @@ fn realloc_growth_counts_promotion_and_copies() {
         // 65536 -> 131072 -> 262144 -> 524288 -> 1048576: four growths,
         // of which only the first can relocate (the rest fit the reserve).
         assert_eq!(
-            delta(chain_start.realloc_relocations, chain_end.realloc_relocations),
+            delta(
+                chain_start.realloc_relocations,
+                chain_end.realloc_relocations
+            ),
             1,
             "a doubling chain should relocate exactly once (the promotion)"
         );
@@ -148,7 +150,10 @@ fn calloc_on_recycled_memory_counts_zeroing() {
     let calls = delta(before.zeroed_calls, after.zeroed_calls);
     let bytes = delta(before.zeroed_bytes, after.zeroed_bytes);
     assert!(calls > 0, "zeroed_calls did not move: {calls}");
-    assert!(bytes >= calls, "every software zeroing covers at least a byte");
+    assert!(
+        bytes >= calls,
+        "every software zeroing covers at least a byte"
+    );
     // 64 B blocks, so bytes must be at least 64 per counted call.
     assert!(
         bytes >= calls * 64,

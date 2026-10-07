@@ -28,7 +28,12 @@ fn fill_pattern(p: *mut u8, size: usize) {
 #[test]
 fn big_boundary_routing() {
     unsafe {
-        let medium_top = 65536 - if cfg!(target_pointer_width = "64") { 64 } else { 48 };
+        let medium_top = 65536
+            - if cfg!(target_pointer_width = "64") {
+                64
+            } else {
+                48
+            };
         let m = malloc(medium_top);
         assert!(!m.is_null());
         assert_eq!(allox::usable_size(m), medium_top);

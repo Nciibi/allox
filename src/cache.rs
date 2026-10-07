@@ -10,23 +10,23 @@
 //! grow freely and trimming happens only against the aggregate byte budget,
 //! biggest classes first.
 
-use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
-#[cfg(all(unix, feature = "std"))]
-use crate::classes::{BIG_CLASSES, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{BIG_CLASSES, NUM_BIG};
+use crate::classes::{MEDIUM_CLASSES, NUM_MEDIUM};
 
 use crate::classes::{CLASSES_RUNTIME, NUM_CLASSES};
-use crate::heap::{MEDIUM_HEAP, PageReleaseChunk, REFILL_BATCH, ReleaseChunk};
 #[cfg(all(unix, feature = "std"))]
 use crate::heap::BIG_HEAP;
-use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
+use crate::heap::{PageReleaseChunk, ReleaseChunk, MEDIUM_HEAP, REFILL_BATCH};
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
-use core::mem::MaybeUninit;
-use core::ptr;
+use crate::page::{pop_block, push_block, PageHeader, SpanMaster};
 #[cfg(all(feature = "std", any(unix, windows)))]
 use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(all(feature = "std", any(unix, windows)))]
 use core::sync::atomic::{AtomicU8, AtomicUsize};
@@ -435,7 +435,6 @@ impl Pending {
         }
     }
 }
-
 
 impl ThreadCache {
     pub(crate) const fn new() -> Self {
@@ -893,8 +892,7 @@ impl ThreadCache {
 
     #[inline]
     fn should_shed_small(&self, budget: usize) -> bool {
-        self.cached_bytes > budget
-            || self.foreign_bytes >= budget / FOREIGN_SHED_DIV
+        self.cached_bytes > budget || self.foreign_bytes >= budget / FOREIGN_SHED_DIV
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
@@ -1139,9 +1137,7 @@ impl ThreadCache {
     #[inline]
     fn active_medium_contains(&self, p: *mut u8, mclass: usize) -> bool {
         let active = &self.mactive[mclass];
-        !active.span.is_null()
-            && (p as usize) >= active.base
-            && (p as usize) < active.end
+        !active.span.is_null() && (p as usize) >= active.base && (p as usize) < active.end
     }
 
     #[inline]
@@ -1482,9 +1478,7 @@ impl ThreadCache {
                 let below = bin.len - 1;
                 bin.len = below;
                 self.cached_bytes -= BIG_CLASSES[bclass];
-                self.tier_cached_bytes = self
-                    .tier_cached_bytes
-                    .saturating_sub(BIG_CLASSES[bclass]);
+                self.tier_cached_bytes = self.tier_cached_bytes.saturating_sub(BIG_CLASSES[bclass]);
                 let zeroed = below < self.bvirgin[bclass];
                 if zeroed {
                     self.bvirgin[bclass] -= 1;
@@ -1648,9 +1642,7 @@ impl ThreadCache {
         } else {
             LARGE_STASH_CAP_BYTES
         };
-        if self.large_len as usize >= LARGE_STASH_SLOTS
-            || self.large_bytes + bytes > cap
-        {
+        if self.large_len as usize >= LARGE_STASH_SLOTS || self.large_bytes + bytes > cap {
             return false;
         }
         let idx = self.large_len as usize;
@@ -1701,9 +1693,7 @@ impl ThreadCache {
         self.arm_exit_hook();
         self.refresh_budget();
         note_diag!(self, trims, 1);
-        let tier_allowance = self
-            .tier_cached_bytes
-            .min(self.budget.saturating_mul(2));
+        let tier_allowance = self.tier_cached_bytes.min(self.budget.saturating_mul(2));
         let target = self.budget / 2 + tier_allowance;
         while self.cached_bytes > target {
             let mut best = usize::MAX;
@@ -1843,17 +1833,12 @@ impl ThreadCache {
             cursor = next;
         }
         debug_assert!(cursor.is_null());
-        self.cached_bytes = self
-            .cached_bytes
-            .saturating_sub(block_size * len as usize);
+        self.cached_bytes = self.cached_bytes.saturating_sub(block_size * len as usize);
         self.bins[class].head = ptr::null_mut();
         self.bins[class].len = 0;
         self.bins[class].virgin = 0;
         let chunks = unsafe {
-            core::slice::from_raw_parts_mut(
-                groups.as_mut_ptr() as *mut PageReleaseChunk,
-                ng,
-            )
+            core::slice::from_raw_parts_mut(groups.as_mut_ptr() as *mut PageReleaseChunk, ng)
         };
         crate::heap::HEAP.release_bin_chunks(class, chain, len, chunks);
     }
@@ -2021,9 +2006,8 @@ impl ThreadCache {
                     n: g.n,
                 });
             }
-            let chunks_slice = unsafe {
-                core::slice::from_raw_parts(chunks.as_ptr() as *const ReleaseChunk, nch)
-            };
+            let chunks_slice =
+                unsafe { core::slice::from_raw_parts(chunks.as_ptr() as *const ReleaseChunk, nch) };
             crate::heap::MEDIUM_HEAP.release_many(mclass, chunks_slice);
             flushed += popped as u64;
             if popped == 0 {
@@ -2327,10 +2311,7 @@ unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
         invalid("allox: medium dealloc outside owning span");
     }
     #[cfg(all(unix, feature = "std"))]
-    let arena_owned = crate::arena::contains(
-        base as *mut u8,
-        npages * PAGE_SIZE,
-    );
+    let arena_owned = crate::arena::contains(base as *mut u8, npages * PAGE_SIZE);
     #[cfg(not(all(unix, feature = "std")))]
     let arena_owned = false;
     if arena_owned {

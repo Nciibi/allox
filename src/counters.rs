@@ -179,11 +179,11 @@ pub(crate) use timing_impl::snapshot as timing_snapshot;
 pub(crate) fn timing_snapshot() -> TimingCounters {
     TimingCounters::default()
 }
-#[cfg(all(feature = "telemetry", feature = "std"))]
-pub(crate) use timing_impl::TIMING;
 #[cfg(feature = "telemetry")]
 #[allow(unused_imports)]
 pub(crate) use timing_impl::TimingCounters;
+#[cfg(all(feature = "telemetry", feature = "std"))]
+pub(crate) use timing_impl::TIMING;
 
 /// Named-field view of the always-on volume counters, for consumers that
 /// want more than a positional array.
@@ -328,7 +328,10 @@ mod tests {
         let raw = volume_raw();
         let named = volume();
         assert_eq!(raw.len(), VOLUME_FIELDS.len());
-        assert_eq!(raw[VOLUME_FIELDS.iter().position(|f| *f == "trims").unwrap()], named.trims);
+        assert_eq!(
+            raw[VOLUME_FIELDS.iter().position(|f| *f == "trims").unwrap()],
+            named.trims
+        );
         assert_eq!(
             raw[VOLUME_FIELDS
                 .iter()

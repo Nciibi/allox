@@ -72,7 +72,10 @@ fn global_realloc_zero_layout_grows_fresh() {
         let p = a.alloc(l0);
         assert_eq!(allox::usable_size(p), 0);
         let q = a.realloc(p, l0, 8);
-        assert_ne!(q, p, "realloc must not return the zero-size dangling pointer");
+        assert_ne!(
+            q, p,
+            "realloc must not return the zero-size dangling pointer"
+        );
         assert!(!q.is_null());
         core::ptr::write_bytes(q, 0xAB, 8);
         a.dealloc(q, Layout::from_size_align(8, 16).unwrap());
@@ -285,8 +288,7 @@ fn forged_large_header_does_not_steal_medium_free() {
             .position(|p| {
                 let address = *p as usize;
                 let page = address & !65535;
-                (address & 65535) >= 128
-                    && *(page as *const u64) != 0xA110_CCA7_5EED_5A11
+                (address & 65535) >= 128 && *(page as *const u64) != 0xA110_CCA7_5EED_5A11
             })
             .expect("medium block with a user-data predecessor");
         let second = blocks[index];

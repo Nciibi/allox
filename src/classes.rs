@@ -178,8 +178,7 @@ pub(crate) const fn medium_capacity_legacy_for(block: usize, pages: usize) -> us
     if pages == 0 {
         return 0;
     }
-    (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / block
-        + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / block)
+    (PAGE_SIZE - MEDIUM_CHUNK_RESERVE) / block + (pages - 1) * ((PAGE_SIZE - SPAN_SUB_SIZE) / block)
 }
 
 #[cfg(all(unix, feature = "std"))]
@@ -434,7 +433,11 @@ mod tests {
     fn medium_tables_cover_range_with_bound() {
         use crate::page::SPAN_MASTER_SIZE;
         assert_eq!(MEDIUM_CHUNK_RESERVE, SPAN_MASTER_SIZE);
-        assert!(NUM_MEDIUM >= 8, "expected ~13 medium classes, got {}", NUM_MEDIUM);
+        assert!(
+            NUM_MEDIUM >= 8,
+            "expected ~13 medium classes, got {}",
+            NUM_MEDIUM
+        );
         assert!(MEDIUM_CLASSES[0] > MAX_SMALL_SIZE);
         assert!(MAX_MEDIUM_BLOCK <= MEDIUM_BLOCK_CAP);
         // Next geometric step would exceed the cap (table is maximal).
@@ -460,7 +463,12 @@ mod tests {
             let pages = span_pages_for(b);
             assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
             let capacity = medium_capacity_for(b, pages);
-            assert!(capacity >= TARGET_BLOCKS_PER_SPAN, "block {} pages {}", b, pages);
+            assert!(
+                capacity >= TARGET_BLOCKS_PER_SPAN,
+                "block {} pages {}",
+                b,
+                pages
+            );
             if pages > 1 {
                 assert!(
                     medium_capacity_for(b, pages - 1) < TARGET_BLOCKS_PER_SPAN,

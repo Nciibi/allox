@@ -12,21 +12,21 @@ pub(crate) mod windows;
 
 use core::cell::UnsafeCell;
 
-#[cfg(all(unix, feature = "std"))]
-pub(crate) use unix::{discard, map, map_any, unmap, RawMutex};
 #[cfg(all(unix, not(feature = "std")))]
 pub(crate) use unix::{discard, map, map_any, unmap};
-#[cfg(all(not(windows), not(unix), target_family = "wasm"))]
-pub(crate) use wasm::{discard, map, unmap};
+#[cfg(all(unix, feature = "std"))]
+pub(crate) use unix::{discard, map, map_any, unmap, RawMutex};
 #[cfg(all(not(windows), not(unix), target_family = "wasm"))]
 pub(crate) use wasm::map as map_any;
+#[cfg(all(not(windows), not(unix), target_family = "wasm"))]
+pub(crate) use wasm::{discard, map, unmap};
 #[cfg(all(not(windows), not(unix), not(target_family = "wasm")))]
 compile_error!("allox has no memory backend for this target");
-#[cfg(windows)]
-pub(crate) use windows::{discard, map, unmap, RawMutex};
 /// Windows VirtualAlloc is already single-syscall and 64 KiB-aligned.
 #[cfg(windows)]
 pub(crate) use windows::map as map_any;
+#[cfg(windows)]
+pub(crate) use windows::{discard, map, unmap, RawMutex};
 
 /// Fallback spin mutex: Windows has SRWLock, hosted unix has pthread above;
 /// everything else (no_std targets, wasm) spins. Only ever taken on batched

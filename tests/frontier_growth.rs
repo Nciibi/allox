@@ -24,7 +24,10 @@ fn large_realloc_grows_at_arena_frontier() {
         let q = allox::realloc(p, 16 * 1024 * 1024);
         assert_eq!(q, p);
         assert!(*q == 0);
-        assert_eq!(*q.add(8 * 1024 * 1024 - 1), ((8 * 1024 * 1024 - 1) % 251) as u8);
+        assert_eq!(
+            *q.add(8 * 1024 * 1024 - 1),
+            ((8 * 1024 * 1024 - 1) % 251) as u8
+        );
         assert!(allox::usable_size(q) >= 16 * 1024 * 1024);
         allox::free(q);
 

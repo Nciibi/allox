@@ -2,8 +2,8 @@
 //! multi-page spans for medium blocks, plus the header layout used for large
 //! (directly mapped) regions.
 
-use crate::classes::{medium_capacity_for, medium_capacity_legacy_for, MEDIUM_CLASSES, NUM_MEDIUM};
 use crate::classes::CLASSES;
+use crate::classes::{medium_capacity_for, medium_capacity_legacy_for, MEDIUM_CLASSES, NUM_MEDIUM};
 #[cfg(all(unix, feature = "std"))]
 use crate::classes::{BIG_CLASSES, NUM_BIG};
 use core::ptr;
@@ -397,8 +397,8 @@ mod tests {
     /// 64 KiB-aligned multi-page buffer without OS mmap (Miri-safe).
     /// Caller must free with the same layout.
     unsafe fn aligned_pages(pages: usize) -> (*mut u8, core::alloc::Layout) {
-        let layout = core::alloc::Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
-            .expect("layout");
+        let layout =
+            core::alloc::Layout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE).expect("layout");
         let p = std::alloc::alloc(layout);
         assert!(!p.is_null(), "alloc {} pages", pages);
         // Freshness not guaranteed by std::alloc; zero so virgin asserts hold.
@@ -549,7 +549,13 @@ mod tests {
             let mut current = unsafe { (*span).free_head };
             while !current.is_null() {
                 let address = current as usize;
-                assert_eq!(address % MIN_ALIGN, 0, "mclass {} address {}", mclass, address);
+                assert_eq!(
+                    address % MIN_ALIGN,
+                    0,
+                    "mclass {} address {}",
+                    mclass,
+                    address
+                );
                 assert_eq!(unsafe { SpanMaster::of(current) }, span);
                 assert!(unsafe { (*span).contains(current) });
                 addresses.push(address);
@@ -560,10 +566,18 @@ mod tests {
             let base = raw as usize;
             for (index, address) in addresses.iter().copied().enumerate() {
                 let page = (address - base) / PAGE_SIZE;
-                let start = if page == 0 { SPAN_MASTER_SIZE } else { SPAN_SUB_SIZE };
+                let start = if page == 0 {
+                    SPAN_MASTER_SIZE
+                } else {
+                    SPAN_SUB_SIZE
+                };
                 let page_start = base + page * PAGE_SIZE;
                 assert!(address >= page_start + start, "mclass {}", mclass);
-                assert!(address + block <= page_start + PAGE_SIZE, "mclass {}", mclass);
+                assert!(
+                    address + block <= page_start + PAGE_SIZE,
+                    "mclass {}",
+                    mclass
+                );
                 if index > 0 {
                     let previous = addresses[index - 1];
                     let previous_page = (previous - base) / PAGE_SIZE;
@@ -706,10 +720,7 @@ mod kani_proofs {
         assert!(addr + block <= total, "P2/P6: block past end");
         if k > 0 {
             let prev = BIG_MASTER_SIZE + (k - 1) * block;
-            assert!(
-                addr - prev == block,
-                "P1: non-contiguous stride at k={}"
-            );
+            assert!(addr - prev == block, "P1: non-contiguous stride at k={}");
         }
     }
 

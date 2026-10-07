@@ -1240,7 +1240,11 @@ impl Probed {
     #[inline]
     fn new(inner: &'static dyn SyncGlobalAlloc, every: u64) -> Self {
         let mask = sampling_mask(every);
-        let overhead = if mask == 0 { 0 } else { calibrate_clock_overhead() };
+        let overhead = if mask == 0 {
+            0
+        } else {
+            calibrate_clock_overhead()
+        };
         Probed {
             inner,
             mask,
@@ -1610,7 +1614,9 @@ fn run_fresh_processes() {
     let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
     #[allow(unused_mut)]
-    let mut allocator_names = vec!["allox", "talc", "dlmalloc", "system", "mimalloc", "snmalloc"];
+    let mut allocator_names = vec![
+        "allox", "talc", "dlmalloc", "system", "mimalloc", "snmalloc",
+    ];
     #[cfg(feature = "bench-jemalloc")]
     allocator_names.push("jemalloc");
 
@@ -1843,9 +1849,7 @@ fn main() {
             let volume = allox::__diagnostics::VOLUME_FIELDS
                 .iter()
                 .zip(v0.iter().zip(v1.iter()))
-                .map(|(name, (before, after))| {
-                    ((*name).to_string(), after.saturating_sub(*before))
-                })
+                .map(|(name, (before, after))| ((*name).to_string(), after.saturating_sub(*before)))
                 .collect();
             let timing_ns = timing_counters();
             Some(AlloxDiagnostics {

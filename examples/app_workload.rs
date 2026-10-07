@@ -65,8 +65,7 @@ type Backend =
 type Backend = SystemAlloc;
 
 #[cfg(feature = "app-talc")]
-static BACKEND: Backend =
-    talc::TalcLock::new(talc::source::GlobalAllocSource::new(SystemAlloc));
+static BACKEND: Backend = talc::TalcLock::new(talc::source::GlobalAllocSource::new(SystemAlloc));
 #[cfg(feature = "app-allox")]
 static BACKEND: Backend = allox::Allox;
 #[cfg(feature = "app-system")]
@@ -85,18 +84,27 @@ static BACKEND: Backend = snmalloc_rs::SnMalloc;
 static BACKEND: Backend = SystemAlloc;
 
 #[cfg(any(
-    all(feature = "app-allox", any(
+    all(
+        feature = "app-allox",
+        any(
+            feature = "app-system",
+            feature = "app-mimalloc",
+            feature = "app-snmalloc",
+            feature = "app-talc"
+        )
+    ),
+    all(
         feature = "app-system",
+        any(
+            feature = "app-mimalloc",
+            feature = "app-snmalloc",
+            feature = "app-talc"
+        )
+    ),
+    all(
         feature = "app-mimalloc",
-        feature = "app-snmalloc",
-        feature = "app-talc"
-    )),
-    all(feature = "app-system", any(
-        feature = "app-mimalloc",
-        feature = "app-snmalloc",
-        feature = "app-talc"
-    )),
-    all(feature = "app-mimalloc", any(feature = "app-snmalloc", feature = "app-talc")),
+        any(feature = "app-snmalloc", feature = "app-talc")
+    ),
     all(feature = "app-snmalloc", feature = "app-talc"),
 ))]
 compile_error!(
@@ -333,9 +341,7 @@ fn build_document(rng: &mut Rng, depth: u32) -> Node {
                 let mut key = String::with_capacity(12);
                 key.push_str(WORDS[(rng.next() % WORDS.len() as u64) as usize]);
                 key.push('-');
-                key.push_str(
-                    WORDS[((i as u64 + rng.next() % 5) % WORDS.len() as u64) as usize],
-                );
+                key.push_str(WORDS[((i as u64 + rng.next() % 5) % WORDS.len() as u64) as usize]);
                 map.push((key, build_document(rng, depth + 1)));
             }
             Node::Map(map)
@@ -351,7 +357,10 @@ fn build_document(rng: &mut Rng, depth: u32) -> Node {
 /// allocation-dense and CPU-light document (useful for seeing the
 /// allocator's contribution without the hashing work on top).
 fn process_document(seed: u64) -> (usize, usize) {
-    if std::env::var("APP_INDEX").map(|v| v == "0").unwrap_or(false) {
+    if std::env::var("APP_INDEX")
+        .map(|v| v == "0")
+        .unwrap_or(false)
+    {
         return process_document_dense(seed);
     }
     let mut rng = Rng(seed | 1);
@@ -425,7 +434,11 @@ fn main() {
     // Only compiled with `--features app-p99`; in the default build the
     // sampling branch does not exist at all.
     if cfg!(feature = "app-p99") {
-        let mask = if every <= 1 { 0 } else { every.next_power_of_two() - 1 };
+        let mask = if every <= 1 {
+            0
+        } else {
+            every.next_power_of_two() - 1
+        };
         SAMPLE_MASK.store(mask, Ordering::Relaxed);
         if mask != 0 {
             CLOCK_OVERHEAD_NS.store(clock_overhead_ns(), Ordering::Relaxed);
@@ -446,8 +459,7 @@ fn main() {
             std::thread::spawn(move || {
                 let mut ops = 0u64;
                 let mut local = 0usize;
-                let mut seed =
-                    0xA11CE_u64 ^ ((t as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                let mut seed = 0xA11CE_u64 ^ ((t as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
                 while Instant::now() < stop {
                     // Batched so the clock read is not the workload's cost.
                     for _ in 0..64 {

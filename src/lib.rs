@@ -30,6 +30,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::missing_safety_doc)]
 
+/// Virtual-memory arena (unix + `std` only; legacy paths elsewhere).
+#[cfg(all(unix, feature = "std"))]
+mod arena;
 mod cache;
 mod classes;
 mod counters;
@@ -38,25 +41,20 @@ mod heap;
 mod page;
 mod sys;
 mod thread_exit;
-/// Virtual-memory arena (unix + `std` only; legacy paths elsewhere).
-#[cfg(all(unix, feature = "std"))]
-mod arena;
 
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{big_class_for_size, MAX_BIG_BLOCK};
 use crate::classes::{
     class_for_size, medium_class_for_size, MAX_MEDIUM_BLOCK, MAX_SMALL_SIZE, MIN_ALIGN,
 };
 #[cfg(all(unix, feature = "std"))]
-use crate::classes::{big_class_for_size, MAX_BIG_BLOCK};
-use crate::page::{
-    align_up, LargeHeader, SpanMaster, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK,
-};
-#[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
+use crate::page::{align_up, LargeHeader, SpanMaster, LARGE_HEADER_SIZE, LARGE_MAGIC, PAGE_MASK};
 use core::alloc::GlobalAlloc;
 use core::ptr;
-use heap::{HEAP, MEDIUM_HEAP};
 #[cfg(all(unix, feature = "std"))]
 use heap::BIG_HEAP;
+use heap::{HEAP, MEDIUM_HEAP};
 
 /// The allocator handle. Implementor of [`GlobalAlloc`]; also usable through
 /// the free functions [`malloc`], [`calloc`], [`realloc`], [`free`] and
@@ -247,10 +245,7 @@ unsafe fn take_one_big(bclass: usize) -> (*mut u8, bool) {
 }
 
 unsafe fn alloc_small(class: usize) -> *mut u8 {
-    with_cache(
-        |c| c.alloc(class),
-        || take_one_small(class).0,
-    )
+    with_cache(|c| c.alloc(class), || take_one_small(class).0)
 }
 
 unsafe fn dealloc_small(p: *mut u8) {
@@ -328,10 +323,7 @@ unsafe fn realloc_small(
 }
 
 unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
-    with_cache(
-        |c| c.alloc_medium(mclass),
-        || take_one_medium(mclass).0,
-    )
+    with_cache(|c| c.alloc_medium(mclass), || take_one_medium(mclass).0)
 }
 
 unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
@@ -350,10 +342,7 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 /// spans exist only in the arena, so there is no legacy-mapped form).
 #[cfg(all(unix, feature = "std"))]
 unsafe fn alloc_big(bclass: usize) -> *mut u8 {
-    with_cache(
-        |c| c.alloc_big(bclass),
-        || take_one_big(bclass).0,
-    )
+    with_cache(|c| c.alloc_big(bclass), || take_one_big(bclass).0)
 }
 
 #[cfg(all(unix, feature = "std"))]
@@ -468,12 +457,7 @@ impl LargeRegionCache {
         if current == EMPTY_LARGE_INDEX as usize {
             self.hot_exact[pages] = index as u16;
         } else if current >= self.len || self.entries[current].1 as usize != pages {
-            refresh_large_exact(
-                &self.entries,
-                self.len,
-                pages,
-                &mut self.hot_exact,
-            );
+            refresh_large_exact(&self.entries, self.len, pages, &mut self.hot_exact);
         }
     }
 
@@ -485,12 +469,7 @@ impl LargeRegionCache {
         if current == EMPTY_LARGE_INDEX as usize {
             self.cold_exact[pages] = index as u16;
         } else if current >= self.cold_len || self.cold[current].1 as usize != pages {
-            refresh_large_exact(
-                &self.cold,
-                self.cold_len,
-                pages,
-                &mut self.cold_exact,
-            );
+            refresh_large_exact(&self.cold, self.cold_len, pages, &mut self.cold_exact);
         }
     }
 
@@ -532,9 +511,7 @@ impl LargeRegionCache {
         self.bytes -= entry.1 as usize * page::PAGE_SIZE;
         if index < self.len {
             let moved_pages = self.entries[index].1 as usize;
-            if moved_pages <= LARGE_EXACT_MAX_PAGES
-                && self.hot_exact[moved_pages] == last as u16
-            {
+            if moved_pages <= LARGE_EXACT_MAX_PAGES && self.hot_exact[moved_pages] == last as u16 {
                 self.hot_exact[moved_pages] = index as u16;
             }
         }
@@ -545,12 +522,7 @@ impl LargeRegionCache {
                 || bucket >= self.len
                 || self.entries[bucket].1 as usize != removed_pages
             {
-                refresh_large_exact(
-                    &self.entries,
-                    self.len,
-                    removed_pages,
-                    &mut self.hot_exact,
-                );
+                refresh_large_exact(&self.entries, self.len, removed_pages, &mut self.hot_exact);
             }
         }
         (entry.0, entry.1, zeroed)
@@ -568,9 +540,7 @@ impl LargeRegionCache {
         self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
         if index < self.cold_len {
             let moved_pages = self.cold[index].1 as usize;
-            if moved_pages <= LARGE_EXACT_MAX_PAGES
-                && self.cold_exact[moved_pages] == last as u16
-            {
+            if moved_pages <= LARGE_EXACT_MAX_PAGES && self.cold_exact[moved_pages] == last as u16 {
                 self.cold_exact[moved_pages] = index as u16;
             }
         }
@@ -663,8 +633,7 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
 pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
     #[cfg(all(unix, feature = "std"))]
     {
-        let (base, fresh) =
-            crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
+        let (base, fresh) = crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
         if !base.is_null() {
             return (base, fresh);
         }
@@ -723,12 +692,7 @@ fn note_large_free(requested: usize) {
 }
 
 #[inline]
-unsafe fn init_large_header(
-    hdr: *mut LargeHeader,
-    base: *mut u8,
-    mapped: usize,
-    requested: usize,
-) {
+unsafe fn init_large_header(hdr: *mut LargeHeader, base: *mut u8, mapped: usize, requested: usize) {
     (*hdr).magic = LARGE_MAGIC;
     (*hdr).mapped_size = mapped;
     (*hdr).base = base;
@@ -790,11 +754,7 @@ unsafe fn large_region_known(p: *mut u8) -> bool {
 unsafe fn register_large_region(_base: *mut u8, _mapped: usize, hdr: *mut LargeHeader) {
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(_base, _mapped) {
-        crate::arena::large_table_set(
-            _base,
-            (_mapped / page::PAGE_SIZE) as u32,
-            hdr,
-        );
+        crate::arena::large_table_set(_base, (_mapped / page::PAGE_SIZE) as u32, hdr);
         return;
     }
     register_legacy_large(hdr);
@@ -803,10 +763,7 @@ unsafe fn register_large_region(_base: *mut u8, _mapped: usize, hdr: *mut LargeH
 unsafe fn unregister_large_region(_base: *mut u8, _mapped: usize, hdr: *mut LargeHeader) {
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(_base, _mapped) {
-        crate::arena::large_table_clear(
-            _base,
-            (_mapped / page::PAGE_SIZE) as u32,
-        );
+        crate::arena::large_table_clear(_base, (_mapped / page::PAGE_SIZE) as u32);
         return;
     }
     unregister_legacy_large(hdr);
@@ -1153,9 +1110,7 @@ unsafe fn free_large(p: *mut u8) {
             c.bytes += mapped;
             c.index_hot(idx, pages as usize);
             Fate::Kept
-        } else if c.cold_len < LARGE_COLD_SLOTS
-            && c.cold_bytes + mapped <= LARGE_COLD_CAP_BYTES
-        {
+        } else if c.cold_len < LARGE_COLD_SLOTS && c.cold_bytes + mapped <= LARGE_COLD_CAP_BYTES {
             let idx = c.cold_len;
             c.cold[idx] = (base, pages);
             c.cold_len = idx + 1;
@@ -1298,10 +1253,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     #[cfg(all(unix, feature = "std"))]
     if size > MAX_MEDIUM_BLOCK {
         let bclass = big_class_for_size(size);
-        let (p, virgin) = with_cache(
-            |c| c.alloc_big_zeroed(bclass),
-            || take_one_big(bclass),
-        );
+        let (p, virgin) = with_cache(|c| c.alloc_big_zeroed(bclass), || take_one_big(bclass));
         if p.is_null() {
             let (lp, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
             zero_large_allocation(lp, size, known_zeroed);
@@ -1330,10 +1282,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         return p;
     }
     let class = class_for_size(size);
-    let (p, virgin) = with_cache(
-        |c| c.alloc_zeroed(class),
-        || take_one_small(class),
-    );
+    let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small(class));
     if !p.is_null() {
         if virgin {
             // Only the freelist link word is dirty.
@@ -1609,9 +1558,7 @@ unsafe fn realloc_slow(p: *mut u8, layout: core::alloc::Layout, new_size: usize)
     // Small tier on both sides but the classes differ: relocate, without ever
     // leaving the thread cache. Containers double, so this is the common case
     // for an application-shaped `realloc`.
-    if layout.align() <= MIN_ALIGN
-        && layout.size() <= MAX_SMALL_SIZE
-        && new_size <= MAX_SMALL_SIZE
+    if layout.align() <= MIN_ALIGN && layout.size() <= MAX_SMALL_SIZE && new_size <= MAX_SMALL_SIZE
     {
         return realloc_small(
             p,
@@ -1908,7 +1855,9 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
     if crate::arena::contains(p, 1) {
         let large = crate::arena::large_table_get(p);
         if !large.is_null() {
-            return (*large).mapped_size.saturating_sub(p as usize - (*large).base as usize);
+            return (*large)
+                .mapped_size
+                .saturating_sub(p as usize - (*large).base as usize);
         }
         let medium = crate::arena::medium_table_get(p);
         if !medium.is_null() {
@@ -2363,10 +2312,7 @@ mod large_cache_tests {
 
         let mut boundary = LargeRegionCache::new();
         let large = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32 + 1);
-        assert_eq!(
-            boundary.hot_exact[LARGE_EXACT_MAX_PAGES],
-            EMPTY_LARGE_INDEX
-        );
+        assert_eq!(boundary.hot_exact[LARGE_EXACT_MAX_PAGES], EMPTY_LARGE_INDEX);
         assert_eq!(
             boundary.take_fit((LARGE_EXACT_MAX_PAGES as u32 + 1) as usize * PAGE_SIZE),
             Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1, false))
@@ -2410,10 +2356,7 @@ mod header_probe_tests {
                 (*h).mapped_size = mapped;
                 (*h).base = buf.as_mut_ptr();
             }
-            FakeLarge {
-                buf,
-                base_off: hdr,
-            }
+            FakeLarge { buf, base_off: hdr }
         }
 
         fn user(&mut self) -> *mut u8 {

@@ -83,9 +83,9 @@ fn global_realloc_growth_chain() {
             assert!(!np.is_null(), "grow {} -> {}", size, nsize);
             assert_eq!(np as usize % 16, 0, "alignment preserved");
             check(np, size);
-        if np == p {
-            // Sticky within the big range, same reasoning as above.
-            settled = true;
+            if np == p {
+                // Sticky within the big range, same reasoning as above.
+                settled = true;
             } else {
                 assert!(!settled, "relocated after settling in place at {}", nsize);
             }

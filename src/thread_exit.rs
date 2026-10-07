@@ -8,8 +8,7 @@
 //! threads that armed them, so threads that never allocate never pay.
 //!
 #[cfg(all(feature = "std", any(unix, windows)))]
-static FLUSH_COUNT: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+static FLUSH_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 #[cfg(all(feature = "std", any(unix, windows)))]
 fn record_flush() {
@@ -31,7 +30,9 @@ fn record_flush() {
     }
     #[cfg(not(feature = "telemetry"))]
     // SAFETY: see above.
-    unsafe { crate::tls_retire() };
+    unsafe {
+        crate::tls_retire()
+    };
 }
 
 pub(crate) fn flush_count() -> u64 {

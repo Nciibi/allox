@@ -7,20 +7,20 @@
 //! construction cannot happen while any thread still caches one of its
 //! blocks. No code path ever holds two class locks at once.
 
-use crate::classes::{medium_capacity_for, span_pages_for, NUM_CLASSES, NUM_MEDIUM};
-#[cfg(all(unix, feature = "std"))]
-use crate::classes::{big_span_pages_for, NUM_BIG};
 #[cfg(feature = "telemetry")]
 use crate::classes::TOTAL_CLASSES;
+#[cfg(all(unix, feature = "std"))]
+use crate::classes::{big_span_pages_for, NUM_BIG};
+use crate::classes::{medium_capacity_for, span_pages_for, NUM_CLASSES, NUM_MEDIUM};
+#[cfg(all(unix, feature = "std"))]
+use crate::page::BigMaster;
 use crate::page::{
     pop_block, PageHeader, SpanMaster, FLAG_DISCARDED, FLAG_IN_PARTIAL, FLAG_NEEDS_REINIT,
     FLAG_VIRGIN, PAGE_SIZE,
 };
-#[cfg(all(unix, feature = "std"))]
-use crate::page::BigMaster;
-use crate::sys::{self, Mutex};
 #[cfg(debug_assertions)]
 use crate::sys::MutexGuard;
+use crate::sys::{self, Mutex};
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -178,16 +178,14 @@ unsafe fn fill_from_list(
                     (*page).free_count -= 1;
                     (*page).used += 1;
                     if (*page).free_count == 0
-                        && (*page).used as usize + (*page).free_count as usize
-                            >= (*page).capacity()
+                        && (*page).used as usize + (*page).free_count as usize >= (*page).capacity()
                     {
                         unlink_partial(list, page);
                     }
                     break;
                 }
                 None => {
-                    let materialized =
-                        (*page).used as usize + (*page).free_count as usize;
+                    let materialized = (*page).used as usize + (*page).free_count as usize;
                     if materialized < (*page).capacity() {
                         if (*page).provision(PAGE_PROVISION_BATCH) == 0 {
                             unlink_partial(list, page);
@@ -444,13 +442,7 @@ impl GlobalHeap {
                     fates[i] = if chunk.n == (*chunk.page).used {
                         retire_page_inner(&mut list, chunk.page)
                     } else {
-                        release_inner(
-                            &mut list,
-                            chunk.page,
-                            chunk.head,
-                            chunk.tail,
-                            chunk.n,
-                        )
+                        release_inner(&mut list, chunk.page, chunk.head, chunk.tail, chunk.n)
                     };
                 }
             }
@@ -739,31 +731,28 @@ unsafe fn mrelease_inner(
             list.empty_count += 1;
             list.empty_bytes += span_bytes;
             SpanFate::Keep
-                } else if (list.cold_len as usize) < MAX_COLD_SPAN_SLOTS
-                    && list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS
-                {
-                    // Cold: drop physical, keep virtual. Array-stored (base,
-                    // npages) so the discard can't destroy the linkage.
-                    // Discard runs UNDER the lock: the span is exclusively
-                    // ours until unlock (used==0 observed above), so no
-                    // concurrent pop can hand out blocks mid-discard and lose
-                    // user writes. Discarding after unlock raced exactly so.
-                    let idx = list.cold_len as usize;
-                    list.cold[idx] = (span.cast::<u8>(), (*span).npages);
-                    list.cold_len += 1;
-                    list.cold_bytes += span_bytes;
-                    sys::discard(span.cast::<u8>(), span_bytes);
-                    SpanFate::Keep
-                } else {
-                    #[cfg(all(unix, feature = "std"))]
-                    if crate::arena::contains(span.cast::<u8>(), span_bytes) {
-                        crate::arena::medium_table_clear(
-                            span.cast::<u8>(),
-                            (*span).npages,
-                        );
-                    }
-                    SpanFate::Unmap(span_bytes)
-                }
+        } else if (list.cold_len as usize) < MAX_COLD_SPAN_SLOTS
+            && list.cold_bytes + span_bytes <= MAX_COLD_SPAN_BYTES_PER_CLASS
+        {
+            // Cold: drop physical, keep virtual. Array-stored (base,
+            // npages) so the discard can't destroy the linkage.
+            // Discard runs UNDER the lock: the span is exclusively
+            // ours until unlock (used==0 observed above), so no
+            // concurrent pop can hand out blocks mid-discard and lose
+            // user writes. Discarding after unlock raced exactly so.
+            let idx = list.cold_len as usize;
+            list.cold[idx] = (span.cast::<u8>(), (*span).npages);
+            list.cold_len += 1;
+            list.cold_bytes += span_bytes;
+            sys::discard(span.cast::<u8>(), span_bytes);
+            SpanFate::Keep
+        } else {
+            #[cfg(all(unix, feature = "std"))]
+            if crate::arena::contains(span.cast::<u8>(), span_bytes) {
+                crate::arena::medium_table_clear(span.cast::<u8>(), (*span).npages);
+            }
+            SpanFate::Unmap(span_bytes)
+        }
     } else {
         if (*span).flags & FLAG_IN_PARTIAL == 0 {
             mlink_partial(&mut list.head, span);
@@ -841,7 +830,13 @@ impl MediumHeap {
 
         {
             let mut list = self.classes[mclass].lock();
-            mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
+            mfill_from_list(
+                &mut list.head,
+                &mut chain,
+                &mut count,
+                &mut virgin,
+                refill_cap,
+            );
 
             if count == 0 && !list.empty.is_null() {
                 let span = list.empty;
@@ -853,7 +848,13 @@ impl MediumHeap {
                     virgin = false;
                 }
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
+                mfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    refill_cap,
+                );
             }
 
             if count == 0 && list.cold_len > 0 {
@@ -872,7 +873,13 @@ impl MediumHeap {
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
+                mfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    refill_cap,
+                );
             }
         }
 
@@ -891,7 +898,13 @@ impl MediumHeap {
                 SPAN_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[mclass].lock();
                 mlink_partial(&mut list.head, span);
-                mfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, refill_cap);
+                mfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    refill_cap,
+                );
             } else {
                 virgin = false;
             }
@@ -1121,7 +1134,12 @@ enum BigSpanFate {
 /// under the lock so no concurrent lookup can observe a parked-then-gone
 /// span (see below).
 #[cfg(all(unix, feature = "std"))]
-unsafe fn brelease_inner(list: &mut BSpanList, span: *mut BigMaster, chain: *mut u8, n: u32) -> BigSpanFate {
+unsafe fn brelease_inner(
+    list: &mut BSpanList,
+    span: *mut BigMaster,
+    chain: *mut u8,
+    n: u32,
+) -> BigSpanFate {
     // Freed blocks are dirty by definition.
     (*span).flags &= !FLAG_VIRGIN;
     let mut tail = chain;
@@ -1146,21 +1164,21 @@ unsafe fn brelease_inner(list: &mut BSpanList, span: *mut BigMaster, chain: *mut
             list.empty_count += 1;
             list.empty_bytes += span_bytes;
             BigSpanFate::Keep
-                } else if (list.cold_len as usize) < MAX_COLD_BIG_SPAN_SLOTS
-                    && list.cold_bytes + span_bytes <= MAX_COLD_BIG_SPAN_BYTES_PER_CLASS
-                {
-                    // Cold: drop physical, keep virtual. Array-stored (base,
-                    // npages); table entries stay valid (same master on
-                    // re-carve — never rewritten, never stale).
-                    // Discard runs UNDER the lock: exclusive ownership
-                    // pre-unlock, same discipline as medium spans.
-                    let idx = list.cold_len as usize;
-                    list.cold[idx] = (span.cast::<u8>(), (*span).npages);
-                    list.cold_len += 1;
-                    list.cold_bytes += span_bytes;
-                    sys::discard(span.cast::<u8>(), span_bytes);
-                    BigSpanFate::Keep
-                } else {
+        } else if (list.cold_len as usize) < MAX_COLD_BIG_SPAN_SLOTS
+            && list.cold_bytes + span_bytes <= MAX_COLD_BIG_SPAN_BYTES_PER_CLASS
+        {
+            // Cold: drop physical, keep virtual. Array-stored (base,
+            // npages); table entries stay valid (same master on
+            // re-carve — never rewritten, never stale).
+            // Discard runs UNDER the lock: exclusive ownership
+            // pre-unlock, same discipline as medium spans.
+            let idx = list.cold_len as usize;
+            list.cold[idx] = (span.cast::<u8>(), (*span).npages);
+            list.cold_len += 1;
+            list.cold_bytes += span_bytes;
+            sys::discard(span.cast::<u8>(), span_bytes);
+            BigSpanFate::Keep
+        } else {
             // Over caps: forget the side-table entries NOW (under lock),
             // before the caller unmaps or parks the slice in arena holes.
             // After this point no lookup may resolve into this span.
@@ -1216,7 +1234,13 @@ impl BigHeap {
 
         {
             let mut list = self.classes[bclass].lock();
-            bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+            bfill_from_list(
+                &mut list.head,
+                &mut chain,
+                &mut count,
+                &mut virgin,
+                BIG_REFILL_BATCH,
+            );
 
             if count == 0 && !list.empty.is_null() {
                 let span = list.empty;
@@ -1228,7 +1252,13 @@ impl BigHeap {
                     virgin = false;
                 }
                 blink_partial(&mut list.head, span);
-                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+                bfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    BIG_REFILL_BATCH,
+                );
             }
 
             if count == 0 && list.cold_len > 0 {
@@ -1247,7 +1277,13 @@ impl BigHeap {
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
                 blink_partial(&mut list.head, span);
-                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+                bfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    BIG_REFILL_BATCH,
+                );
             }
         }
 
@@ -1269,7 +1305,13 @@ impl BigHeap {
                 BIG_MAP_CALLS.fetch_add(1, Ordering::Relaxed);
                 let mut list = self.classes[bclass].lock();
                 blink_partial(&mut list.head, span);
-                bfill_from_list(&mut list.head, &mut chain, &mut count, &mut virgin, BIG_REFILL_BATCH);
+                bfill_from_list(
+                    &mut list.head,
+                    &mut chain,
+                    &mut count,
+                    &mut virgin,
+                    BIG_REFILL_BATCH,
+                );
             } else {
                 virgin = false;
             }

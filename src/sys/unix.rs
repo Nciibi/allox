@@ -133,10 +133,8 @@ mod pthread_mutex {
     use core::sync::atomic::{AtomicBool, Ordering};
 
     extern "C" {
-        fn pthread_mutex_init(
-            mutex: *mut core::ffi::c_void,
-            attr: *const core::ffi::c_void,
-        ) -> i32;
+        fn pthread_mutex_init(mutex: *mut core::ffi::c_void, attr: *const core::ffi::c_void)
+            -> i32;
         fn pthread_mutex_lock(mutex: *mut core::ffi::c_void) -> i32;
         fn pthread_mutex_unlock(mutex: *mut core::ffi::c_void) -> i32;
     }
