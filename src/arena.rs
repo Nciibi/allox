@@ -55,7 +55,8 @@ const ARENA_SIZE: usize = 512 * 1024 * 1024;
 /// abandonment (measured §3 E0-E2). 4096 x 16 B entries = 64 KiB static;
 /// scans run only on fresh takes (already past a mutex + before a
 /// MAP_FIXED), so scan cost stays well under the syscall it replaces.
-const HOLE_SLOTS: usize = 4096;/// Byte cap on parked holes. Bounds dark virtual on churn.
+const HOLE_SLOTS: usize = 4096;
+/// Byte cap on parked holes. Bounds dark virtual on churn.
 #[cfg(target_pointer_width = "64")]
 const HOLE_CAP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 #[cfg(not(target_pointer_width = "64"))]
@@ -137,14 +138,13 @@ impl HoleStore {
         }
         self.exact[pages] = found;
     }
-
 }
 
 pub(crate) struct Arena {
     state: AtomicU8, // 0 = uninit, 1 = ready, 2 = disabled (legacy forever)
     start: AtomicUsize,
     end: AtomicUsize,
-    bump: AtomicUsize, // byte offset of the next fresh slice
+    bump: AtomicUsize,    // byte offset of the next fresh slice
     init_guard: AtomicU8, // spin-serializes first reservation (0 free, 1 held)
     holes: Mutex<HoleStore>,
     hole_count: AtomicUsize,
@@ -564,11 +564,7 @@ pub(crate) unsafe fn commit(pages: usize) -> (*mut u8, bool) {
     ARENA.commit(pages)
 }
 
-pub(crate) unsafe fn grow_frontier(
-    base: *mut u8,
-    old_pages: usize,
-    new_pages: usize,
-) -> bool {
+pub(crate) unsafe fn grow_frontier(base: *mut u8, old_pages: usize, new_pages: usize) -> bool {
     ARENA.grow_frontier(base, old_pages, new_pages)
 }
 
@@ -621,9 +617,17 @@ pub(crate) fn high_water() -> u64 {
 // magic probes in dispatch).
 // ---------------------------------------------------------------------------
 
-/// Slots for the largest possible reservation (64-bit); smaller
-/// reservations use a prefix (bounds-checked at every access).
-const BIG_MAP_SLOTS: usize = (16 * 1024 * 1024 * 1024) / ARENA_ALIGN;
+/// Slots for the reservation; smaller reservations use a prefix
+/// (bounds-checked at every access).
+///
+/// Derived from [`ARENA_SIZE`] rather than restating the 64-bit figure:
+/// the literal `16 * 1024 * 1024 * 1024` overflows `usize` on a 32-bit
+/// target, so `cargo build --target i686-unknown-linux-gnu` failed to
+/// compile with E0080 while evaluating this constant. `ARENA_SIZE` is
+/// already cfg-gated (16 GiB on 64-bit, 512 MiB on 32-bit), so deriving
+/// from it keeps the 64-bit table byte-for-byte identical while giving
+/// 32-bit the 8192 slots its smaller reservation can actually address.
+const BIG_MAP_SLOTS: usize = ARENA_SIZE / ARENA_ALIGN;
 
 static BIG_MAP: [AtomicUsize; BIG_MAP_SLOTS] = [const { AtomicUsize::new(0) }; BIG_MAP_SLOTS];
 
@@ -678,11 +682,7 @@ pub(crate) unsafe fn big_table_set(base: *mut u8, pages: u32, master: *mut BigMa
     }
 }
 
-pub(crate) unsafe fn large_table_set(
-    base: *mut u8,
-    pages: u32,
-    header: *mut LargeHeader,
-) {
+pub(crate) unsafe fn large_table_set(base: *mut u8, pages: u32, header: *mut LargeHeader) {
     if let Some(start) = big_page_range(base, pages) {
         let value = header as usize | LARGE_TABLE_TAG;
         for i in 0..pages as usize {
@@ -991,7 +991,10 @@ mod tests {
         assert!(!b1.is_null() && fresh1, "bump commit is new virtual");
         unsafe { a.release(b1, 2) };
         let (b2, fresh2) = unsafe { a.commit(2) };
-        assert!(!b2.is_null() && !fresh2, "hole reuse is already-counted virtual");
+        assert!(
+            !b2.is_null() && !fresh2,
+            "hole reuse is already-counted virtual"
+        );
         unsafe { a.release(b2, 2) };
     }
 
