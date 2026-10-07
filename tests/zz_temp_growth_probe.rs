@@ -94,8 +94,9 @@ fn growth_shape_over_many_generations() {
         "adoption rate  = {:.1}%",
         100.0 * v.adopted_caches as f64 / v.retired_caches.max(1) as f64
     );
-    println!("map_calls      = {}", v.map_calls);
-    println!("unmap_calls    = {}", v.unmap_calls);
+    println!("flushes        = {}", v.flushes);
+    println!("flush_blocks   = {}", v.flush_blocks);
+    println!("trims          = {}", v.trims);
     println!("purge_calls    = {}", v.purge_calls);
     println!("purge_bytes    = {}", v.purge_bytes);
     println!("arena_parks    = {}", v.arena_parks);
