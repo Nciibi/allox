@@ -774,6 +774,10 @@ impl ThreadCache {
     /// # Safety
     /// `other` must not be reachable from anywhere else (it came from
     /// `take_one`, i.e. a dead thread's retired cache).
+    // Same gate as its only call site (reclaim_retired's partial-adoption
+    // block): without it a --no-default-features build has no caller and
+    // warns about dead code, which the README's own gates call warning-free.
+    #[cfg(all(feature = "std", any(unix, windows)))]
     unsafe fn steal_empty_bins(&mut self, other: &mut ThreadCache) -> usize {
         let mut stolen = 0usize;
         for class in 0..NUM_CLASSES {
