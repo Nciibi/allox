@@ -550,3 +550,5 @@ deliberately does not use `--all-features`, which would enable every
 MIT OR Apache-2.0
 
 <!-- updated: thread-caching description clarified -->
+
+<!-- updated: typo fix in usage example -->
