@@ -556,3 +556,5 @@ MIT OR Apache-2.0
 <!-- updated: MSRV requirement note -->
 
 <!-- updated: dependency snippet formatting -->
+
+<!-- updated: intro paragraph wording -->
