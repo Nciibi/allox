@@ -558,3 +558,5 @@ MIT OR Apache-2.0
 <!-- updated: dependency snippet formatting -->
 
 <!-- updated: intro paragraph wording -->
+
+<!-- updated: badge placeholder added -->
