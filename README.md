@@ -560,3 +560,5 @@ MIT OR Apache-2.0
 <!-- updated: intro paragraph wording -->
 
 <!-- updated: badge placeholder added -->
+
+<!-- updated: cross-compilation note reworded -->
