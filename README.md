@@ -566,3 +566,5 @@ MIT OR Apache-2.0
 <!-- updated: stable channel mention -->
 
 <!-- updated: license section wording -->
+
+<!-- updated: whitespace cleanup -->
