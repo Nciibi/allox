@@ -562,3 +562,5 @@ MIT OR Apache-2.0
 <!-- updated: badge placeholder added -->
 
 <!-- updated: cross-compilation note reworded -->
+
+<!-- updated: stable channel mention -->
