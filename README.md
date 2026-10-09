@@ -564,3 +564,5 @@ MIT OR Apache-2.0
 <!-- updated: cross-compilation note reworded -->
 
 <!-- updated: stable channel mention -->
+
+<!-- updated: license section wording -->
