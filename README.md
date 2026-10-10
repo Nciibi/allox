@@ -568,3 +568,5 @@ MIT OR Apache-2.0
 <!-- updated: license section wording -->
 
 <!-- updated: whitespace cleanup -->
+
+<!-- updated: zero-dependency details expanded -->
