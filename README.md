@@ -576,3 +576,5 @@ MIT OR Apache-2.0
 <!-- updated: markdown formatting cleaned -->
 
 <!-- updated: code example readability -->
+
+<!-- updated: build instructions note -->
