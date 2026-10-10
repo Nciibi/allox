@@ -572,3 +572,5 @@ MIT OR Apache-2.0
 <!-- updated: zero-dependency details expanded -->
 
 <!-- updated: crates.io link reference -->
+
+<!-- updated: markdown formatting cleaned -->
