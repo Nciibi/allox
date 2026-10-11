@@ -580,3 +580,5 @@ MIT OR Apache-2.0
 <!-- updated: build instructions note -->
 
 <!-- updated: allocator feature summary refined -->
+
+<!-- updated: section headings adjusted -->
