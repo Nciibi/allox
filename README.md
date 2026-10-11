@@ -586,3 +586,5 @@ MIT OR Apache-2.0
 <!-- updated: performance note added -->
 
 <!-- updated: compatibility information -->
+
+<!-- updated: minor README improvements -->
