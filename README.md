@@ -584,3 +584,5 @@ MIT OR Apache-2.0
 <!-- updated: section headings adjusted -->
 
 <!-- updated: performance note added -->
+
+<!-- updated: compatibility information -->
