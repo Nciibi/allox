@@ -248,7 +248,9 @@ jobs:
           set -o pipefail
           grep -q "raw allox" "bench-${{ matrix.os }}.txt" \
             || { echo "::error::benchmark produced no results — bench target was skipped, not run"; exit 1; }
-          grep -c "^raw " "bench-${{ matrix.os }}.txt"
+          # The harness indents these lines, so anchor on whitespace rather
+          # than on `raw` itself — `^raw ` matches nothing and would report 0.
+          grep -c "^[[:space:]]*raw " "bench-${{ matrix.os }}.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
