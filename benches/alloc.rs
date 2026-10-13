@@ -27,18 +27,35 @@ static HARNESS: System = System;
 
 static ALLOX: allox::Allox = allox::Allox;
 
+/// Targets where the pure-Rust comparators are available. Mirrors the
+/// `[target.'cfg(...)'.dev-dependencies]` scope in `Cargo.toml`: `dlmalloc`
+/// 0.2's `global` feature is not implemented for illumos or the BSDs, and as
+/// unconditional dev-dependencies it broke `cargo clippy --all-targets` there
+/// with an error inside a crate nothing on those targets references.
+///
+/// Gating on the *target* rather than a Cargo feature is deliberate. A
+/// `[[bench]] required-features` also excludes the dependencies, but then a
+/// bare `cargo bench` exits 0 having run nothing at all — a silent no-op on
+/// the command people actually type, and the one that feeds the README tables.
+/// This way the default host path is unchanged and only genuinely unsupported
+/// targets get the reduced matrix.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use spinning_top::RawSpinlock;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use talc::{source::GlobalAllocSource, TalcLock};
 
 // talc configured for a fair hosted fight: GlobalAllocSource lets it claim
 // AND release memory dynamically through the system allocator, exactly like
 // allox's OS-backed pages. (Its documented Claim-based setup cannot grow,
 // which made large workloads degenerate into OOM.)
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 static TALC: TalcLock<RawSpinlock, GlobalAllocSource<std::alloc::System>> =
     TalcLock::new(GlobalAllocSource::new(std::alloc::System));
 
 // Third comparator: dlmalloc — the pure-Rust port that is wasm32's default.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 struct Dlmalloc;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         dlmalloc::GlobalDlmalloc.alloc(l)
@@ -54,6 +71,7 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 static DLMALLOC: Dlmalloc = Dlmalloc;
 
 // C comparators (dev-only; lib stays zero-C), behind `--features bench-c`.
@@ -1767,7 +1785,11 @@ fn run_fresh_processes() {
     let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
     #[allow(unused_mut)]
-    let mut allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
+    let mut allocator_names = ["allox", "system"].to_vec();
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    {
+        allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
+    }
     #[cfg(feature = "bench-c")]
     allocator_names.extend(["mimalloc", "snmalloc"]);
     #[cfg(feature = "bench-jemalloc")]
@@ -1863,12 +1885,9 @@ fn main() {
         .unwrap_or(0);
 
     #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
-    let mut allocators: Vec<Named> = vec![
-        Named("allox", &ALLOX),
-        Named("talc ", &TALC),
-        Named("dlmalloc", &DLMALLOC),
-        Named("system", &HARNESS),
-    ];
+    let mut allocators: Vec<Named> = vec![Named("allox", &ALLOX), Named("system", &HARNESS)];
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    allocators.extend([Named("talc ", &TALC), Named("dlmalloc", &DLMALLOC)]);
     #[cfg(feature = "bench-c")]
     allocators.extend([Named("mimalloc", &MIMALLOC), Named("snmalloc", &SNMALLOC)]);
     #[cfg(feature = "bench-jemalloc")]
