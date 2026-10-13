@@ -108,14 +108,23 @@ mod imp {
                     None => false,
                 };
             }
-            while INSTALLING.load(Ordering::Acquire) {
+while INSTALLING.load(Ordering::Acquire) {
                 core::hint::spin_loop();
+                // Cross-thread wait: another thread is inside
+                // `pthread_key_create`/`FlsAlloc`. That call is short and does
+                // not re-enter the allocator (the `tls` reentrancy guard
+                // serves any nested allocation from the global heap), so a
+                // bounded spin is enough — but yield rather than burn the
+                // core for the duration.
+                spins += 1;
+                if spins % 64 == 0 {
+                    std::thread::yield_now();
+                }
             }
         }
     }
-}
 
-#[cfg(all(feature = "std", windows))]
+    #[cfg(all(feature = "std", windows))]
 mod imp {
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicBool, Ordering};
