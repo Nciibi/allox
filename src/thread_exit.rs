@@ -158,6 +158,7 @@ mod imp {
     }
 
     pub(crate) fn ensure_hook() -> bool {
+        let mut spins = 0u32;
         loop {
             if let Some(s) = HOOK_SLOT.get() {
                 return unsafe { FlsSetValue(*s, 1 as *const c_void) == 0 };
@@ -169,7 +170,14 @@ mod imp {
                 let slot = if let Some(s) = HOOK_SLOT.get() {
                     Some(*s)
                 } else {
-                    // SAFETY: callback is a plain extern fn; see above.
+                    // SAFETY: the callback is a plain extern fn.
+                    //
+                    // Some UCRT versions HeapAlloc inside `FlsAlloc`, which
+                    // would land back in the allocator. That is safe because
+                    // `tls::with` detects the nested entry and serves it from
+                    // the global heap, so the nested allocation never reaches
+                    // `arm_exit_hook` and this loop is never re-entered by the
+                    // same thread — it only ever waits on other threads.
                     let s = unsafe { FlsAlloc(Some(fls_flush)) };
                     if s != FLS_OUT_OF_INDEXES {
                         match HOOK_SLOT.set(s) {
@@ -188,6 +196,12 @@ mod imp {
             }
             while INSTALLING.load(Ordering::Acquire) {
                 core::hint::spin_loop();
+                // Cross-thread wait; see the unix backend for why this cannot
+                // become a self-deadlock.
+                spins += 1;
+                if spins % 64 == 0 {
+                    std::thread::yield_now();
+                }
             }
         }
     }
