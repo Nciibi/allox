@@ -125,13 +125,14 @@ mod imp {
                 // cannot re-enter the allocator (see above), so a bounded
                 // spin-then-yield is enough — but yield rather than burn the
                 // core for the duration.
-                spins += 1;
+spins += 1;
                 if spins % 64 == 0 {
                     std::thread::yield_now();
                 }
             }
         }
     }
+}
 
     #[cfg(all(feature = "std", windows))]
 mod imp {
