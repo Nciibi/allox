@@ -276,7 +276,7 @@ const FLUSH_OPS: u32 = 8192;
 /// event, one shared atomic per batch. Sharing the telemetry cadence would
 /// not work — with `telemetry` off, nothing else drives `ops`.
 #[cfg(feature = "telemetry")]
-const DIAG_FLUSH_OPS: u32 = 8192;
+const DIAG_FLUSH_OPS: u32 = 1024;
 
 /// Why 1024 and not 8192.
 ///
