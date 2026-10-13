@@ -22,11 +22,12 @@ fn diag_scratch() {
         }
         eprintln!("TIMING worker {:?} done working", std::thread::current().id());
     });
+    let worker_id = handle.thread().id();
     handle.join().unwrap();
     eprintln!(
         "TIMING main {:?} joined worker {:?} at {:?} ms",
         std::thread::current().id(),
-        handle.thread().id(),
+        worker_id,
         t0.elapsed().as_millis()
     );
 
