@@ -481,6 +481,8 @@ impl ThreadCache {
     /// them here is what keeps them off the per-op path. Allocation volume
     /// itself is telemetry-only, as before.
     fn publish(&mut self) {
+        // TEMPORARY non-allocating probe.
+        crate::counters::bump(&crate::counters::VOLUME.purge_bytes, self.pending.zeroed_calls);
         #[cfg(feature = "telemetry")]
         self.publish_diagnostics();
         #[cfg(feature = "telemetry")]
