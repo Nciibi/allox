@@ -2638,7 +2638,7 @@ mod large_cache_tests {
 
         // Remove index 0, which swap-moves `dropped` (index 1) into it.
         assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((plain, 4, true, false)));
-        assert_eq!(cache.cold_decommitted[0], true);
+        assert!(cache.cold_decommitted[0]);
 
         // And it still comes back out with the right entry.
         assert_eq!(
