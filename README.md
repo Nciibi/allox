@@ -523,11 +523,11 @@ change.
 
 | Job | What it proves |
 |---|---|
-| `test` | suite green on Windows/Linux/macOS, debug **and** release |
+| `test` | suite green on Windows/Linux/macOS, debug **and** release, plus the telemetry suite |
 | `lint` | `cargo fmt --all --check`, `clippy --all-targets -D warnings` |
 | `docs` | rustdoc clean under `-D warnings`, including intra-doc links |
 | `features` | `telemetry` build+tests, `no_std` on Unix and wasm32 |
-| `wasm` | the wasm example builds and passes its host smoke test, debug and release |
+| `wasm32` | the wasm example builds and passes its host smoke test, debug and release |
 | `bit32` | i686 builds and tests, proving the 32-bit ALU paths |
 | `msrv` | the crate still compiles on the declared 1.79 MSRV |
 | `package` | `cargo package` produces a clean published artifact |
