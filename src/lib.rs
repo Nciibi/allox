@@ -710,7 +710,7 @@ unsafe fn alloc_large(size: usize, align: usize) -> *mut u8 {
 pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
     #[cfg(all(unix, feature = "std"))]
     {
-        let (base, fresh) = crate::arena::commit((mapped / page::PAGE_SIZE) as usize);
+        let (base, fresh) = crate::arena::commit(mapped / page::PAGE_SIZE);
         if !base.is_null() {
             return (base, fresh);
         }
