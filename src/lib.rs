@@ -1241,7 +1241,9 @@ unsafe fn free_large(p: *mut u8) {
             c.cold_len = idx + 1;
             c.cold_bytes += mapped;
             c.index_cold(idx, pages as usize);
-            c.cold_zeroed[idx] = sys::discard(base, mapped);
+            let discarded = sys::discard(base, mapped);
+            c.cold_zeroed[idx] = discarded.zeroed;
+            c.cold_decommitted[idx] = discarded.physical && !discarded.zeroed;
             Fate::Kept
         } else {
             Fate::Unmap
