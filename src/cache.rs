@@ -789,11 +789,11 @@ impl ThreadCache {
     #[cfg(all(feature = "std", any(unix, windows)))]
     unsafe fn steal_empty_bins(&mut self, other: &mut ThreadCache) -> usize {
         let mut stolen = 0usize;
-        for class in 0..NUM_CLASSES {
-            if other.bins[class].head.is_null() || !self.bins[class].head.is_null() {
+        for (class, dst) in self.bins.iter_mut().enumerate() {
+            let src = &mut other.bins[class];
+            if src.head.is_null() || !dst.head.is_null() {
                 continue;
             }
-            let src = &mut other.bins[class];
             let len = src.len;
             let virgin = src.virgin;
             let head = src.head;
