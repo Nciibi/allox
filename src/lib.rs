@@ -2458,9 +2458,21 @@ mod large_cache_tests {
         let base = (0x200000 + index * PAGE_SIZE) as *mut u8;
         cache.cold[index] = (base, pages);
         cache.cold_zeroed[index] = true;
+        // Synthetic cold entry: `zeroed` is asserted by callers, but nothing
+        // was actually decommitted here (the base is not a real mapping), so
+        // the recommit path must not fire in these tests.
+        cache.cold_decommitted[index] = false;
         cache.cold_len += 1;
         cache.cold_bytes += pages as usize * PAGE_SIZE;
         cache.index_cold(index, pages as usize);
+        base
+    }
+
+    /// A cold entry that *was* decommitted, for exercising the flag's travel
+    /// through swap-removal.
+    fn add_cold_decommitted(cache: &mut LargeRegionCache, pages: u32) -> *mut u8 {
+        let base = add_cold(cache, pages);
+        cache.cold_decommitted[cache.cold_len - 1] = true;
         base
     }
 
