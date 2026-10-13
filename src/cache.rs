@@ -295,8 +295,6 @@ const DIAG_FLUSH_OPS: u32 = 1024;
 /// 8x the shared-atomic traffic: one `fetch_add` per 1024 events, i.e. tens
 /// of thousands per second against a counter that was previously costing
 /// millions. That is the better trade — the counters exist to be read.
-#[cfg(feature = "telemetry")]
-const DIAG_FLUSH_OPS_DOC: () = ();
 
 /// Note `by` occurrences of a diagnostic event, publishing the thread's
 /// batch when it fills. One thread-local add and a compare â€” deliberately
