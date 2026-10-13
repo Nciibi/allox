@@ -589,7 +589,7 @@ impl LargeRegionCache {
                 refresh_large_exact(&self.entries, self.len, removed_pages, &mut self.hot_exact);
             }
         }
-        (entry.0, entry.1, zeroed)
+        (entry.0, entry.1, zeroed, false)
     }
 
     fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool, bool) {
