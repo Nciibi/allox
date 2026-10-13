@@ -2141,8 +2141,8 @@ impl ThreadCache {
                 }
             }
 
-            for i in 0..ng {
-                let g = unsafe { groups[i].assume_init() };
+            for entry in groups.iter_mut().take(ng) {
+                let g = unsafe { entry.assume_init() };
                 crate::heap::BIG_HEAP.release_blocks(g.master, g.head, g.n);
             }
             flushed += popped as u64;
