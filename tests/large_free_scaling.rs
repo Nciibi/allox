@@ -89,7 +89,7 @@ fn large_free_does_not_scale_quadratically() {
     // which differ by ~16x at these sizes.
     let ratio = t_large / t_small.max(0.001);
     assert!(
-        ratio < growth as f64 * 4.0,
+        ratio < growth * 4.0,
         "free() cost grew {ratio:.1}x for a {growth}x larger live large-region set; \
          expected well under {}x if the lookup is O(1) or O(n). \
          (This is the LARGE_REGISTRY linear-scan signature.)",
@@ -98,4 +98,4 @@ fn large_free_does_not_scale_quadratically() {
 }
 
 const size_of_small: f64 = 1_000.0;
-const size_of_large: f64 = 16_000.0;
+const size_of_large: usize = 16_000;
