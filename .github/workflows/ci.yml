@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
   # that block a change.
   # ---------------------------------------------------------------------------
 
-test:
+  test:
     name: test (${{ matrix.os }}, ${{ matrix.profile }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -207,7 +207,7 @@ test:
           path: bench-*.txt
           if-no-files-found: warn
 
-  # jemalloc comparator — CI box has make+autoconf (dev box does not).
+  # jemalloc comparator â€” CI box has make+autoconf (dev box does not).
   # Runs the scoreboard with the extra column; uploaded for re-scoring
   # against the other OS bench artifacts.
   jemalloc-bench:
