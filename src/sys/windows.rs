@@ -38,7 +38,6 @@ pub(crate) struct Discarded {
 }
 
 const MEM_DECOMMIT: u32 = 0x4000;
-const MEM_COMMIT: u32 = 0x1000;
 
 extern "system" {
     fn VirtualAlloc(
