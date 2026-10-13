@@ -183,8 +183,6 @@ mod tls {
             // take the process down.
             let _ = TLS.try_with(|tls| {
                 if tls.in_use.get() {
-                    // TEMPORARY non-allocating probe.
-                    crate::counters::bump(&crate::counters::VOLUME.arena_fallbacks, 1);
                     return;
                 }
                 let cache = core::ptr::read(tls.cache.get());
