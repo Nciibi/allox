@@ -200,7 +200,7 @@ fn calloc_on_recycled_memory_counts_zeroing() {
 /// skip the memset), and the point is that the number is now close enough to
 /// reason about. It was not — this is the "virginity telemetry reports ~50%
 /// of `calloc`s against 9 refills, which cannot both be true" defect.
-#[cfg(any(unix, windows))]
+#[cfg(all(feature = "telemetry", any(unix, windows)))]
 #[test]
 fn worker_counters_are_accurate_within_the_batch_bound() {
     const ROUNDS: usize = 20_000;
