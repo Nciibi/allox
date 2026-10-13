@@ -182,10 +182,10 @@ mod tls {
             // `eprintln!` here (its `{:?}` formatting allocates) is enough to
             // take the process down.
             let _ = TLS.try_with(|tls| {
-                if tls.in_use.get() {
+if tls.in_use.get() {
                     // TEMPORARY non-allocating probe.
-                    crate::counters::bump(&crate::counters::VOLUME.trims, 1);
-                    return;
+                    crate::counters::bump(&crate::counters::VOLUME.arena_fallbacks, 1);
+                    return Outcome::Reentrant;
                 }
                 let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
