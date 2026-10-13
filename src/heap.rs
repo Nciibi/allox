@@ -20,6 +20,7 @@ use crate::page::{
 #[cfg(debug_assertions)]
 use crate::sys::MutexGuard;
 use crate::sys::{self, Mutex};
+use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
 
