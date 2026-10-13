@@ -26,18 +26,29 @@ std = []
 # Opt-in so production builds pay exactly zero for it; enable and query via
 # `allox::telemetry::snapshot()`.
 telemetry = []
+# C comparators (mimalloc, snmalloc) for the benchmark matrix. OFF by
+# default, and that is load-bearing rather than cosmetic: Cargo builds every
+# dev-dependency when it builds any test, bench or example, so leaving these
+# unconditional made `cargo test` require a working C toolchain — on this
+# project's own dev box `cargo test --lib` failed at `libmimalloc-sys` with
+# "link.exe not found" and ran zero tests. A crate whose pitch is "zero build
+# scripts, no C toolchain" cannot have its own test suite gated on one.
+# Enable with `--features bench-c` for the full scoreboard.
+bench-c = ["dep:mimalloc", "dep:snmalloc-rs"]
 # Dev-only: jemalloc bench comparator (needs make+autoconf — CI box only).
 # NEVER enable for library consumers; default build stays zero-deps/no-C.
 bench-jemalloc = ["dep:tikv-jemallocator"]
 # Process-global app benchmark (examples/app_workload.rs). Exactly one
 # backend feature selects the installed `#[global_allocator]`, so the
 # measured process has no runtime dispatch on the allocation path — one
-# binary per allocator, as a real deployment would be. `app-p99` adds
+# binary per allocator, as a real deployment would. `app-p99` adds
 # sampled per-call latency (a second binary; see the script).
 app-allox = []
 app-system = []
-app-mimalloc = []
-app-snmalloc = []
+# The C backends pull their dev-dependency in, so selecting one of these is
+# enough to build it; `bench-c` is only needed for the matrix harness.
+app-mimalloc = ["dep:mimalloc"]
+app-snmalloc = ["dep:snmalloc-rs"]
 app-talc = []
 app-p99 = []
 
