@@ -72,10 +72,10 @@ fn large_free_does_not_scale_quadratically() {
     let t_small = free_round_trip_ms(small);
     let t_large = free_round_trip_ms(large);
 
-    let growth = size_of_large / size_of_small;
+    let growth = large as f64 / small as f64;
     println!(
         "free() of {small} regions: {t_small:.1} ms | {large} regions: {t_large:.1} ms | \
-         region count {growth}x, time {:.1}x",
+         region count {growth:.0}x, time {:.1}x",
         t_large / t_small
     );
 
@@ -90,12 +90,9 @@ fn large_free_does_not_scale_quadratically() {
     let ratio = t_large / t_small.max(0.001);
     assert!(
         ratio < growth * 4.0,
-        "free() cost grew {ratio:.1}x for a {growth}x larger live large-region set; \
-         expected well under {}x if the lookup is O(1) or O(n). \
+        "free() cost grew {ratio:.1}x for a {growth:.0}x larger live large-region set; \
+         expected well under {:.0}x if the lookup is O(1) or O(n). \
          (This is the LARGE_REGISTRY linear-scan signature.)",
-        growth * 4
+        growth * 4.0
     );
 }
-
-const size_of_small: f64 = 1_000.0;
-const size_of_large: usize = 16_000;
