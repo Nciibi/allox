@@ -1,4 +1,4 @@
-//! `allox` — a pure-Rust, thread-cached general-purpose memory allocator.
+﻿//! `allox` â€” a pure-Rust, thread-cached general-purpose memory allocator.
 //!
 //! Zero dependencies, zero build scripts, no C toolchain: compiles anywhere
 //! `rustc` does. Design overview in `DESIGN.md` at the repository root.
@@ -77,9 +77,9 @@ impl Default for Allox {
 
 /// Per-thread cache access.
 ///
-/// std: const-initialized TLS, no destructor (DESIGN.md §4.5), UnsafeCell on
+/// std: const-initialized TLS, no destructor (DESIGN.md Â§4.5), UnsafeCell on
 /// the fast path. no_std: a single global cache behind the allocator's own
-/// spin mutex — embedded targets are single-threaded, and the allocator never
+/// spin mutex â€” embedded targets are single-threaded, and the allocator never
 /// re-enters this lock, so it stays deadlock-free.
 mod tls {
     #[cfg(feature = "std")]
@@ -110,7 +110,7 @@ mod tls {
             Ran(R),
             /// Re-entered: this thread is already inside `with`.
             ///
-            /// TLS teardown is *not* a variant — `try_with` reports that as
+            /// TLS teardown is *not* a variant â€” `try_with` reports that as
             /// its own `Err`, and both take the same fallback.
             Reentrant,
         }
@@ -132,7 +132,7 @@ mod tls {
                 // the nested allocation lands back here.
                 //
                 // Minting a second `&mut ThreadCache` would be aliasing UB, so
-                // the nested call is served from the global heap instead —
+                // the nested call is served from the global heap instead â€”
                 // which is exactly what `fallback` already does, and what
                 // this allocator did unconditionally before TLS existed. That
                 // also breaks the dependency cycle: the fallback never calls
@@ -178,7 +178,7 @@ mod tls {
             let _ = TLS.try_with(|tls| {
                 // The exit hook fires at thread exit, where no allocator code
                 // should be on the stack. If `in_use` says otherwise, moving
-                // the cache out from under a live `&mut` would be UB — so
+                // the cache out from under a live `&mut` would be UB â€” so
                 // skip and let the normal teardown path have it.
                 if tls.in_use.get() {
                     return;
@@ -337,7 +337,7 @@ unsafe fn dealloc_small(p: *mut u8) {
 /// The telemetry note happens *after* `with_cache` returns, not inside the
 /// closure. `note_realloc` records into the calling thread's batched counters
 /// by calling `with_cache` again, and doing that while the closure's
-/// `&mut ThreadCache` is still live would mint a second one — aliasing UB.
+/// `&mut ThreadCache` is still live would mint a second one â€” aliasing UB.
 /// The `tls` reentrancy guard now turns that into a silently-dropped
 /// counter, so the copy length is returned instead and noted here.
 #[inline]
@@ -400,7 +400,7 @@ unsafe fn dealloc_medium(p: *mut u8, span: *mut SpanMaster) {
 }
 
 /// Big-span allocate: arena side-table spans past the chunk cap. Null means
-/// the arena is unavailable — callers fall back to the large path (big
+/// the arena is unavailable â€” callers fall back to the large path (big
 /// spans exist only in the arena, so there is no legacy-mapped form).
 #[cfg(all(unix, feature = "std"))]
 unsafe fn alloc_big(bclass: usize) -> *mut u8 {
@@ -435,7 +435,7 @@ unsafe fn dealloc_big(p: *mut u8, span: *mut BigMaster) {
 /// demand, not by the caps.
 const NUM_LARGE_SHARDS: usize = 8;
 /// Slots per shard: generous, because the byte cap (not the slot count)
-/// bounds retention — 64 slots × 16 B = 1 KiB of static storage per shard.
+/// bounds retention â€” 64 slots Ã— 16 B = 1 KiB of static storage per shard.
 /// Single-threaded same-size traffic lands on one shard and must not
 /// slot-starve there (the old single 64-slot cache never did).
 const LARGE_SHARD_SLOTS: usize = 64;
@@ -447,10 +447,10 @@ const LARGE_COLD_CAP_BYTES: usize = 64 * 1024 * 1024; // 8 x 64 MiB virtual
 #[cfg(not(target_pointer_width = "64"))]
 const LARGE_COLD_CAP_BYTES: usize = 8 * 1024 * 1024;
 /// Cold (discarded, virtually retained) slots per shard. Deep (512) because
-/// cold is virtual-only after discard — RSS stays bounded by live demand,
-/// not the cap — while 64 slots x ~150 KiB capped retention far below the
+/// cold is virtual-only after discard â€” RSS stays bounded by live demand,
+/// not the cap â€” while 64 slots x ~150 KiB capped retention far below the
 /// 64 MiB/shard byte cap, starving exact reuse and flooding the arena holes
-/// under large-only variance (measured §4: 64 -> ~74k abandonments/run;
+/// under large-only variance (measured Â§4: 64 -> ~74k abandonments/run;
 /// 512 -> unmaps 30-50k/s collapse toward 0, +28% median, variance
 /// collapse). 8 shards x 512 x 16 B = 64 KiB static. Hot stays shallow
 /// (hot retention is mapped RSS, not virtual).
@@ -470,7 +470,7 @@ struct LargeRegionCache {
     cold_zeroed: [bool; LARGE_COLD_SLOTS],
     /// Cold entries whose physical pages the backend actually dropped. On
     /// Windows that means `MEM_DECOMMIT`, which leaves the range unreadable
-    /// until `sys::recommit` commits it again — so the flag travels with the
+    /// until `sys::recommit` commits it again â€” so the flag travels with the
     /// entry, exactly as `cold_zeroed` does, and the take path acts on it
     /// before touching the region.
     cold_decommitted: [bool; LARGE_COLD_SLOTS],
@@ -785,19 +785,19 @@ unsafe fn init_large_header(hdr: *mut LargeHeader, base: *mut u8, mapped: usize,
 /// Buckets for the legacy (non-arena) large-region registry.
 ///
 /// This was a single global linked list, walked on every `free()` and every
-/// `realloc()` whose target could not be resolved from a page header — and
+/// `realloc()` whose target could not be resolved from a page header â€” and
 /// because dispatch consults it *before* the small-page magic check, that
 /// cost was paid by every `allox::free`, including of small blocks. Measured
 /// on Windows: freeing 16 000 simultaneously-live large regions took 69 s, and
-/// a 16x larger live set grew the time 692x — the signature of an O(n) walk
+/// a 16x larger live set grew the time 692x â€” the signature of an O(n) walk
 /// under a process-global mutex. `tests/large_free_scaling.rs` pins it.
 ///
 /// Arena targets never hit this: they resolve the region from the
 /// page-indexed side table in `arena::large_table_get`, which is O(1).
 ///
 /// Buckets deliberately keep the mutex. The lock is what makes the traversal
-/// sound — a lock-free read of a chain whose nodes may be unmapped
-/// concurrently would fault — so this shortens the critical section from
+/// sound â€” a lock-free read of a chain whose nodes may be unmapped
+/// concurrently would fault â€” so this shortens the critical section from
 /// "every live large region" to "one bucket" rather than removing it.
 const LARGE_REGISTRY_BUCKETS: usize = 4096;
 
@@ -956,12 +956,12 @@ unsafe fn alloc_large_ex(
             return (ret as *mut u8, false, known_zeroed);
         }
         // Alignment made the cached region unusable; drop it (arena-owned
-        // slices park in holes, legacy ones truly unmap — counters follow).
+        // slices park in holes, legacy ones truly unmap â€” counters follow).
         unmap_or_return(base, region_size);
     }
 
     // Tier 2+3: best-fit region from the sharded recycle cache (hot, then
-    // cold). Cold hits need no syscall — virtual survived the discard.
+    // cold). Cold hits need no syscall â€” virtual survived the discard.
     {
         let taken = {
             let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
@@ -996,7 +996,7 @@ unsafe fn alloc_large_ex(
     }
 
     // Large regions are located by offset header, never by address masking,
-    // so kernel page alignment suffices — no over-map/trim tax (unix), and
+    // so kernel page alignment suffices â€” no over-map/trim tax (unix), and
     // elsewhere map_any is already the optimal primitive.
     let (base, fresh) = map_large_region(mapped);
     if base.is_null() {
@@ -1004,7 +1004,7 @@ unsafe fn alloc_large_ex(
     }
     // Count the fresh mapping exactly once here: every success is one
     // kernel mapping op (`MAP_CALLS`); live virtual (`MAPPED_PAGES`) only
-    // grows for genuinely new address space — arena hole reuses recommit
+    // grows for genuinely new address space â€” arena hole reuses recommit
     // virtual that is already counted (their release never decremented it).
     // All disposals below balance it via unmap_or_return (arena parks keep
     // it counted; legacy unmaps decrement).
@@ -1128,7 +1128,7 @@ fn note_arena_event(park: bool) {
 /// These two counters were always-on shared atomics until 2026-09-26: two
 /// `lock xadd`s on *every* non-virgin zeroed allocation. A memset is per
 /// *call* for `calloc`-heavy code, not per page, so the "only genuinely cold
-/// counters stay always-on" rule did not hold for them — and that shape is
+/// counters stay always-on" rule did not hold for them â€” and that shape is
 /// the one that cost 33% on `mixed-all 8T` when the volume counters had it
 /// (see [`note_realloc`]). Worth +252% on `zeroed-small 8T`.
 #[cfg(feature = "telemetry")]
@@ -1164,7 +1164,7 @@ const BIG_GROW_SLACK_FACTOR: usize = 8;
 /// *first* cross-class growth we instead move the block once into a large
 /// region that reserves slack up to the big cap. Every later big growth then
 /// fits the existing mapping and is served in place by
-/// `try_grow_large_frontier` — no copy, no syscall, no span traffic.
+/// `try_grow_large_frontier` â€” no copy, no syscall, no span traffic.
 ///
 /// The reserve is virtual-only (untouched anonymous pages, faulted on first
 /// write), so RSS still tracks live demand. It is bounded to
@@ -1218,14 +1218,14 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
 /// whether it is now known to read as zero.
 ///
 /// A plain `sys::discard` is not enough here. This is the "purge, then
-/// write" case — the caller is about to write a `LargeHeader` into the
-/// region — and on Windows `MEM_DECOMMIT` leaves the range unreadable, so
+/// write" case â€” the caller is about to write a `LargeHeader` into the
+/// region â€” and on Windows `MEM_DECOMMIT` leaves the range unreadable, so
 /// discarding without recommitting would fault on the very next store.
 ///
 /// On unix the two facts coincide: when the purge succeeds it also
 /// guarantees zeros, so no recommit is needed (and none is issued, because
 /// the mapping is still alive). On Windows `zeroed` is always false, so we
-/// recommit and hand back `false`, which makes the caller memset — the
+/// recommit and hand back `false`, which makes the caller memset â€” the
 /// conservative direction. Reporting a zeroing that did not happen is a
 /// memory disclosure; reporting a decommit the caller does not repair is a
 /// crash.
@@ -1246,7 +1246,7 @@ unsafe fn free_large(p: *mut u8) {
     let pages = (mapped / page::PAGE_SIZE) as u32;
     unregister_large_region(base, mapped, hdr);
 
-    // Tier 1: per-thread stash — the freeing thread usually reallocates next.
+    // Tier 1: per-thread stash â€” the freeing thread usually reallocates next.
     // Single TLS visit: stash the region and report our shard salt together.
     let (stashed, salt): (bool, usize) = with_cache(
         |c| {
@@ -1323,7 +1323,7 @@ fn corrupt_pointer() -> ! {
 /// callee-saved registers and a stack frame. Inlined together, every small
 /// allocation paid `push/push/sub rsp` + the matching epilogue for code it
 /// never executes.
-/// Upper bound of the "packed" tiers — small, medium, and (on targets with
+/// Upper bound of the "packed" tiers â€” small, medium, and (on targets with
 /// an arena) big. Anything at or below it is served by the sharded class
 /// heaps; anything above, or any over-minimum alignment, must take the large
 /// path.
@@ -1370,7 +1370,7 @@ unsafe fn alloc_tiered(size: usize, align: usize) -> *mut u8 {
     // doesn't exist (gated out, so no dead code either).
     #[cfg(all(unix, feature = "std"))]
     {
-        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
+        if needs_large(size, align) {
             return alloc_large(size, align);
         }
         if size > MAX_MEDIUM_BLOCK {
@@ -1385,7 +1385,7 @@ unsafe fn alloc_tiered(size: usize, align: usize) -> *mut u8 {
     }
     #[cfg(not(all(unix, feature = "std")))]
     {
-        if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+        if needs_large(size, align) {
             return alloc_large(size, align);
         }
     }
@@ -1426,7 +1426,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     if size == 0 {
         return align.max(1) as *mut u8;
     }
-    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+    if needs_large(size, align) {
         // Big-span range on arena targets falls through to the big branch
         // below; everywhere else (and for true large sizes/alignments)
         // this is the large path.
@@ -1492,7 +1492,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
 /// `p` inside `[base, base+mapped)`). Returns `(base, mapped_size)`.
 ///
 /// The range check turns a coincidental 8-byte magic match in adjacent user
-/// data (2⁻⁶⁴ on its own) into a ~2⁻¹⁰⁰ non-event, which matters now that
+/// data (2â»â¶â´ on its own) into a ~2â»Â¹â°â° non-event, which matters now that
 /// this probe runs before the exact small-page check.
 #[inline]
 unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
@@ -1534,7 +1534,7 @@ unsafe fn dealloc_impl(p: *mut u8) {
     // No live allocation can live below the large header, so a pointer here
     // is garbage. Without this the masked page read below dereferences
     // address 0 and takes the process down with SIGSEGV instead of the
-    // allocator's own diagnostic — `realloc` and `usable_size` already make
+    // allocator's own diagnostic â€” `realloc` and `usable_size` already make
     // this same check for the same reason.
     if (p as usize) < LARGE_HEADER_SIZE {
         corrupt_pointer();
@@ -1592,15 +1592,15 @@ unsafe fn dealloc_impl(p: *mut u8) {
 }
 
 /// Layout-routed free for `GlobalAlloc` callers, who contractually pass the
-/// layout the pointer was allocated with. Routes with zero probing reads —
-/// no masked loads at all — so unaligned large bases cannot fault dispatch,
+/// layout the pointer was allocated with. Routes with zero probing reads â€”
+/// no masked loads at all â€” so unaligned large bases cannot fault dispatch,
 /// and the hot paths shed branches. Debug builds verify the layout against
 /// the pointer and abort on mismatch (contract violation).
 ///
 /// `#[inline]` with everything above the small tier pushed into
 /// [`dealloc_tiered`], mirroring [`alloc_impl`]: the small body inlines into
-/// `__rust_dealloc`, and the medium/big/large bodies — which need five
-/// callee-saved registers between them — stay in their own frame.
+/// `__rust_dealloc`, and the medium/big/large bodies â€” which need five
+/// callee-saved registers between them â€” stay in their own frame.
 #[inline]
 unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
     debug_assert!(align.is_power_of_two());
@@ -1631,7 +1631,7 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
 /// the small fast path needs no stack frame; see [`dealloc_with_layout`].
 #[inline(never)]
 unsafe fn dealloc_tiered(p: *mut u8, size: usize, align: usize) {
-    if align > MIN_ALIGN || size > MAX_MEDIUM_BLOCK {
+    if needs_large(size, align) {
         // Big-span range on arena targets routes below; everywhere else
         // (and for true large sizes/alignments) this is the large path.
         #[cfg(not(all(unix, feature = "std")))]
@@ -1679,7 +1679,7 @@ unsafe fn dealloc_tiered(p: *mut u8, size: usize, align: usize) {
         dealloc_big(p, big);
         return;
     }
-    // Layout-routed: class comes from size (LUT), never from a header load —
+    // Layout-routed: class comes from size (LUT), never from a header load â€”
     // the SPAN_MAGIC load + sub-header follow was ~48% of free cycles on
     // mixed-all (perf annotate 2026-09-23). The span is only needed on the
     // cold no-TLS fallback. The caller guarantees `size > MAX_SMALL_SIZE`
@@ -1785,7 +1785,7 @@ unsafe fn realloc_slow(p: *mut u8, layout: core::alloc::Layout, new_size: usize)
         return p;
     }
     // Big same-class resize is identity too (big spans never move;
-    // arena targets only — elsewhere these sizes are large-routed and
+    // arena targets only â€” elsewhere these sizes are large-routed and
     // never reach here as big).
     #[cfg(all(unix, feature = "std"))]
     if !p.is_null()
@@ -1896,7 +1896,7 @@ pub unsafe fn realloc(p: *mut u8, size: usize) -> *mut u8 {
         return malloc(size);
     }
     // Large-offset check first (fault-safe for every live pointer; masked
-    // reads can dangle outside unaligned large regions — see dealloc_impl).
+    // reads can dangle outside unaligned large regions â€” see dealloc_impl).
     // Large resizes always go alloc-copy-free below via usable_size.
     #[cfg(all(unix, feature = "std"))]
     let old_arena = crate::arena::contains(p, 1);
@@ -2169,7 +2169,7 @@ pub fn __debug_map_split() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
-/// Arena internals for tuning (see REMAINING_PLAN §3). Returns
+/// Arena internals for tuning (see REMAINING_PLAN Â§3). Returns
 /// `(abandoned, bump_high_water_bytes)`: cumulative hole-store overflow
 /// parks (virtual retained, never reused) and the monotonic reservation
 /// frontier (the reservation-sizing validation input).
@@ -2203,7 +2203,7 @@ pub fn __debug_arena_hole_stats() -> (u64, u64, u64, u64) {
 ///
 /// `volume()` counts work (refills, flushes, copied bytes, purges, arena
 /// fallbacks, ...). Those counters live on slow paths, so they are always
-/// compiled and always updated — a production build without the
+/// compiled and always updated â€” a production build without the
 /// `telemetry` feature still reports them. Nanosecond *timings* need a
 /// clock read and therefore require the feature; see
 /// `telemetry::timing` (a telemetry build).
@@ -2373,7 +2373,7 @@ pub fn flush_current_thread() {
 /// libcs allocate inside those calls, so the nested allocation lands back in
 /// `tls::with`. Minting a second `&mut ThreadCache` there is aliasing UB, and
 /// (because the nested call also reached `arm_exit_hook`) it spun forever on
-/// `thread_exit::INSTALLING` — a permanent, silent hang of the calling thread.
+/// `thread_exit::INSTALLING` â€” a permanent, silent hang of the calling thread.
 ///
 /// A test cannot make glibc allocate on demand, so this exercises the guard
 /// directly: re-entering from inside a live `&mut` must be served from the
@@ -2410,7 +2410,7 @@ mod tls_reentrancy_tests {
     #[test]
     fn guard_is_released_after_each_call() {
         // If `in_use` leaked true, every later allocation on this thread would
-        // silently fall back to the global heap — correct but pathologically
+        // silently fall back to the global heap â€” correct but pathologically
         // slow. Prove the flag is cleared by running a real allocation after
         // the guarded call above and confirming the cache is usable again.
         let first = with_cache(|c| {
@@ -2732,13 +2732,13 @@ mod header_probe_tests {
     #[test]
     fn large_header_rejects_pointer_past_mapped_end() {
         // Probe a pointer whose header-slot lies in zeroed memory past the
-        // region: magic miss (never reads out of bounds — header is at p-32,
+        // region: magic miss (never reads out of bounds â€” header is at p-32,
         // still inside buf).
         let mut f = FakeLarge::new(PAGE_SIZE, LARGE_HEADER_SIZE + 64);
         let p = unsafe { f.buf.as_mut_ptr().add(PAGE_SIZE + 128) };
         assert!(unsafe { large_header_of(p) }.is_none());
         // Craft a header at the real slot whose base is *above* p, so
-        // wrapping_sub yields a huge off >= mapped → reject.
+        // wrapping_sub yields a huge off >= mapped â†’ reject.
         unsafe {
             let probe = f.buf.as_mut_ptr().add(PAGE_SIZE + 128);
             let h = probe.sub(LARGE_HEADER_SIZE).cast::<LargeHeader>();
@@ -2761,7 +2761,7 @@ mod header_probe_tests {
             let h = f.buf.as_mut_ptr().add(f.base_off).cast::<LargeHeader>();
             (*h).base = f.buf.as_mut_ptr().add(f.base_off + LARGE_HEADER_SIZE);
         }
-        // user ptr = base_off + 32; header.base set to same → off==0.
+        // user ptr = base_off + 32; header.base set to same â†’ off==0.
         let p = f.user();
         // Note: large_header_of uses (*hdr).base, not the struct location.
         assert!(
