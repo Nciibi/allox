@@ -215,7 +215,7 @@ fn big_churn_multithreaded() {
             std::thread::Builder::new()
                 .stack_size(1 << 20)
                 .spawn(move || {
-                    let mut rng = (0xB16 ^ ((t as u64 + 1).wrapping_mul(0x9E3779B9))) as u64;
+                    let mut rng = 0xB16 ^ ((t as u64 + 1).wrapping_mul(0x9E3779B9));
                     let mut next_rng = || {
                         rng ^= rng << 13;
                         rng ^= rng >> 7;
