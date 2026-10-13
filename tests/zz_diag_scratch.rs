@@ -14,6 +14,7 @@ fn diag_scratch() {
     };
     let (zc_i, ef_i) = (idx("zeroed_calls"), idx("exit_flushes"));
     let (rf_i, op_i) = (idx("remote_frees"), idx("owner_probes"));
+    let pb_i = idx("purge_bytes");
 
     let handle = std::thread::spawn(|| {
         eprintln!("TIMING worker {:?} starting", std::thread::current().id());
@@ -43,7 +44,7 @@ fn diag_scratch() {
             );
             return;
         }
-        eprintln!("TIMING  iter {i}: zeroed +{zc}, exit_flushes +{ef}, retire_called +{}, retire_saw_zeroed +{}", v[rf_i].saturating_sub(before[rf_i]), v[op_i].saturating_sub(before[op_i]));
+        eprintln!("TIMING  iter {i}: zeroed +{zc}, exit_flushes +{ef}, retire_called +{}, retire_saw_zeroed +{}, published_zeroed +{}", v[rf_i].saturating_sub(before[rf_i]), v[op_i].saturating_sub(before[op_i]), v[pb_i].saturating_sub(before[pb_i]));
         if i > 3 { break; }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
