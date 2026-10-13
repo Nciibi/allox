@@ -4,11 +4,11 @@
 use allox::__diagnostics::VOLUME_FIELDS;
 
 fn show(label: &str, before: [u64; 23], after: [u64; 23]) {
-    println!("--- {label}");
+    eprintln!("=== {label}");
     for (i, name) in VOLUME_FIELDS.iter().enumerate() {
         let d = after[i].saturating_sub(before[i]);
         if d != 0 {
-            println!("    {name:<26} +{d}");
+            eprintln!("    {name:<26} +{d}");
         }
     }
 }
