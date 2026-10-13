@@ -2499,12 +2499,15 @@ mod large_cache_tests {
         let cold_four = add_cold(&mut cache, 4);
         let cold_six = add_cold(&mut cache, 6);
 
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4, false, false)));
         let replacement = add_hot(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((replacement, 4, false)));
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4, true)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6, true)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((replacement, 4, false, false))
+        );
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4, true, false)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6, true, false)));
+        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8, false, false)));
         assert_eq!(cache.len, 0);
         assert_eq!(cache.bytes, 0);
         assert_eq!(cache.cold_len, 0);
