@@ -369,15 +369,19 @@ unsafe fn realloc_small(
                 return ptr::null_mut();
             }
             if old_size != 0 {
-                let copy = old_size.min(new_size);
-                ptr::copy_nonoverlapping(p, new_p, copy);
+                ptr::copy_nonoverlapping(p, new_p, copied);
                 let page = page::PageHeader::of(p);
                 *p.cast::<*mut u8>() = ptr::null_mut();
                 HEAP.release_blocks(page, p, 1);
             }
             new_p
         },
-    )
+    );
+    #[cfg(feature = "telemetry")]
+    if !new_p.is_null() && old_size != 0 {
+        note_realloc(copied, false);
+    }
+    new_p
 }
 
 unsafe fn alloc_medium(mclass: usize) -> *mut u8 {
