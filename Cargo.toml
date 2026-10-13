@@ -78,24 +78,26 @@ app-p99 = []
 mimalloc = { version = "0.1", optional = true }
 snmalloc-rs = { version = "0.7", features = ["build_cc"], optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
-# Pure-Rust comparators. Optional for the reason spelled out at `bench-compare`:
-# as dev-dependencies they were built by every `cargo test --all-targets`,
-# including on targets where `dlmalloc`'s `global` feature does not exist.
-talc = { version = "5", optional = true }
-spinning_top = { version = "0.3", optional = true }
-dlmalloc = { version = "0.2", features = ["global"], optional = true }
+
+# Pure-Rust comparators. These *are* dev-dependencies, but they are scoped to
+# the targets where `dlmalloc 0.2`'s `global` feature is implemented. As
+# unconditional dev-dependencies they were built by every `cargo test
+# --all-targets`, so cross-target lint failed on illumos and the BSDs with an
+# error inside a dependency nothing there referenced.
+#
+# The benchmark is NOT feature-gated for this: `required-features` would make a
+# bare `cargo bench` exit 0 having run nothing, which is a far worse trap than
+# the lint wart. Instead `benches/alloc.rs` cfg-gates the comparator code on
+# the same condition, so `cargo bench` keeps working unchanged on a host and
+# still builds on targets the comparators don't support.
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dev-dependencies]
+talc = "5"
+spinning_top = "0.3"
+dlmalloc = { version = "0.2", features = ["global"] }
 
 [[bench]]
 name = "alloc"
 harness = false
-# `cargo bench` alone therefore runs *nothing*. That is a loud failure, not a
-# silent one, because Cargo skips a target whose required-features are unmet
-# rather than erroring — so the README and the bench docs both say
-# `cargo bench --features bench-compare`. The alternative (no
-# required-features) leaves the comparator crates referenced unconditionally and
-# breaks `--all-targets` lint on illumos and the BSDs, which is the wart this
-# is fixing.
-required-features = ["bench-compare"]
 
 
 [lints.rust]
