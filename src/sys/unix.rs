@@ -4,24 +4,63 @@
 //! recursively re-enter itself through `GlobalAlloc` (POSIX mutex ops are
 //! allocation-free by standard).
 
+// `MAP_ANONYMOUS` is not a POSIX constant and its value is not portable: it
+// is 0x20 on Linux and Android, 0x1000 on the BSDs and Darwin, and something
+// else again on illumos/Solaris (MAP_ANON = 0x100), AIX and Haiku. Declaring
+// the value by hand is what lets this crate stay dependency-free, but a
+// blanket `cfg(unix)` fallback silently handed Linux's 0x20 to targets that
+// use a different one — where `mmap` then fails and, because these are the
+// only memory primitives the crate has, *every* allocation fails.
+//
+// So the list below is an allowlist of targets whose value has been checked,
+// and anything else is a compile error naming the fix. Adding a target means
+// checking its `<sys/mman.h>`, not guessing.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+))]
+const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
+
 #[cfg(any(
     target_os = "macos",
     target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos",
     target_os = "freebsd",
     target_os = "netbsd",
     target_os = "openbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
 ))]
-const MAP_ANONYMOUS: i32 = 0x1000;
+const MAP_ANONYMOUS: i32 = 0x1000; // MAP_ANON
+
+#[cfg(any(
+    target_os = "solaris",
+    target_os = "illumos",
+))]
+const MAP_ANONYMOUS: i32 = 0x100; // MAP_ANON
+
+// Fail at compile time rather than silently mapping nothing at runtime.
 #[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
     target_os = "macos",
     target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos",
     target_os = "freebsd",
     target_os = "netbsd",
     target_os = "openbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "solaris",
+    target_os = "illumos",
 )))]
-const MAP_ANONYMOUS: i32 = 0x20;
+compile_error!(
+    "allox: MAP_ANONYMOUS is not verified for this unix target. Add this \
+     target to the allowlist in src/sys/unix.rs with the value from its \
+     <sys/mman.h>, or add a memory backend in src/sys/."
+);
 
 const MAP_PRIVATE: i32 = 0x02;
 const PROT_READ_WRITE: i32 = 0x03;
