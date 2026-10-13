@@ -925,7 +925,7 @@ unsafe fn alloc_large_ex(
         let region_size = pages as usize * page::PAGE_SIZE;
         let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
         if ret + size <= base as usize + region_size {
-            let known_zeroed = zeroed_requested && sys::discard(base, region_size);
+            let known_zeroed = zeroed_requested && sys::discard(base, region_size).zeroed;
             let hdr = (ret - LARGE_HEADER_SIZE) as *mut LargeHeader;
             init_large_header(hdr, base, region_size, size);
             register_large_region(base, region_size, hdr);
