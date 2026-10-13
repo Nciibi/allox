@@ -33,49 +33,104 @@ pub(crate) unsafe fn unmap(p: *mut u8, _size: usize) -> bool {
     VirtualFree(p as *mut core::ffi::c_void, 0, MEM_RELEASE) != 0
 }
 
-/// Tell the OS the range is no longer needed but keep it reserved: physical
-/// pages are dropped, the virtual reservation survives for reuse.
+/// Result of a purge request. See [`discard`].
+pub(crate) struct Discarded {
+    /// Physical pages were actually dropped, so committed memory fell even
+    /// though the virtual reservation survives for reuse.
+    pub physical: bool,
+    /// The range is still readable *and* reads as zero, which is what lets a
+    /// recycled range serve `calloc` without a memset.
+    pub zeroed: bool,
+}
+
+const MEM_DECOMMIT: u32 = 0x4000;
+const MEM_COMMIT: u32 = 0x1000;
+
+extern "system" {
+    fn VirtualAlloc(
+        addr: *mut core::ffi::c_void,
+        size: usize,
+        alloc_type: u32,
+        protect: u32,
+    ) -> *mut core::ffi::c_void;
+}
+
+/// Drop physical pages while keeping the virtual reservation, so the range
+/// can be handed out again without a fresh `VirtualAlloc` round trip.
 ///
-/// # Returns `false` on Windows, always
+/// # What actually works on Windows, and what does not
 ///
-/// The return value means "this range now reads as zero", and on Windows no
-/// available call actually delivers that:
+/// The obvious move — `VirtualFree(base, size, MEM_RESET)` — *succeeds* and
+/// then zeroes nothing: every probed byte still held the pattern written
+/// before it. A false success there is worse than a failure, because it is
+/// indistinguishable from a real purge to every caller.
 ///
-/// - `VirtualFree(base, size, MEM_RESET)` — the documented way to drop the
-///   physical pages — fails with `ERROR_INVALID_PARAMETER` (87) on every
-///   tested Windows build, for a one-step `RESERVE|COMMIT` region and for a
-///   separate `RESERVE` then `COMMIT`, and for both page-multiple and
-///   unaligned sizes.
-/// - `VirtualAlloc(base, size, MEM_COMMIT | MEM_RESET)` also fails with 87.
-/// - `VirtualAlloc(base, size, MEM_RESET)` — what this used to call —
-///   *succeeds* (non-null, `GetLastError() == 0`) and then does not zero
-///   anything: every probed byte still held the pattern written before it.
-///   That is the worst of the three, because a false success is
-///   indistinguishable from a real discard to every caller.
+/// Nor can "decommitted reads as zero" be had directly:
+///
 /// - `VirtualFree(base, size, MEM_DECOMMIT)` does drop the physical pages,
 ///   but a subsequent read faults (`STATUS_ACCESS_VIOLATION`) instead of
-///   returning zero. Installing an SEH handler to catch that is not an
-///   option for a general-purpose allocator.
+///   returning zero. Installing an SEH handler to catch that is not an option
+///   for a general-purpose allocator.
+/// - `VirtualAlloc(base, size, MEM_COMMIT | MEM_RESET)` fails with
+///   `ERROR_INVALID_PARAMETER` (87), as does `VirtualFree(..., MEM_RESET)`.
+///   Measured directly; each case run in its own process because the
+///   `MEM_DECOMMIT` variant faults the process on read.
 ///
-/// Measured directly; each case run in its own process because the
-/// `MEM_DECOMMIT` variant faults the process on read.
+/// So the contract is split in two, and the *fix* the old comment asked for
+/// is the second half: keep the range readable by never letting a decommitted
+/// page be read, and [`recommit`] it on the way out. Everything that hands a
+/// retained range back out calls `recommit` first, which is what makes
+/// `MEM_DECOMMIT` usable at all.
 ///
-/// Reporting `false` is what keeps `calloc` correct: callers use this flag to
-/// skip a `memset`, so claiming a zeroing that did not happen hands callers
-/// recycled bytes (this is what `tests/big_spans.rs::
-/// big_active_reuse_preserves_calloc_zeroing` caught). The cost is that
-/// recycled regions are always memset on Windows and cold physical pages are
-/// not dropped, i.e. a throughput and RSS cost on this backend alone. The
-/// unix backend's `madvise(MADV_DONTNEED)` genuinely provides both halves and
-/// is unaffected. Recovering the optimization here needs a recommit step
-/// wherever a retained region is handed back out, not just a call swap.
-pub(crate) unsafe fn discard(_p: *mut u8, size: usize) -> bool {
+/// The payoff: Windows now actually returns committed memory on its cold
+/// retention tiers instead of holding every page it ever touched. The cost:
+/// one extra `VirtualAlloc(MEM_COMMIT)` on the reuse path, against a
+/// `VirtualFree(MEM_DECOMMIT)` we were already paying to discard.
+///
+/// `Discarded::zeroed` is always false — no Win32 call provides a
+/// decommitted-and-readable-as-zero primitive — so recycled regions are
+/// still memset on Windows. That is the conservative direction: reporting a
+/// zeroing that did not happen is what
+/// `tests/big_spans.rs::big_active_reuse_preserves_calloc_zeroing` was
+/// written to catch.
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> Discarded {
     // Still counted: the caller asked to purge this range, and the counters
-    // are how a Windows build's inability to purge becomes visible instead of
-    // silently costing RSS forever.
+    // are how a Windows build's purge behaviour becomes visible instead of
+    // silently costing memory forever.
     crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
     crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
-    false
+    let physical = size != 0
+        && VirtualFree(p.cast::<core::ffi::c_void>(), size, MEM_DECOMMIT) != 0;
+    Discarded {
+        physical,
+        zeroed: false,
+    }
+}
+
+/// Make a range that [`discard`] decommitted usable again.
+///
+/// Must be called before *any* access to a discarded range. Commits the
+/// pages at `PAGE_READWRITE`; the contents are undefined, which is why
+/// `Discarded::zeroed` is false and callers memset as needed.
+pub(crate) unsafe fn recommit(p: *mut u8, size: usize) {
+    if size == 0 {
+        return;
+    }
+    // SAFETY: `p`/`size` describe a slice of a region this allocator
+    // reserved with `VirtualAlloc(MEM_RESERVE)`, so a commit-only
+    // `VirtualAlloc` at that address is the documented way to bring it
+    // back. Failure leaves the range unusable, which the caller's `debug_assert`
+    // and the null-`ret` bounds check downstream will surface.
+    let ok = VirtualAlloc(
+        p.cast::<core::ffi::c_void>(),
+        size,
+        MEM_COMMIT,
+        PAGE_READWRITE,
+    );
+    debug_assert!(
+        !ok.is_null(),
+        "VirtualAlloc(MEM_COMMIT) failed to recommit a discarded region"
+    );
 }
 
 // ---------------------------------------------------------------------------
