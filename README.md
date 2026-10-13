@@ -457,6 +457,24 @@ lock). Corruption diagnostics use `panic!` instead of `abort()` — pair with
 backend fail at compile time until a backend is supplied.
 The `wasm32` backend works with or without the `std` feature.
 
+### Unix targets are an explicit allowlist
+
+Declaring `mmap`/`madvise` by hand is what keeps the crate dependency-free,
+but `MAP_ANONYMOUS` is not a POSIX constant and its value is not portable:
+`0x20` on Linux and Android, `0x1000` on the BSDs and Darwin, `0x100` on
+illumos/Solaris. A blanket `cfg(unix)` fallback silently handed Linux's
+constant to targets that use a different one, where every `mmap` then fails —
+so this crate now lists the targets whose value has been checked, and
+`compile_error!`s on anything else naming the fix, rather than building an
+allocator that cannot allocate.
+
+Verified to build: `x86_64`/`aarch64`/`i686-unknown-linux-gnu`,
+`x86_64`/`aarch64-apple-darwin`, `x86_64-unknown-freebsd`,
+`x86_64-unknown-illumos`, `wasm32-unknown-unknown`, and Windows.
+
+Adding a target means checking its `<sys/mman.h>` and adding it to the list in
+both `src/sys/unix.rs` and `src/arena.rs`. It does not mean guessing.
+
 ## WebAssembly
 
 allox compiles for `wasm32-unknown-unknown` with no imports and no build
