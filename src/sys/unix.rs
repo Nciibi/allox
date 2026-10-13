@@ -172,7 +172,7 @@ static MADV_ZEROES: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8:
 /// So measure it once per process rather than trusting the port. This is the
 /// same shape as jemalloc's `opt.trust_madvise`, which defaults to *not*
 /// trusting the flag anywhere it has not been checked.
-fn dontneed_zeroes() -> bool {
+unsafe fn dontneed_zeroes() -> bool {
     use core::sync::atomic::Ordering;
     match MADV_ZEROES.load(Ordering::Acquire) {
         1 => return true,
