@@ -1632,7 +1632,7 @@ fn run_fresh_processes() {
     let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
     #[allow(unused_mut)]
-    let mut allocator_names = vec!["allox", "talc", "dlmalloc", "system"];
+    let mut allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
     #[cfg(feature = "bench-c")]
     allocator_names.extend(["mimalloc", "snmalloc"]);
     #[cfg(feature = "bench-jemalloc")]
