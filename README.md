@@ -570,7 +570,7 @@ cargo bench                     # throughput vs system/talc/dlmalloc
 cargo bench --features bench-c   # adds the mimalloc + snmalloc columns
 ```
 
-76 tests with `telemetry` (70 without — six are diagnostics-only, because the
+77 tests with `telemetry` (71 without — six are diagnostics-only, because the
 counters they read are `telemetry`-gated), plus one `#[ignore]`d timing probe.
 
 Two things about the dev-dependencies. The default test and benchmark paths

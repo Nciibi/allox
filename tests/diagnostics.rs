@@ -2,8 +2,11 @@
 //!
 //! The batched volume counters (refills, flushes, trims, owner probes,
 //! realloc work) are telemetry-gated, so their tests are too; a default
-//! build has no such counters to move. The always-on ones (purges, exit
-//! flushes) are checked here and white-box in `lib.rs`.
+//! build has no such counters to move. The always-on ones (exit flushes) are
+//! checked here and white-box in `lib.rs`; purges get both a white-box test
+//! there (`discard_counts_calls_and_bytes`, which calls `sys::discard`
+//! directly) and an end-to-end one in `tests/purge_live.rs`, which drives
+//! real churn and requires the counter to move.
 //!
 //! These assert that each counter *moves* for the operation it names, so a
 //! wiring regression (counter incremented on the wrong path, or not at all)
