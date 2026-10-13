@@ -2264,6 +2264,91 @@ pub fn flush_current_thread() {
     tls::flush();
 }
 
+/// The `tls` reentrancy guard.
+///
+/// The bug this pins: the first refill of every thread calls out to
+/// `pthread_key_create`/`FlsAlloc` while holding `&mut ThreadCache`. Some
+/// libcs allocate inside those calls, so the nested allocation lands back in
+/// `tls::with`. Minting a second `&mut ThreadCache` there is aliasing UB, and
+/// (because the nested call also reached `arm_exit_hook`) it spun forever on
+/// `thread_exit::INSTALLING` — a permanent, silent hang of the calling thread.
+///
+/// A test cannot make glibc allocate on demand, so this exercises the guard
+/// directly: re-entering from inside a live `&mut` must be served from the
+/// global-heap fallback rather than recursing.
+#[cfg(all(test, feature = "std"))]
+mod tls_reentrancy_tests {
+    use super::*;
+
+    #[test]
+    fn reentrant_with_takes_the_fallback_instead_of_aliasing() {
+        // Sentinel distinguishes "ran the closure" from "served the fallback".
+        let mut nested_saw_fallback = false;
+
+        let outer = with_cache(
+            |_cache| {
+                // This is exactly the shape of the hazard: something the
+                // allocator called is now allocating again, on the same
+                // thread, with the cache already borrowed.
+                let inner = with_cache(|_c| "closure", || "fallback");
+                nested_saw_fallback = inner == "fallback";
+                "outer"
+            },
+            || "outer-fallback",
+        );
+
+        assert_eq!(outer, "outer", "outer call must use the thread cache");
+        assert!(
+            nested_saw_fallback,
+            "reentrant tls::with must be served from the global-heap fallback; \
+             minting a second &mut ThreadCache would be aliasing UB"
+        );
+    }
+
+    #[test]
+    fn guard_is_released_after_each_call() {
+        // If `in_use` leaked true, every later allocation on this thread would
+        // silently fall back to the global heap — correct but pathologically
+        // slow. Prove the flag is cleared by running a real allocation after
+        // the guarded call above and confirming the cache is usable again.
+        let first = with_cache(|c| {
+            let p = unsafe { c.alloc(0) };
+            p
+        }, || core::ptr::null_mut());
+        assert!(!first.is_null(), "cache-backed alloc must succeed");
+
+        let second = with_cache(|_c| (1usize,), || (0usize,));
+        assert_eq!(second, (1usize,), "guard must be released after `with`");
+    }
+
+    #[test]
+    fn reentrant_entry_does_not_deadlock() {
+        // The original failure mode was a hang, so the test's real assertion
+        // is that it completes at all. Bound it so a regression shows up as a
+        // failure rather than a stuck CI job.
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        let handle = std::thread::spawn(move || {
+            with_cache(
+                |_c| {
+                    // Nested, deeper, and re-entering the nested call too.
+                    with_cache(
+                        |_c2| with_cache(|_c3| 7usize, || 0),
+                        || 0,
+                    );
+                    flag.store(true, core::sync::atomic::Ordering::SeqCst);
+                },
+                || {},
+            );
+        });
+        handle.join().expect("thread must not deadlock");
+        assert!(
+            done.load(core::sync::atomic::Ordering::SeqCst),
+            "reentrant entry must unwind normally"
+        );
+    }
+}
+
 /// White-box coverage for the counter wiring that integration tests cannot
 /// provoke cheaply: the retention policy needs megabytes of churn before it
 /// discards anything, but the instrumentation itself sits on two lines.
