@@ -85,28 +85,73 @@ mod tls {
     #[cfg(feature = "std")]
     pub(crate) mod imp {
         use super::super::cache::ThreadCache;
-        use core::cell::UnsafeCell;
+        use core::cell::{Cell, UnsafeCell};
+
+        /// The guard lives beside the cache rather than in a second
+        /// `thread_local!` so that reading it costs no extra TLS access: it
+        /// shares a cache line with the state `with` is about to touch anyway.
+        struct Tls {
+            cache: UnsafeCell<ThreadCache>,
+            in_use: Cell<bool>,
+        }
 
         thread_local! {
             // UnsafeCell, not RefCell: the borrow-flag check costs measurable
-            // time on the fast path. Aliasing is impossible because the
-            // allocator never invokes user code while the cache is borrowed,
-            // so reentrant allocation cannot observe two `&mut`s.
-            static CACHE: UnsafeCell<ThreadCache> =
-                const { UnsafeCell::new(ThreadCache::new()) };
+            // time on the fast path.
+            static TLS: Tls = const {
+                Tls {
+                    cache: UnsafeCell::new(ThreadCache::new()),
+                    in_use: Cell::new(false),
+                }
+            };
+        }
+
+        enum Outcome<R> {
+            Ran(R),
+            /// Re-entered: this thread is already inside `with`.
+            Reentrant,
+            /// TLS is gone (thread teardown).
+            Gone,
         }
 
         pub(crate) fn with<R>(
             f: impl FnOnce(&mut ThreadCache) -> R,
             fallback: impl FnOnce() -> R,
         ) -> R {
-            let result = CACHE.try_with(|c| {
-                // Safety: see the CACHE declaration; no reentrancy possible.
-                f(unsafe { &mut *c.get() })
+            let result = TLS.try_with(|tls| {
+                let ptr = tls.cache.get();
+                // Reentrancy guard.
+                //
+                // The allocator calls out to exactly one piece of code that
+                // might allocate: `pthread_key_create` / `FlsAlloc`, reached
+                // from the first refill of every thread. Whether those
+                // allocate is a libc-internal detail that has changed across
+                // glibc releases (pre-2.34 `pthread_key_create` `calloc`'d its
+                // key table) and across Windows UCRT versions. When one does,
+                // the nested allocation lands back here.
+                //
+                // Minting a second `&mut ThreadCache` would be aliasing UB, so
+                // the nested call is served from the global heap instead —
+                // which is exactly what `fallback` already does, and what
+                // this allocator did unconditionally before TLS existed. That
+                // also breaks the dependency cycle: the fallback never calls
+                // `arm_exit_hook`, so it cannot re-enter the hook install, and
+                // so cannot spin forever on `thread_exit::INSTALLING`.
+                if tls.in_use.get() {
+                    return Outcome::Reentrant;
+                }
+                tls.in_use.set(true);
+                // Safety: `in_use` proves no other `&mut` to this cache is
+                // live on this thread, and nothing below runs user code that
+                // could re-enter `with` (the guard turns any such re-entry
+                // into `Outcome::Reentrant` before it reaches this line).
+                let out = f(unsafe { &mut *ptr });
+                tls.in_use.set(false);
+                Outcome::Ran(out)
             });
             match result {
-                Ok(r) => r,
-                Err(_) => fallback(),
+                Outcome::Ran(r) => r,
+                Outcome::Reentrant | Outcome::Gone => fallback(),
             }
         }
 
