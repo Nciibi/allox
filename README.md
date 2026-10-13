@@ -464,29 +464,40 @@ replaces them.
 ## Development
 
 ```text
-cargo test                      # full test suite (84 tests: 37 unit + 47 integration)
+cargo test                      # full test suite
 cargo test --release
 cargo test --features telemetry
 cargo build --no-default-features      # core-only, no_std
 cargo build --target wasm32-unknown-unknown
 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
-cargo bench                     # throughput comparison vs system allocator
+cargo package
+cargo bench                     # throughput vs system/talc/dlmalloc
+cargo bench --features bench-c   # adds the mimalloc + snmalloc columns
 ```
+
+The default test and benchmark paths need **no C toolchain**. `mimalloc` and
+`snmalloc` are behind `bench-c` precisely so that `cargo test` does not pull
+in their `cc`-based build scripts — Cargo builds every dev-dependency whenever
+it builds any test, bench or example, so leaving them unconditional made a
+plain `cargo test` fail on any machine without a C compiler. That is a bad
+thing for a crate whose entire pitch is "no build scripts, no C toolchain", so
+it is now opt-in. The published crate has zero dependencies either way.
 
 The gates this project holds itself to before calling a change landed, in
 order: the full suite green in **debug and release**, then `telemetry`,
 `no_std` and `wasm32` builds, then rustdoc with `-D warnings`, then
-`cargo package`, and only then the paired A/B described in
-[Measurement methodology](#measurement-methodology). A benchmark number from
-a build that has not cleared those gates is not evidence.
+`cargo fmt`/`clippy -D warnings`, then `cargo package`, and only then the
+paired A/B described in [Measurement methodology](#measurement-methodology).
+A benchmark number from a build that has not cleared those gates is not
+evidence.
 
 Every one of those gates runs in CI. `ci.yml` splits into the checks that
-gate a push (`test`, `lint`, `docs`, `features`, `wasm`, `bit32`, `msrv`,
+gate a push (`test`, `lint`, `docs`, `features`, `wasm32`, `bit32`, `msrv`,
 `package`) and the heavy or informational work that does not (`miri`,
-`fuzz`, `kani`, `coverage`, and the benchmark matrix on a weekly schedule)
-— the benchmarks in particular are excluded from the push path because the
-full matrix takes tens of minutes per OS and a shared runner cannot host a
-meaningful measurement anyway. See
+`fuzz`, `kani`, `coverage`, `profile`, and the benchmark matrix on a weekly
+schedule) — the benchmarks in particular are excluded from the push path
+because the full matrix takes tens of minutes per OS and a shared runner
+cannot host a meaningful measurement anyway. See
 [Continuous integration](#continuous-integration).
 
 ```text
