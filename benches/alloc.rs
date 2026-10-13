@@ -747,13 +747,8 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                     // so this is an `if` around an unconditional drain rather
                     // than a loop condition.
                     if !incoming_done {
-                        loop {
-                            match rx.recv() {
-                                Ok(Some((rp, rs))) => unsafe {
-                                    alloc.dealloc(rp as *mut u8, layout_for(rs))
-                                },
-                                Ok(None) | Err(_) => break,
-                            }
+                        while let Ok(Some((rp, rs))) = rx.recv() {
+                            unsafe { alloc.dealloc(rp as *mut u8, layout_for(rs)) };
                         }
                     }
                     ops
