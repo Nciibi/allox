@@ -170,7 +170,7 @@ mod tls {
         /// with the `cfg` on the re-export below: the queue and
         /// [`crate::cache::retire`] only exist where there is an OS thread
         /// lifecycle to hook.
-        #[cfg(all(feature = "std", any(unix, windows))]
+        #[cfg(all(feature = "std", any(unix, windows)))]
         pub(crate) unsafe fn retire() {
             let _ = TLS.try_with(|tls| {
                 // The exit hook fires at thread exit, where no allocator code
