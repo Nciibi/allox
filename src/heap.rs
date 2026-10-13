@@ -567,7 +567,7 @@ impl GlobalHeap {
                 }
             }
             for (i, g) in chunks.iter().enumerate() {
-                fates[i] = if g.n & PAGE_RELEASE_RETIRED != 0 {
+                let fate = if g.n & PAGE_RELEASE_RETIRED != 0 {
                     retire_page_inner(&mut list, g.page)
                 } else {
                     release_inner(
@@ -578,10 +578,14 @@ impl GlobalHeap {
                         g.n & !PAGE_RELEASE_RETIRED,
                     )
                 };
+                fate_storage[i].write(fate);
             }
         }
-        for (g, fate) in chunks.iter().zip(fates.iter()) {
-            act_page_fate(g.page, *fate);
+        for (g, slot) in chunks.iter().zip(fate_storage.iter_mut()) {
+            // Safe: every `0..chunks.len()` slot was written just above,
+            // under the same iteration bound.
+            let fate = unsafe { slot.assume_init() };
+            act_page_fate(g.page, fate);
         }
     }
 
