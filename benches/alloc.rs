@@ -1784,12 +1784,13 @@ fn run_fresh_processes() {
         .max(1);
     let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
-    #[allow(unused_mut)]
-    let mut allocator_names = ["allox", "system"].to_vec();
+    // Two bindings rather than a seeded `Vec` plus a cfg'd reassignment: the
+    // seed is dead on supported targets and `-D warnings` (and the CI cross-lint
+    // job) rejects the unused assignment. Same cfg split as `allocators`.
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    {
-        allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
-    }
+    let mut allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let mut allocator_names = ["allox", "system"].to_vec();
     #[cfg(feature = "bench-c")]
     allocator_names.extend(["mimalloc", "snmalloc"]);
     #[cfg(feature = "bench-jemalloc")]
