@@ -417,13 +417,16 @@ mimalloc-inspired, adapted for Rust's world:
   and `prodcons 8T` peak RSS fell 15–38%.
 - **Zero-init fast path**: `calloc`/`alloc_zeroed` from never-used ("virgin")
   memory skips the memset — only the freelist link word is cleared. Recycled
-  memory is explicitly zeroed unless a successful discard proved it was already
-  zero.
+  memory is explicitly zeroed unless a *proven* discard established it was
+  already zero.
 - **Debug builds validate every free**: pointer bounds, class alignment, and
-  double-free detection.
-- **No TLS destructors, no allocation inside the allocator**: const-init
-  thread-local state; a spin-then-yield internal mutex that cannot allocate;
-  explicit `flush_current_thread()` for thread pools.
+  double-free detection. The detection is narrower than that sounds: it
+  catches a second free of a block still sitting on its page's free list, not
+  one whose first free is still thread-cached.
+- **No TLS destructors, and no allocation inside the allocator**: const-init
+  thread-local state, an internal mutex that cannot allocate, a reentrancy
+  guard that serves any nested call from the global heap, and explicit
+  `flush_current_thread()` for thread pools.
 
 The architecture is documented in the module headers themselves — `src/arena.rs`
 (reservation/commit split and its rules), `src/heap.rs` (sharding and
