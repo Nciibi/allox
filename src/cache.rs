@@ -275,26 +275,30 @@ const FLUSH_OPS: u32 = 8192;
 /// Diagnostic counters batch on their own cadence: one thread-local add per
 /// event, one shared atomic per batch. Sharing the telemetry cadence would
 /// not work — with `telemetry` off, nothing else drives `ops`.
+///
+/// Sized to *bound the error*, not to amortize the atomic. See the note below.
 #[cfg(feature = "telemetry")]
 const DIAG_FLUSH_OPS: u32 = 1024;
 
-/// Why 1024 and not 8192.
-///
-/// The batch is only *exact* if its last partial window is published, and the
-/// only thing that can do that is the thread-exit hook calling back into the
-/// thread's TLS. On Windows that is not guaranteed: the `FlsAlloc` callback
-/// can run after the thread's TLS has been torn down, at which point
-/// `TLS.try_with` fails and the tail is simply dropped. Measured on
-/// Windows/GNU: two worker threads doing 20 000 `calloc`/`free` rounds each
-/// published 32 766 of 39 998 events — an 8192-event tail lost per thread,
-/// i.e. the whole 18% error the README used to report.
-///
-/// So the batch is sized to bound that error instead of to amortize the
-/// atomic. Worst-case loss is now one batch per thread: ~1024 events, which
-/// at `zeroed-small 8T`'s ~26M calls/s over 8 threads is ~0.03%. The cost is
-/// 8x the shared-atomic traffic: one `fetch_add` per 1024 events, i.e. tens
-/// of thousands per second against a counter that was previously costing
-/// millions. That is the better trade — the counters exist to be read.
+// Why 1024 and not 8192.
+//
+// The batch is only exact if its last partial window is published, and the
+// only thing that can do that is the thread-exit hook calling back into the
+// thread's TLS. On Windows that is not guaranteed: the `FlsAlloc` callback
+// can run after the thread's TLS has been torn down, at which point
+// `TLS.try_with` fails and the tail is simply dropped. Measured on
+// Windows/GNU: two worker threads doing 20 000 `calloc`/`free` rounds each
+// published 32 766 of 39 998 events — an 8192-event tail lost per thread,
+// i.e. the 18% error the README used to report as "~50% of callocs against 9
+// refills, which cannot both be true".
+//
+// So the batch bounds the error instead of amortizing the atomic. Worst-case
+// loss is now one batch per thread: ~1024 events, which at `zeroed-small
+// 8T`'s ~26M calls/s over 8 threads is ~0.03%. The cost is 8x the
+// shared-atomic traffic — one `fetch_add` per 1024 events, tens of thousands
+// per second, against counters that were previously being read off a
+// number with an 18% error. `tests/diagnostics.rs::worker_counters_are_accurate_within_the_batch_bound`
+// pins the bound.
 
 /// Note `by` occurrences of a diagnostic event, publishing the thread's
 /// batch when it fills. One thread-local add and a compare â€” deliberately
