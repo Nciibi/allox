@@ -188,7 +188,6 @@ fn calloc_on_recycled_memory_counts_zeroing() {
 
 #[test]
 fn thread_exit_counts_flushes() {
-    let before = volume();
     let handles: Vec<_> = (0..8)
         .map(|_| {
             std::thread::spawn(|| {
