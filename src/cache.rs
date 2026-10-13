@@ -278,7 +278,7 @@ const FLUSH_OPS: u32 = 8192;
 ///
 /// Sized to *bound the error*, not to amortize the atomic. See the note below.
 #[cfg(feature = "telemetry")]
-const DIAG_FLUSH_OPS: u32 = 1024;
+const DIAG_FLUSH_OPS: u32 = 8192;
 
 // Why 1024 and not 8192.
 //
