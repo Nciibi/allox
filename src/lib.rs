@@ -628,15 +628,18 @@ impl LargeRegionCache {
     }
 
     /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
-    /// Removes and returns `(base, mapped_pages, known_zeroed)`. Caller holds the lock.
+    /// Removes and returns `(base, mapped_pages, known_zeroed, decommitted)`.
+    /// Caller holds the lock.
     /// Both tiers need only a header rewrite (fresh=false); the returned
-    /// zero flag tells calloc whether the recycled bytes are known zero.
+    /// zero flag tells calloc whether the recycled bytes are known zero, and
+    /// the decommitted flag says whether the region must be recommitted
+    /// before it is touched.
     ///
     /// Exact-size matches win over merely-fitting ones: under size variance,
     /// best-fit eats big regions for small requests, fragmenting the cache
     /// so future big requests miss. Exact-first preserves each size class's
     /// own reuse pool (temporal locality in churn is per-size).
-    fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32, bool)> {
+    fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32, bool, bool)> {
         let wanted = (mapped / page::PAGE_SIZE) as u32;
         if let Some(i) = self.exact_hot(wanted) {
             return Some(self.remove_hot(i));
