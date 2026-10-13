@@ -186,8 +186,58 @@ fn calloc_on_recycled_memory_counts_zeroing() {
     );
 }
 
+/// A worker thread's *last* counter batch must reach the global counters.
+///
+/// `retire` used to publish only after its `bytes == 0` early return, so a
+/// thread that exited holding no cached memory dropped its entire pending
+/// window — refills, trims, zeroed calls, everything. That state is not
+/// exotic: it is what any thread that allocates and frees everything looks
+/// like once a trim has drained its bins. From the outside it showed up as
+/// the README's "virginity telemetry reports ~50% of `calloc`s against 9
+/// refills, which cannot both be true".
+///
+/// `ThreadCache` has no `Drop` (it is moved with `ptr::read` into the
+/// retirement queue), so the exit hook is the only place this can be
+/// recovered. Hence the worker here deliberately does *not* call
+/// `flush_current_thread`.
+#[cfg(any(unix, windows))]
+#[test]
+fn worker_exit_publishes_its_final_counter_window() {
+    // 2000 operations is well under the 8192-op publish threshold, so
+    // nothing drains mid-run and the whole window is the one under test.
+    const ROUNDS: usize = 2_000;
+    const BLOCK: usize = 512;
+
+    // A small budget makes every free trim the bins back to the heap, which
+    // is what lands the thread on `bytes == 0` at exit — the exact state that
+    // used to skip the publish.
+    allox::set_thread_cache_budget(1024);
+
+    let handle = std::thread::spawn(|| {
+        for _ in 0..ROUNDS {
+            let p = unsafe { allox::calloc(BLOCK, 1) };
+            assert!(!p.is_null());
+            unsafe { allox::free(p) };
+        }
+    });
+    let before = volume();
+    handle.join().unwrap();
+    allox::set_thread_cache_budget(32 * 1024 * 1024); // restore
+
+    let after = volume();
+    let calls = delta(before.zeroed_calls, after.zeroed_calls);
+    assert!(
+        calls > 0,
+        "the exiting thread's final counter window was lost: zeroed_calls \
+         moved by {calls} over {ROUNDS} calloc/free rounds. The exit hook is \
+         the only drain point (ThreadCache has no Drop), so anything still \
+         pending there is gone."
+    );
+}
+
 #[test]
 fn thread_exit_counts_flushes() {
+    let before = volume();
     let handles: Vec<_> = (0..8)
         .map(|_| {
             std::thread::spawn(|| {
