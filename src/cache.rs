@@ -1899,8 +1899,8 @@ impl ThreadCache {
                 let page = PageHeader::of(b);
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_ref() };
+                for (i, entry) in groups.iter().take(ng).enumerate() {
+                    let g = unsafe { entry.assume_init_ref() };
                     if g.page == page {
                         slot = Some(i);
                         break;
@@ -1984,8 +1984,8 @@ impl ThreadCache {
                 debug_assert!(!master.is_null());
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_ref() };
+                for (i, entry) in groups.iter().take(ng).enumerate() {
+                    let g = unsafe { entry.assume_init_ref() };
                     if g.master == master {
                         slot = Some(i);
                         break;
@@ -2107,8 +2107,8 @@ impl ThreadCache {
                 debug_assert!(!master.is_null() && (*master).contains(b));
                 *b.cast::<*mut u8>() = ptr::null_mut();
                 let mut slot = None;
-                for i in 0..ng {
-                    let g = unsafe { groups[i].assume_init_ref() };
+                for (i, entry) in groups.iter().take(ng).enumerate() {
+                    let g = unsafe { entry.assume_init_ref() };
                     if g.master == master {
                         slot = Some(i);
                         break;
