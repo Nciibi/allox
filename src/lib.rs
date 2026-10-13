@@ -2561,22 +2561,22 @@ mod large_cache_tests {
         let five = add_hot(&mut cache, 5);
         let four = add_hot(&mut cache, 4);
         cache.hot_exact[4] = 0;
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((four, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((four, 4, false, false)));
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
-        assert_eq!(cache.take_fit(5 * PAGE_SIZE), Some((five, 5, false)));
+        assert_eq!(cache.take_fit(5 * PAGE_SIZE), Some((five, 5, false, false)));
 
         let mut boundary = LargeRegionCache::new();
         let large = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32 + 1);
         assert_eq!(boundary.hot_exact[LARGE_EXACT_MAX_PAGES], EMPTY_LARGE_INDEX);
         assert_eq!(
             boundary.take_fit((LARGE_EXACT_MAX_PAGES as u32 + 1) as usize * PAGE_SIZE),
-            Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1, false))
+            Some((large, LARGE_EXACT_MAX_PAGES as u32 + 1, false, false))
         );
         let indexed = add_hot(&mut boundary, LARGE_EXACT_MAX_PAGES as u32);
         assert_eq!(boundary.hot_exact[LARGE_EXACT_MAX_PAGES], 0);
         assert_eq!(
             boundary.take_fit(LARGE_EXACT_MAX_PAGES * PAGE_SIZE),
-            Some((indexed, LARGE_EXACT_MAX_PAGES as u32, false))
+            Some((indexed, LARGE_EXACT_MAX_PAGES as u32, false, false))
         );
     }
 }
