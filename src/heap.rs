@@ -280,36 +280,33 @@ unsafe fn park_empty_page(list: &mut ListHead, page: *mut PageHeader) -> PageFat
         && list.cold_bytes + PAGE_SIZE <= MAX_COLD_PAGE_BYTES_PER_CLASS
     {
         // Cold: drop physical, keep virtual. Array-stored base so the
-        // discard can't destroy the linkage. Re-carved on reuse.
+        // purge can't destroy the linkage. Re-carved on reuse.
         //
-        // The discard runs UNDER the lock: the page is exclusively
+        // The purge runs UNDER the lock: the page is exclusively
         // ours (used==0 observed above, unlinked from every list, and
         // the cold entry is not visible until unlock), so no concurrent
-        // pop can hand out blocks mid-discard and lose user writes.
-        // Discarding after unlock raced exactly so: a taker could pop,
-        // re-carve, and hand out the page before our discard landed,
-        // zeroing live blocks and headers (use-after-discard leading to
+        // pop can hand out blocks mid-purge and lose user writes.
+        // Purging after unlock raced exactly so: a taker could pop,
+        // re-carve, and hand out the page before our purge landed,
+        // zeroing live blocks and headers (use-after-purge leading to
         // short free lists, magic mismatches, and wild splices).
         // Same discipline as medium spans and large regions.
+        //
+        // Everything the pop path needs is recorded here, and the page is
+        // not touched again after the call: on Windows the page is now
+        // unreadable, so even reading its flags would fault.
         let idx = list.cold_len as usize;
         list.cold[idx] = page;
         list.cold_len += 1;
         list.cold_bytes += PAGE_SIZE;
-        // A successful discard is a *proof* that the page reads as zero again, so
-        // record it and let `calloc` skip the memset on reuse. Where the
-        // backend only drops physical memory without that guarantee (Windows
-        // `MEM_DECOMMIT`), the page is still marked DECOMMITTED so the pop
-        // path knows to recommit it, but not DISCARDED, so `calloc` still
-        // memsets. Set after the call because the discard zeroes the header
-        // too.
         let discarded = sys::discard(page.cast::<u8>(), PAGE_SIZE);
-        (*page).flags &= !(FLAG_DISCARDED | FLAG_DECOMMITTED);
-        if discarded.zeroed {
-            (*page).flags |= FLAG_DISCARDED;
-        }
-        if discarded.physical {
-            (*page).flags |= FLAG_DECOMMITTED;
-        }
+        // `zeroed` is the backend's *proof* that the page reads as zero
+        // again, which is what lets a recycled cold page serve `calloc`
+        // without a memset. Only Windows `MEM_DECOMMIT` (physical gone,
+        // contents unknown) and wasm (no purge at all) report false, so
+        // `calloc` stays correct on both at the cost of a memset.
+        list.cold_zeroed[idx] = discarded.zeroed;
+        list.cold_decommitted[idx] = discarded.physical;
         PageFate::Cold
     } else {
         PageFate::Unmap
