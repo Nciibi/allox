@@ -381,6 +381,17 @@ impl GlobalHeap {
                 list.cold_bytes -= PAGE_SIZE;
                 // Read before `init`, which rewrites `flags`.
                 let provably_zero = (*page).flags & FLAG_DISCARDED != 0;
+                let decommitted = (*page).flags & FLAG_DECOMMITTED != 0;
+                (*page).flags &= !FLAG_DECOMMITTED;
+                if decommitted {
+                    // The backend dropped the physical pages, so the range is
+                    // not readable until it is recommitted. On unix this is a
+                    // no-op (the mapping survived); on Windows it is the
+                    // `VirtualAlloc(MEM_COMMIT)` that makes `MEM_DECOMMIT`
+                    // usable at all. Done before `init` writes the header,
+                    // under the same class lock that made this page ours.
+                    sys::recommit(page.cast::<u8>(), PAGE_SIZE);
+                }
                 (*page).init(class);
                 if provably_zero {
                     // `init` already set FLAG_VIRGIN; keep it.
