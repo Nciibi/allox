@@ -510,6 +510,9 @@ mod tests {
 
     #[cfg(all(unix, feature = "std"))]
     #[test]
+    // Constant-valued tripwires on the generated big table; see
+    // `medium_tables_cover_range_with_bound`.
+    #[allow(clippy::assertions_on_constants)]
     fn big_tables_cover_range_with_bound() {
         use crate::page::BIG_MASTER_SIZE;
         assert_eq!(BIG_MASTER_RESERVE, BIG_MASTER_SIZE);
