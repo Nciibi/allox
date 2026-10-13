@@ -1298,6 +1298,9 @@ impl BigHeap {
                 list.cold[cidx] = (ptr::null_mut(), 0);
                 list.cold_bytes -= pages as usize * PAGE_SIZE;
                 let span = base.cast::<BigMaster>();
+                // See the medium cold pop: recommit before the first write to
+                // the master header.
+                sys::recommit(base, pages as usize * PAGE_SIZE);
                 (*span).init(bclass, pages);
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
