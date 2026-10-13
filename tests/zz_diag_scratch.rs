@@ -10,36 +10,46 @@ fn diag_scratch() {
             .unwrap()
     };
     let (zc_i, ef_i) = (idx("zeroed_calls"), idx("exit_flushes"));
-
     allox::flush_current_thread();
     let before = allox::__diagnostics::volume_raw();
 
-    let handles: Vec<_> = (0..4)
+    let handles: Vec<_> = (0..2)
         .map(|_| {
             std::thread::spawn(|| {
+                let inner_before = allox::__diagnostics::volume_raw();
                 for _ in 0..2_000 {
                     let p = unsafe { allox::calloc(512, 1) };
                     unsafe { allox::free(p) };
                 }
+                let inner_after = allox::__diagnostics::volume_raw();
+                eprintln!(
+                    "TIMING worker self-view: global zeroed_calls moved {} \
+                     (globals before={} after={})",
+                    inner_after[zc_i].saturating_sub(inner_before[zc_i]),
+                    inner_before[zc_i],
+                    inner_after[zc_i]
+                );
+                // Now explicitly publish from inside the worker.
+                allox::flush_current_thread();
+                let flushed = allox::__diagnostics::volume_raw();
+                eprintln!(
+                    "TIMING worker after flush_current_thread: global zeroed_calls = {}",
+                    flushed[zc_i]
+                );
             })
         })
         .collect();
     for h in handles {
         h.join().unwrap();
     }
-    eprintln!("TIMING joined 4 workers");
 
-    for i in 0..3_000 {
+    for i in 0..200 {
         let v = allox::__diagnostics::volume_raw();
-        let zc = v[zc_i].saturating_sub(before[zc_i]);
-        let ef = v[ef_i].saturating_sub(before[ef_i]);
-        if i % 300 == 0 || zc > 0 {
-            eprintln!("TIMING iter {i}: zeroed +{zc}, exit_flushes +{ef}");
-        }
-        if zc > 0 {
-            return;
-        }
+        eprintln!(
+            "TIMING main iter {i}: zeroed +{}, exit_flushes +{}",
+            v[zc_i].saturating_sub(before[zc_i]),
+            v[ef_i].saturating_sub(before[ef_i])
+        );
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    eprintln!("TIMING never visible");
 }
