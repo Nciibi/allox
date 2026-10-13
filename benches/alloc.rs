@@ -1723,9 +1723,9 @@ fn main() {
         Named("talc ", &TALC),
         Named("dlmalloc", &DLMALLOC),
         Named("system", &HARNESS),
-        Named("mimalloc", &MIMALLOC),
-        Named("snmalloc", &SNMALLOC),
     ];
+    #[cfg(feature = "bench-c")]
+    allocators.extend([Named("mimalloc", &MIMALLOC), Named("snmalloc", &SNMALLOC)]);
     #[cfg(feature = "bench-jemalloc")]
     allocators.push(Named("jemalloc", &JEMALLOC));
     if p99_every > 0 {
