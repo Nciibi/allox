@@ -2228,6 +2228,9 @@ impl ThreadCache {
 
 #[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) fn retire(mut cache: ThreadCache) {
+    // TEMPORARY non-allocating probe.
+    crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
+    crate::counters::bump(&crate::counters::VOLUME.owner_probes, cache.pending.zeroed_calls);
     // Publish before any early return.
     //
     // This used to sit after the `bytes == 0` check, which silently discarded
