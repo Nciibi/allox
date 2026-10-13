@@ -10,6 +10,7 @@ fn diag_scratch() {
             .unwrap()
     };
     let (zc_i, ef_i) = (idx("zeroed_calls") as usize, idx("exit_flushes") as usize);
+    let (RETIRE_I, SKIP_I) = (idx("remote_frees") as usize, idx("arena_fallbacks") as usize);
     let zc_i = zc_i as usize;
     allox::flush_current_thread();
     let before = allox::__diagnostics::volume_raw();
@@ -48,7 +49,7 @@ std::thread::spawn(move || {
     for i in 0..200 {
         let v = allox::__diagnostics::volume_raw();
         eprintln!(
-            "TIMING main iter {i}: zeroed +{}, exit_flushes +{}",
+            "TIMING main iter {i}: zeroed +{}, exit_flushes +{}, retire +{}, skips +{}",
             v[zc_i].saturating_sub(before[zc_i]),
             v[ef_i].saturating_sub(before[ef_i])
         );
