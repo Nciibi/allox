@@ -175,18 +175,19 @@ mod tls {
         /// lifecycle to hook.
         #[cfg(all(feature = "std", any(unix, windows)))]
         pub(crate) unsafe fn retire() {
-            let r = TLS.try_with(|tls| {
+            // NOTE: nothing here may allocate. This runs from an OS
+            // thread-exit hook (FLS callback / pthread key destructor), where
+            // a panic cannot unwind and aborts the process — and where the
+            // runtime's own TLS may already be part-way down. An
+            // `eprintln!` here (its `{:?}` formatting allocates) is enough to
+            // take the process down.
+            let _ = TLS.try_with(|tls| {
                 if tls.in_use.get() {
-                    eprintln!("ALLOXDIAG retire: in_use=true, SKIPPED");
                     return;
                 }
-                eprintln!("ALLOXDIAG retire: reached on tid={:?}, calling cache::retire", std::thread::current().id());
                 let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
             });
-            if r.is_err() {
-                eprintln!("ALLOXDIAG retire: TLS.try_with FAILED (tls gone)");
-            }
         }
     }
 
