@@ -570,13 +570,25 @@ cargo bench                     # throughput vs system/talc/dlmalloc
 cargo bench --features bench-c   # adds the mimalloc + snmalloc columns
 ```
 
-The default test and benchmark paths need **no C toolchain**. `mimalloc` and
-`snmalloc` are behind `bench-c` precisely so that `cargo test` does not pull
-in their `cc`-based build scripts â€” Cargo builds every dev-dependency whenever
-it builds any test, bench or example, so leaving them unconditional made a
-plain `cargo test` fail on any machine without a C compiler. That is a bad
-thing for a crate whose entire pitch is "no build scripts, no C toolchain", so
-it is now opt-in. The published crate has zero dependencies either way.
+76 tests with `telemetry` (70 without — six are diagnostics-only, because the
+counters they read are `telemetry`-gated), plus one `#[ignore]`d timing probe.
+
+Two things about the dev-dependencies. The default test and benchmark paths
+need **no C toolchain**: `mimalloc` and `snmalloc` are behind `bench-c`
+precisely so that `cargo test` does not pull in their `cc`-based build
+scripts — Cargo builds every dev-dependency whenever it builds any test, bench
+or example, so leaving them unconditional made a plain `cargo test` fail on any
+machine without a C compiler. That is a bad thing for a crate whose entire
+pitch is "no build scripts, no C toolchain", so it is now opt-in. The
+published crate has zero dependencies either way.
+
+Second, `cargo test --all-targets` still does not build for
+`x86_64-unknown-illumos` or the BSDs: `dlmalloc 0.2`'s `global` feature does
+not support those targets. This affects only `--all-targets`, because
+dev-dependencies are the only thing involved — `cargo build --lib` and
+`cargo check --lib` both cross-compile to those targets cleanly, which is what
+the CI matrix checks. No CI job runs `--all-targets` on a BSD, so this is a
+contributor surprise rather than a gate.
 
 The gates this project holds itself to before calling a change landed, in
 order: the full suite green in **debug and release**, then `telemetry`,
