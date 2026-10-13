@@ -1855,6 +1855,7 @@ fn main() {
             let (d0abnd, _) = allox::__debug_arena_detail();
             let v0 = allox::__diagnostics::volume_raw();
             let probe = run(allocators[allocator_index].1, workload, 1);
+            settle_counters();
             let s1 = allox::stats();
             let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
             let (d1abnd, d1hi) = allox::__debug_arena_detail();
