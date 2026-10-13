@@ -151,10 +151,18 @@ mod tls {
                 Outcome::Ran(out)
             });
             match result {
-                Ok(Outcome::Ran(r)) => r,
+                Ok(Outcome::Ran(r)) => {
+                    // TEMPORARY non-allocating probe: cache hits.
+                    crate::counters::bump(&crate::counters::VOLUME.arena_parks, 1);
+                    r
+                }
                 // Re-entered, or TLS is gone (thread teardown): both are
                 // served from the global heap.
-                Ok(Outcome::Reentrant) | Err(_) => fallback(),
+                Ok(Outcome::Reentrant) | Err(_) => {
+                    // TEMPORARY non-allocating probe: fallback taken.
+                    crate::counters::bump(&crate::counters::VOLUME.trims, 1);
+                    fallback()
+                }
             }
         }
 
