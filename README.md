@@ -589,13 +589,21 @@ machine without a C compiler. That is a bad thing for a crate whose entire
 pitch is "no build scripts, no C toolchain", so it is now opt-in. The
 published crate has zero dependencies either way.
 
-Second, `cargo test --all-targets` still does not build for
-`x86_64-unknown-illumos` or the BSDs: `dlmalloc 0.2`'s `global` feature does
-not support those targets. This affects only `--all-targets`, because
-dev-dependencies are the only thing involved — `cargo build --lib` and
-`cargo check --lib` both cross-compile to those targets cleanly, which is what
-the CI matrix checks. No CI job runs `--all-targets` on a BSD, so this is a
-contributor surprise rather than a gate.
+Second, cross-target lint reaches illumos and the BSDs. `dlmalloc 0.2`'s
+`global` feature has no implementation there, and as an unconditional
+dev-dependency it was built by *every* `cargo test --all-targets` — so
+`cargo clippy --all-targets --target x86_64-unknown-illumos` failed with an
+error inside a crate that nothing on those targets references. The comparator
+dev-dependencies are now scoped to `cfg(any(target_os = "linux",
+"windows", "macos"))`, and `benches/alloc.rs` cfg-gates the comparator code on
+the same condition, so those targets build a reduced allox-vs-system matrix.
+
+The gating is on **target**, not a Cargo feature, on purpose: `[[bench]]
+required-features` would also drop the dependencies, but then a bare
+`cargo bench` exits 0 having run nothing at all — a silent no-op on the
+command people actually type, and the one that feeds the tables below. That
+trade was tried and reverted; the target-scoped version keeps `cargo bench`
+working unchanged on any normal host.
 
 The gates this project holds itself to before calling a change landed, in
 order: the full suite green in **debug and release**, then `telemetry`,
