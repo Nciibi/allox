@@ -24,7 +24,7 @@ fn diag_scratch() {
             })
         })
         .collect();
-    for h in &handles {
+    for h in handles {
         h.join().unwrap();
     }
     eprintln!("TIMING joined 4 workers");
