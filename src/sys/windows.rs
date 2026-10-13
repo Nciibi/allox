@@ -90,9 +90,9 @@ pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> Discarded {
     // Still counted: the caller asked to purge this range, and the counters
     // are how a Windows build's purge behaviour becomes visible instead of
     // silently costing memory forever.
-    crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
-    crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
-    let physical = size != 0 && VirtualFree(p.cast::<core::ffi::c_void>(), size, MEM_DECOMMIT) != 0;
+    // SENSITIVITY STUB - DO NOT COMMIT
+    let physical = size != 0
+        && VirtualFree(p.cast::<core::ffi::c_void>(), size, MEM_DECOMMIT) != 0;
     Discarded {
         physical,
         zeroed: false,
