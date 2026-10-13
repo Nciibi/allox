@@ -1323,6 +1323,27 @@ fn corrupt_pointer() -> ! {
 /// callee-saved registers and a stack frame. Inlined together, every small
 /// allocation paid `push/push/sub rsp` + the matching epilogue for code it
 /// never executes.
+/// Upper bound of the "packed" tiers — small, medium, and (on targets with
+/// an arena) big. Anything at or below it is served by the sharded class
+/// heaps; anything above, or any over-minimum alignment, must take the large
+/// path.
+///
+/// One definition, because the `align > MIN_ALIGN || size > ...` test decides
+/// the tier and was previously spelled out at three dispatch sites
+/// (`alloc_tiered`, `dealloc_tiered`, `alloc_zeroed_impl`) with the threshold
+/// varying by cfg. A disagreement between them is not a compile error, just a
+/// block freed into the wrong heap.
+#[cfg(all(unix, feature = "std"))]
+const MAX_PACKED_BLOCK: usize = MAX_BIG_BLOCK;
+#[cfg(not(all(unix, feature = "std")))]
+const MAX_PACKED_BLOCK: usize = MAX_MEDIUM_BLOCK;
+
+/// Must this `(size, align)` be served by the large-region path?
+#[inline]
+const fn needs_large(size: usize, align: usize) -> bool {
+    align > MIN_ALIGN || size > MAX_PACKED_BLOCK
+}
+
 #[inline]
 unsafe fn alloc_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
