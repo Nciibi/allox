@@ -1787,8 +1787,10 @@ fn run_fresh_processes() {
     // Two bindings rather than a seeded `Vec` plus a cfg'd reassignment: the
     // seed is dead on supported targets and `-D warnings` (and the CI cross-lint
     // job) rejects the unused assignment. Same cfg split as `allocators`.
+    #[allow(unused_mut)]
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     let mut allocator_names = ["allox", "talc", "dlmalloc", "system"].to_vec();
+    #[allow(unused_mut)]
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     let mut allocator_names = ["allox", "system"].to_vec();
     #[cfg(feature = "bench-c")]
