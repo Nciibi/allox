@@ -2251,7 +2251,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         return;
     }
     cache.publish();
-    }
     for slot in &RETIRED_SLOTS {
         if slot
             .state
