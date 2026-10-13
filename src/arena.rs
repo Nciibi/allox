@@ -67,24 +67,53 @@ const MAP_PRIVATE: i32 = 0x02;
 const PROT_READ_WRITE: i32 = 0x03;
 const PROT_NONE: i32 = 0x00;
 
+// Same allowlist and reasoning as `crate::sys::unix`: MAP_ANONYMOUS is not
+// portable, so only targets whose value has been checked are listed, and an
+// unlisted target is a compile error rather than a silently wrong constant.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "android",
+))]
+const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
+
 #[cfg(any(
     target_os = "macos",
     target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos",
     target_os = "freebsd",
     target_os = "netbsd",
     target_os = "openbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
 ))]
-const MAP_ANONYMOUS: i32 = 0x1000;
+const MAP_ANONYMOUS: i32 = 0x1000; // MAP_ANON
+
+#[cfg(any(
+    target_os = "solaris",
+    target_os = "illumos",
+))]
+const MAP_ANONYMOUS: i32 = 0x100; // MAP_ANON
+
 #[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
     target_os = "macos",
     target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos",
     target_os = "freebsd",
     target_os = "netbsd",
     target_os = "openbsd",
-    target_os = "dragonfly"
+    target_os = "dragonfly",
+    target_os = "solaris",
+    target_os = "illumos",
 )))]
-const MAP_ANONYMOUS: i32 = 0x20;
+compile_error!(
+    "allox: MAP_ANONYMOUS is not verified for this unix target; see the \
+     matching note in src/sys/unix.rs."
+);
 
 extern "C" {
     fn mmap(
