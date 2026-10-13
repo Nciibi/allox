@@ -24,7 +24,7 @@ fn diag_scratch() {
     let handles: Vec<_> = (0..2)
         .map(|_| {
             std::thread::spawn(|| {
-                for _ in 0..2_000 {
+                for _ in 0..20_000 {
                     let p = unsafe { allox::calloc(512, 1) };
                     unsafe { allox::free(p) };
                 }
