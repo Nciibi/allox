@@ -654,7 +654,7 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Kani proofs â€” DESIGN_SPANS_BIG.md Â§6 carving properties P1â€“P6 (and the
+// Kani proofs â€” DESIGN_SPANS_BIG.md §6 carving properties P1â€“P6 (and the
 // equivalent medium-span packing invariants). Pure arithmetic: no mmap, so
 // these run under `cargo kani` in CI (nightly + kani-verifier).
 // P4 (virgin) and P5 (lookup totality) are state/pointer properties covered
