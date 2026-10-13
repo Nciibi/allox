@@ -16,6 +16,7 @@ fn diag_scratch() {
     let retire_i = idx("remote_frees");
     let skip_i = idx("arena_fallbacks");
     let nz_i = idx("owner_probes");
+    let pend_i = idx("medium_refills");
 
     allox::flush_current_thread();
     let before = allox::__diagnostics::volume_raw();
@@ -37,12 +38,13 @@ fn diag_scratch() {
     for i in 0..200 {
         let v = allox::__diagnostics::volume_raw();
         eprintln!(
-            "TIMING iter {i}: zeroed +{}, exit_flushes +{}, retire +{}, skips +{}, note_zeroed_calls +{}",
+            "TIMING iter {i}: zeroed +{}, exit_flushes +{}, retire +{}, skips +{}, note_zeroed +{}, pending_at_retire +{}",
             v[zc_i].saturating_sub(before[zc_i]),
             v[ef_i].saturating_sub(before[ef_i]),
             v[retire_i].saturating_sub(before[retire_i]),
             v[skip_i].saturating_sub(before[skip_i]),
             v[nz_i].saturating_sub(before[nz_i]),
+            v[pend_i].saturating_sub(before[pend_i]),
         );
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
