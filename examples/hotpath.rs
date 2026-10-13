@@ -45,16 +45,36 @@ unsafe impl GlobalAlloc for Mima {
     }
 }
 
+/// Split the cost: a batch of allocations, then a batch of frees, so the two
+/// halves can be timed separately.
+fn split<A: GlobalAlloc>(name: &str, a: &A, n: usize) {
+    let l = Layout::from_size_align(128, 16).unwrap();
+    let mut v: Vec<*mut u8> = Vec::with_capacity(n);
+    for _ in 0..10_000 {
+        unsafe {
+            let p = a.alloc(l);
+            a.dealloc(p, l);
+        }
+    }
+    let t = Instant::now();
+    for _ in 0..n {
+        v.push(unsafe { a.alloc(l) });
+    }
+    let alloc_ns = t.elapsed().as_nanos() as f64 / n as f64;
+    let t = Instant::now();
+    for p in v.drain(..) {
+        unsafe { a.dealloc(p, l) };
+    }
+    let free_ns = t.elapsed().as_nanos() as f64 / n as f64;
+    println!("  {name:<10} alloc {alloc_ns:7.2} ns   free {free_ns:7.2} ns");
+}
+
 fn main() {
-    let iters = 20_000_000u64;
-    println!("128B, single thread, {iters} iters, best of 3 rounds");
-    for round in 0..2 {
-        println!(" round {round}");
-        run2("allox", &ALLOX, iters, true);
-        run2("allox", &ALLOX, iters, false);
-        run2("mimalloc", &Mima, iters, true);
-        run2("mimalloc", &Mima, iters, false);
-        run2("system", &std::alloc::System, iters, true);
-        run2("system", &std::alloc::System, iters, false);
+    let n = 2_000_000usize;
+    println!("alloc/free split, 128B, {} blocks", n);
+    for _ in 0..2 {
+        split("allox", &ALLOX, n);
+        split("mimalloc", &Mima, n);
+        split("system", &std::alloc::System, n);
     }
 }
