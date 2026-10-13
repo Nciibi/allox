@@ -106,6 +106,10 @@ pub(crate) const MEDIUM_BLOCK_CAP: usize = 65536 - MEDIUM_CHUNK_RESERVE;
 pub(crate) const TARGET_BLOCKS_PER_SPAN: usize = 8;
 
 const fn medium_step(size: usize) -> usize {
+    // `usize::div_ceil` is not `const`-callable at the 1.79 MSRV, so the
+    // ceil is spelled out. Do not "simplify" this to `.div_ceil()` — it will
+    // not compile on the declared minimum toolchain.
+    #[allow(clippy::manual_div_ceil)]
     let grown = (size * 9 + 7) / 8;
     (grown + 15) & !15
 }
