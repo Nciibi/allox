@@ -2520,19 +2520,39 @@ mod large_cache_tests {
         let first = add_hot(&mut cache, 4);
         let second = add_hot(&mut cache, 4);
         let third = add_hot(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4, false, false)));
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4, false, false)));
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4, false)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4, false, false)));
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
 
         let cold_first = add_cold(&mut cache, 4);
         let cold_second = add_cold(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_first, 4, true)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_first, 4, true, false)));
         assert_eq!(cache.cold_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_second, 4, true)));
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_second, 4, true, false)));
         assert_eq!(cache.cold_exact[4], EMPTY_LARGE_INDEX);
+    }
+
+    /// The `decommitted` flag has to survive swap-removal: `remove_cold`
+    /// moves the last entry into the hole, so a naive implementation drops the
+    /// flag and leaves a decommitted region handed out as if it were mapped.
+    #[test]
+    fn decommit_flag_travels_with_its_entry() {
+        let mut cache = LargeRegionCache::new();
+        let plain = add_cold(&mut cache, 4);
+        let dropped = add_cold_decommitted(&mut cache, 4);
+        assert_eq!(cache.cold_len, 2);
+
+        // Remove index 0, which swap-moves `dropped` (index 1) into it.
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((plain, 4, true, false)));
+        assert_eq!(cache.cold_decommitted[0], true);
+
+        // And it still comes back out with the right entry.
+        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((dropped, 4, true, true)));
+        assert_eq!(cache.cold_len, 0);
+        assert_eq!(cache.cold_bytes, 0);
     }
 
     #[test]
