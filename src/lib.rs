@@ -700,26 +700,68 @@ unsafe fn init_large_header(hdr: *mut LargeHeader, base: *mut u8, mapped: usize,
     (*hdr).registry_next = ptr::null_mut();
 }
 
-static LARGE_REGISTRY: sys::Mutex<usize> = sys::Mutex::new(0);
+/// Buckets for the legacy (non-arena) large-region registry.
+///
+/// This was a single global linked list, walked on every `free()` and every
+/// `realloc()` whose target could not be resolved from a page header — and
+/// because dispatch consults it *before* the small-page magic check, that
+/// cost was paid by every `allox::free`, including of small blocks. Measured
+/// on Windows: freeing 16 000 simultaneously-live large regions took 69 s, and
+/// a 16x larger live set grew the time 692x — the signature of an O(n) walk
+/// under a process-global mutex. `tests/large_free_scaling.rs` pins it.
+///
+/// Arena targets never hit this: they resolve the region from the
+/// page-indexed side table in `arena::large_table_get`, which is O(1).
+///
+/// Buckets deliberately keep the mutex. The lock is what makes the traversal
+/// sound — a lock-free read of a chain whose nodes may be unmapped
+/// concurrently would fault — so this shortens the critical section from
+/// "every live large region" to "one bucket" rather than removing it.
+const LARGE_REGISTRY_BUCKETS: usize = 4096;
+
+/// Live entry count, used only to skip the lock entirely when no large
+/// region exists at all (the common case for a pure small-block workload).
+///
+/// It is incremented *before* a header is linked into its bucket, so a
+/// reader that observes zero can conclude the registry really is empty
+/// rather than racing a half-published insert.
+static LARGE_REGISTRY_LEN: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+static LARGE_REGISTRY: sys::Mutex<[usize; LARGE_REGISTRY_BUCKETS]> =
+    sys::Mutex::new([0; LARGE_REGISTRY_BUCKETS]);
+
+/// Bucket for `hdr`. Fibonacci hashing: headers are 16-aligned and regions
+/// are far apart, so the low address bits carry little entropy for a plain
+/// mask, while the multiply mixes them before the shift selects a bucket.
+#[inline]
+fn legacy_bucket(hdr: *mut LargeHeader) -> usize {
+    let v = (hdr as usize as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    ((v >> 52) as usize) & (LARGE_REGISTRY_BUCKETS - 1)
+}
 
 unsafe fn register_legacy_large(hdr: *mut LargeHeader) {
-    let mut head = LARGE_REGISTRY.lock();
-    (*hdr).registry_next = *head as *mut LargeHeader;
-    *head = hdr as usize;
+    let bucket = legacy_bucket(hdr);
+    LARGE_REGISTRY_LEN.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    let mut registry = LARGE_REGISTRY.lock();
+    (*hdr).registry_next = registry[bucket] as *mut LargeHeader;
+    registry[bucket] = hdr as usize;
 }
 
 unsafe fn unregister_legacy_large(hdr: *mut LargeHeader) {
-    let mut head = LARGE_REGISTRY.lock();
+    let bucket = legacy_bucket(hdr);
+    let mut registry = LARGE_REGISTRY.lock();
     let mut previous: *mut LargeHeader = ptr::null_mut();
-    let mut current = *head as *mut LargeHeader;
+    let mut current = registry[bucket] as *mut LargeHeader;
     while !current.is_null() {
         if current == hdr {
             let next = (*current).registry_next;
             if previous.is_null() {
-                *head = next as usize;
+                registry[bucket] = next as usize;
             } else {
                 (*previous).registry_next = next;
             }
+            LARGE_REGISTRY_LEN.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
             return;
         }
         previous = current;
@@ -728,12 +770,18 @@ unsafe fn unregister_legacy_large(hdr: *mut LargeHeader) {
 }
 
 unsafe fn legacy_large_contains(p: *mut u8) -> bool {
+    // Fast reject: no large region exists anywhere, so this pointer cannot
+    // be one. Takes the lock off the small-block free path entirely.
+    if LARGE_REGISTRY_LEN.load(core::sync::atomic::Ordering::Relaxed) == 0 {
+        return false;
+    }
     let expected = match (p as usize).checked_sub(LARGE_HEADER_SIZE) {
         Some(address) if address & (MIN_ALIGN - 1) == 0 => address as *mut LargeHeader,
         _ => return false,
     };
-    let head = LARGE_REGISTRY.lock();
-    let mut current = *head as *mut LargeHeader;
+    let bucket = legacy_bucket(expected);
+    let registry = LARGE_REGISTRY.lock();
+    let mut current = registry[bucket] as *mut LargeHeader;
     while !current.is_null() {
         if current == expected {
             return true;
