@@ -611,6 +611,8 @@ impl ThreadCache {
     /// comment in [`Pending`].
     #[cfg(feature = "telemetry")]
     pub(crate) fn note_zeroed(&mut self, size: usize) {
+        // TEMPORARY non-allocating probe.
+        crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
         self.pending.zeroed_calls += 1;
         self.pending.zeroed_bytes += size as u64;
         self.pending.diag_ops += 1;
