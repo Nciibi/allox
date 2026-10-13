@@ -10,6 +10,7 @@ fn diag_scratch() {
             .unwrap()
     };
     let (zc_i, ef_i) = (idx("zeroed_calls"), idx("exit_flushes"));
+    let zc_i = zc_i as usize;
     allox::flush_current_thread();
     let before = allox::__diagnostics::volume_raw();
 
