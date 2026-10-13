@@ -344,7 +344,10 @@ pub(crate) const MAX_BIG_BLOCK: usize = BIG_CLASSES[NUM_BIG - 1];
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const fn big_span_pages_for(block: usize) -> usize {
     let need = BIG_MASTER_RESERVE + TARGET_BLOCKS_PER_BIG_SPAN * block;
-    (need + 65536 - 1) / 65536
+    // Not `div_ceil`: not const-callable at the 1.79 MSRV.
+    #[allow(clippy::manual_div_ceil)]
+    let pages = (need + 65536 - 1) / 65536;
+    pages
 }
 
 /// Direct-mapped size -> big-class table for
@@ -377,6 +380,9 @@ const fn build_big_lut() -> [u8; BIG_LUT_LEN + 1] {
 }
 
 #[cfg(all(unix, feature = "std"))]
+// The whole point is a compile-time table: a `static` with a runtime-filled
+// `OnceLock` would add a branch to `big_class_for_size`'s hot path.
+#[allow(clippy::large_const_arrays)]
 const BIG_LUT: [u8; BIG_LUT_LEN + 1] = build_big_lut();
 
 /// Index of the smallest big class that fits `size`.
