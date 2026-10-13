@@ -1,66 +1,47 @@
 ﻿//! TEMPORARY diagnostic — not a permanent test.
 #![cfg(feature = "telemetry")]
 
-use allox::__diagnostics::VOLUME_FIELDS;
-
-fn show(label: &str, before: [u64; 23], after: [u64; 23]) {
-    eprintln!("=== {label}");
-    for (i, name) in VOLUME_FIELDS.iter().enumerate() {
-        let d = after[i].saturating_sub(before[i]);
-        if d != 0 {
-            eprintln!("    {name:<26} +{d}");
-        }
-    }
-}
-
 #[test]
 fn diag_scratch() {
-    // --- phase 1: main thread, default budget ---
-    let b = allox::__diagnostics::volume_raw();
-    for _ in 0..2_000 {
-        let p = unsafe { allox::calloc(512, 1) };
-        unsafe { allox::free(p) };
-    }
-    allox::flush_current_thread();
-    let a = allox::__diagnostics::volume_raw();
-    show("main thread, default budget", b, a);
-
-    // --- phase 2: main thread, tiny budget ---
     allox::set_thread_cache_budget(1024);
-    let b = allox::__diagnostics::volume_raw();
-    for _ in 0..2_000 {
-        let p = unsafe { allox::calloc(512, 1) };
-        unsafe { allox::free(p) };
+    let t0 = std::time::Instant::now();
+    let before = allox::__diagnostics::volume_raw();
+    let zeroed_idx = allox::__diagnostics::VOLUME_FIELDS
+        .iter()
+        .position(|n| *n == "zeroed_calls")
+        .unwrap();
+    let exit_idx = allox::__diagnostics::VOLUME_FIELDS
+        .iter()
+        .position(|n| *n == "exit_flushes")
+        .unwrap();
+
+    std::thread::spawn(|| {
+        for _ in 0..2_000 {
+            let p = unsafe { allox::calloc(512, 1) };
+            unsafe { allox::free(p) };
+        }
+    })
+    .join()
+    .unwrap();
+    eprintln!("TIMING join returned at {:?} ms", t0.elapsed().as_millis());
+
+    for i in 0..5_000 {
+        let v = allox::__diagnostics::volume_raw();
+        let zc = v[zeroed_idx].saturating_sub(before[zeroed_idx]);
+        let ef = v[exit_idx].saturating_sub(before[exit_idx]);
+        if zc > 0 {
+            eprintln!(
+                "TIMING counters visible after {:?} ms (iter {i}, zeroed_calls +{zc}, exit_flushes +{ef})",
+                t0.elapsed().as_millis()
+            );
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    allox::flush_current_thread();
-    let a = allox::__diagnostics::volume_raw();
-    show("main thread, tiny budget", b, a);
-
-    // --- phase 3: worker thread, tiny budget ---
-    let b = allox::__diagnostics::volume_raw();
-    std::thread::spawn(|| {
-        for _ in 0..2_000 {
-            let p = unsafe { allox::calloc(512, 1) };
-            unsafe { allox::free(p) };
-        }
-    })
-    .join()
-    .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    let a = allox::__diagnostics::volume_raw();
-    show("worker thread, tiny budget", b, a);
-
-    // --- phase 4: worker thread, explicit flush (bypasses the exit hook) ---
-    let b = allox::__diagnostics::volume_raw();
-    std::thread::spawn(|| {
-        for _ in 0..2_000 {
-            let p = unsafe { allox::calloc(512, 1) };
-            unsafe { allox::free(p) };
-        }
-        allox::flush_current_thread();
-    })
-    .join()
-    .unwrap();
-    let a = allox::__diagnostics::volume_raw();
-    show("worker thread + explicit flush", b, a);
+    let v = allox::__diagnostics::volume_raw();
+    eprintln!(
+        "TIMING NEVER VISIBLE after {:?} ms (exit_flushes +{})",
+        t0.elapsed().as_millis(),
+        v[exit_idx].saturating_sub(before[exit_idx])
+    );
 }
