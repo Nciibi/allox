@@ -181,10 +181,9 @@ mod tls {
                     return;
                 }
                 let cache = core::ptr::read(tls.cache.get());
-                crate::cache::retire(cache);
+crate::cache::retire(cache);
             });
         }
-    }
     }
 
     #[cfg(not(feature = "std"))]
