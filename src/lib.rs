@@ -109,9 +109,10 @@ mod tls {
         enum Outcome<R> {
             Ran(R),
             /// Re-entered: this thread is already inside `with`.
+            ///
+            /// TLS teardown is *not* a variant — `try_with` reports that as
+            /// its own `Err`, and both take the same fallback.
             Reentrant,
-            /// TLS is gone (thread teardown).
-            Gone,
         }
 
         pub(crate) fn with<R>(
