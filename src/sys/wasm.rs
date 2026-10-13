@@ -26,7 +26,24 @@ pub(crate) unsafe fn unmap(_p: *mut u8, _size: usize) -> bool {
     false
 }
 
-/// No physical/virtual split exists in linear memory; same as unmap.
-pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) -> bool {
-    false
+/// Result of a purge request. See [`discard`].
+pub(crate) struct Discarded {
+    /// Physical pages were actually dropped.
+    pub physical: bool,
+    /// The range is still readable *and* reads as zero.
+    pub zeroed: bool,
 }
+
+/// No physical/virtual split exists in linear memory, so there is nothing to
+/// purge and nothing to recommit: `memory.grow` only ever adds, and a page
+/// released back to the delayed-reclamation cache still holds its contents.
+///
+/// `zeroed` is false, so recycled WASM memory is always memset for `calloc`.
+/// Sound on every backend, which is the point of asking.
+pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) -> Discarded {
+    Discarded { physical: false, zeroed: false }
+}
+
+/// No-op: a discarded range was never decommitted, so there is nothing to
+/// bring back. Kept so callers do not have to know which backend they are on.
+pub(crate) unsafe fn recommit(_p: *mut u8, _size: usize) {}
