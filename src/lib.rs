@@ -1192,6 +1192,29 @@ unsafe fn try_promote_big_grow(p: *mut u8, new_size: usize, align: usize) -> Opt
     Some(np)
 }
 
+/// Purge a region that is about to be handed straight back out, and report
+/// whether it is now known to read as zero.
+///
+/// A plain `sys::discard` is not enough here. This is the "purge, then
+/// write" case — the caller is about to write a `LargeHeader` into the
+/// region — and on Windows `MEM_DECOMMIT` leaves the range unreadable, so
+/// discarding without recommitting would fault on the very next store.
+///
+/// On unix the two facts coincide: when the purge succeeds it also
+/// guarantees zeros, so no recommit is needed (and none is issued, because
+/// the mapping is still alive). On Windows `zeroed` is always false, so we
+/// recommit and hand back `false`, which makes the caller memset — the
+/// conservative direction. Reporting a zeroing that did not happen is a
+/// memory disclosure; reporting a decommit the caller does not repair is a
+/// crash.
+unsafe fn purge_for_handoff(base: *mut u8, mapped: usize) -> bool {
+    let purged = sys::discard(base, mapped);
+    if purged.physical && !purged.zeroed {
+        sys::recommit(base, mapped);
+    }
+    purged.zeroed
+}
+
 unsafe fn free_large(p: *mut u8) {
     let hdr = (p as usize - LARGE_HEADER_SIZE) as *mut LargeHeader;
     let mapped = (*hdr).mapped_size;
