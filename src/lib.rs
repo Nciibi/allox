@@ -506,6 +506,7 @@ impl LargeRegionCache {
             cold_bytes: 0,
             cold: [(ptr::null_mut(), 0); LARGE_COLD_SLOTS],
             cold_zeroed: [false; LARGE_COLD_SLOTS],
+            cold_decommitted: [false; LARGE_COLD_SLOTS],
             cold_exact: [EMPTY_LARGE_INDEX; LARGE_EXACT_MAX_PAGES + 1],
         }
     }
