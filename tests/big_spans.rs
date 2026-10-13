@@ -42,7 +42,7 @@ fn big_boundary_routing() {
         let b0 = malloc(medium_top + 1);
         assert!(!b0.is_null());
         let u0 = allox::usable_size(b0);
-        assert!(u0 >= 65473 && u0 <= BIG_TOP, "usable {}", u0);
+        assert!((65473..=BIG_TOP).contains(&u0), "usable {}", u0);
         fill_pattern(b0, 65473);
         check_pattern(b0, 65473);
         free(b0);
