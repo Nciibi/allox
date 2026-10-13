@@ -437,7 +437,7 @@ unsafe fn dealloc_big(p: *mut u8, span: *mut BigMaster) {
 /// demand, not by the caps.
 const NUM_LARGE_SHARDS: usize = 8;
 /// Slots per shard: generous, because the byte cap (not the slot count)
-/// bounds retention — 64 slots Ãƒ— 16 B = 1 KiB of static storage per shard.
+/// bounds retention — 64 slots × 16 B = 1 KiB of static storage per shard.
 /// Single-threaded same-size traffic lands on one shard and must not
 /// slot-starve there (the old single 64-slot cache never did).
 const LARGE_SHARD_SLOTS: usize = 64;
