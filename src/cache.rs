@@ -535,6 +535,16 @@ impl ThreadCache {
         }
     }
 
+    /// Batch variant, for callers that already hold `&mut self` and must not
+    /// re-enter the thread cache to record: `flush_all` unparks arena regions
+    /// from inside a live `&mut ThreadCache`, and calling the single-event
+    /// helper there would nest.
+    #[allow(dead_code)] // the arena path only exists on unix + std
+    #[inline]
+    pub(crate) fn note_arena_parks(&mut self, count: u64) {
+        note_diag!(self, arena_parks, count);
+    }
+
     /// Blocks handed back to the heap by a flush.
     #[inline]
     pub(crate) fn note_flush(&mut self, blocks: u64) {
