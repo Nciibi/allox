@@ -15,8 +15,7 @@ use crate::classes::{medium_capacity_for, span_pages_for, NUM_CLASSES, NUM_MEDIU
 #[cfg(all(unix, feature = "std"))]
 use crate::page::BigMaster;
 use crate::page::{
-    pop_block, PageHeader, SpanMaster, FLAG_DECOMMITTED, FLAG_DISCARDED, FLAG_IN_PARTIAL,
-    FLAG_NEEDS_REINIT, FLAG_VIRGIN, PAGE_SIZE,
+    pop_block, PageHeader, SpanMaster, FLAG_IN_PARTIAL, FLAG_NEEDS_REINIT, FLAG_VIRGIN, PAGE_SIZE,
 };
 #[cfg(debug_assertions)]
 use crate::sys::MutexGuard;
