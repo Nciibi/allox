@@ -2242,7 +2242,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
     // Nothing else can publish it: `ThreadCache` deliberately has no `Drop`
     // (it is moved with `ptr::read` into the retirement queue), and this hook
     // is the only drain point at thread exit.
-    cache.publish();
     let bytes = cache.cached_bytes.saturating_add(cache.large_bytes);
     if bytes == 0 {
         return;
@@ -2251,6 +2250,7 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         unsafe { cache.flush_all() };
         return;
     }
+    cache.publish();
     for slot in &RETIRED_SLOTS {
         if slot
             .state
