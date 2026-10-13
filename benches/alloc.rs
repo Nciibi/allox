@@ -5,8 +5,10 @@
 //! allocator, while each measured allocator is called directly.
 //!
 //! P0 honest scoreboard: mimalloc + snmalloc are dev-only comparators — the
-//! library itself stays zero-deps / no-C. jemalloc is behind the optional
-//! `bench-jemalloc` feature (needs make+autoconf): CI-only, enable it where
+//! library itself stays zero-deps / no-C. Both are behind `bench-c`, so the
+//! default `cargo bench` runs the four pure-Rust columns and needs no C
+//! toolchain; pass `--features bench-c` for the full matrix. jemalloc is
+//! behind `bench-jemalloc` (needs make+autoconf): CI-only, enable it where
 //! those tools exist (`cargo bench --features bench-jemalloc`).
 //!
 //! Run with: cargo bench
