@@ -38,6 +38,16 @@ bench-c = ["dep:mimalloc", "dep:snmalloc-rs"]
 # Dev-only: jemalloc bench comparator (needs make+autoconf — CI box only).
 # NEVER enable for library consumers; default build stays zero-deps/no-C.
 bench-jemalloc = ["dep:tikv-jemallocator"]
+# Pure-Rust comparators (talc, dlmalloc) for the benchmark matrix, behind
+# `bench-compare`. Optional *regular* dependencies rather than dev-dependencies
+# for the same reason as `bench-c`: Cargo does not allow dev-dependencies to be
+# optional, and it builds every dev-dependency whenever it builds any test,
+# bench or example — so unconditional dev-dependencies meant `cargo test
+# --all-targets` failed on illumos and the BSDs, where `dlmalloc 0.2`'s `global`
+# feature has no implementation, even though nothing there references it.
+# Feature-gating keeps them out of the graph entirely on those targets.
+# See the note on `[[bench]] required-features` below.
+bench-compare = ["dep:talc", "dep:spinning-top", "dep:dlmalloc"]
 # Process-global app benchmark (examples/app_workload.rs). Exactly one
 # backend feature selects the installed `#[global_allocator]`, so the
 # measured process has no runtime dispatch on the allocation path — one
@@ -49,7 +59,7 @@ app-system = []
 # these is enough to build it; `bench-c` is only needed for the matrix harness.
 app-mimalloc = ["dep:mimalloc"]
 app-snmalloc = ["dep:snmalloc-rs"]
-app-talc = []
+app-talc = ["dep:talc", "dep:spinning-top"]
 app-p99 = []
 
 [dependencies]
@@ -68,16 +78,24 @@ app-p99 = []
 mimalloc = { version = "0.1", optional = true }
 snmalloc-rs = { version = "0.7", features = ["build_cc"], optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
-
-[dev-dependencies]
-# Always-built comparators: pure Rust, no toolchain, target-independent.
-talc = "5"
-spinning_top = "0.3"
-dlmalloc = { version = "0.2", features = ["global"] }
+# Pure-Rust comparators. Optional for the reason spelled out at `bench-compare`:
+# as dev-dependencies they were built by every `cargo test --all-targets`,
+# including on targets where `dlmalloc`'s `global` feature does not exist.
+talc = { version = "5", optional = true }
+spinning-top = { version = "0.3", optional = true }
+dlmalloc = { version = "0.2", features = ["global"], optional = true }
 
 [[bench]]
 name = "alloc"
 harness = false
+# `cargo bench` alone therefore runs *nothing*. That is a loud failure, not a
+# silent one, because Cargo skips a target whose required-features are unmet
+# rather than erroring — so the README and the bench docs both say
+# `cargo bench --features bench-compare`. The alternative (no
+# required-features) leaves the comparator crates referenced unconditionally and
+# breaks `--all-targets` lint on illumos and the BSDs, which is the wart this
+# is fixing.
+required-features = ["bench-compare"]
 
 
 [lints.rust]
