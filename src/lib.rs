@@ -166,17 +166,25 @@ mod tls {
             with(|c| unsafe { c.flush_all() }, || {});
         }
 
-        /// Hand the calling thread's cache to the retirement queue. Paired
+/// Hand the calling thread's cache to the retirement queue. Paired
         /// with the `cfg` on the re-export below: the queue and
         /// [`crate::cache::retire`] only exist where there is an OS thread
         /// lifecycle to hook.
-        #[cfg(all(feature = "std", any(unix, windows)))]
+        #[cfg(all(feature = "std", any(unix, windows))]
         pub(crate) unsafe fn retire() {
-            let _ = CACHE.try_with(|c| {
-                let cache = core::ptr::read(c.get());
+            let _ = TLS.try_with(|tls| {
+                // The exit hook fires at thread exit, where no allocator code
+                // should be on the stack. If `in_use` says otherwise, moving
+                // the cache out from under a live `&mut` would be UB — so
+                // skip and let the normal teardown path have it.
+                if tls.in_use.get() {
+                    return;
+                }
+                let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
             });
         }
+    }
     }
 
     #[cfg(not(feature = "std"))]
