@@ -507,24 +507,42 @@ impl GlobalHeap {
                 debug_assert_eq!((*g.page).class as usize, class);
                 g.head = ptr::null_mut();
                 g.tail = ptr::null_mut();
+                let count = g.n & !PAGE_RELEASE_RETIRED;
+                let retire = count == (*g.page).used;
+                g.n = count | if retire { PAGE_RELEASE_RETIRED } else { 0 };
+                partial |= !retire;
+            }
             if partial {
+                // Walk the chain once, routing each block to its page's slot.
+                //
+                // This used to be `while chunks[slot].page != page { slot += 1 }`,
+                // an unbounded linear scan per block: O(len x groups) under the
+                // class lock, up to ~4M comparisons for a full 2048-block flush
+                // that touched many pages — and an out-of-bounds read if the
+                // caller's grouping ever disagreed with the chain.
+                //
+                // Pages are 64 KiB-aligned, so the block's own address already
+                // carries the index. `chunks` is small enough that a linear
+                // pass over it is fine; what matters is not repeating that pass
+                // per block.
+                for (slot, g) in chunks.iter().enumerate() {
+                    slots[PageHeader::of(g.head_or_first_block()).0] = slot as u16;
+                }
                 let mut cursor = chain;
                 for _ in 0..len {
                     let next = *cursor.cast::<*mut u8>();
-                    let page = PageHeader::of(cursor);
-                    let mut slot = 0;
-                    while chunks[slot].page != page {
-                        slot += 1;
-                    }
-                    let g = &mut chunks[slot];
-                    if g.n & PAGE_RELEASE_RETIRED == 0 {
-                        if g.head.is_null() {
-                            g.head = cursor;
-                        } else {
-                            *g.tail.cast::<*mut u8>() = cursor;
+                    let slot = *slots.get(PageHeader::of(cursor).0).unwrap_or(&u16::MAX);
+                    if slot != u16::MAX {
+                        let g = &mut chunks[slot as usize];
+                        if g.n & PAGE_RELEASE_RETIRED == 0 {
+                            if g.head.is_null() {
+                                g.head = cursor;
+                            } else {
+                                *g.tail.cast::<*mut u8>() = cursor;
+                            }
+                            g.tail = cursor;
+                            *cursor.cast::<*mut u8>() = ptr::null_mut();
                         }
-                        g.tail = cursor;
-                        *cursor.cast::<*mut u8>() = ptr::null_mut();
                     }
                     cursor = next;
                 }
