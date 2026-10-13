@@ -27,11 +27,8 @@ jobs:
   # ---------------------------------------------------------------------------
 
   test:
-<<<<<<< HEAD
-=======
     name: test (${{ matrix.os }}, ${{ matrix.profile }})
     runs-on: ${{ matrix.os }}
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -40,29 +37,17 @@ jobs:
         profile: [debug, release]
     steps:
       - uses: actions/checkout@v4
-<<<<<<< HEAD
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --locked --verbose
-      - run: cargo test --locked --verbose
-      - run: cargo test --locked --release --verbose
-=======
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --verbose --locked
       - name: Test (${{ matrix.profile }})
         run: cargo test --verbose --locked ${{ matrix.profile == 'release' && '--release' || '' }}
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
 
   # The suite is what proves the allocator is correct; clippy and rustfmt
   # are cheap and run once rather than across the OS matrix.
   lint:
-<<<<<<< HEAD
-    timeout-minutes: 20
-=======
     name: lint
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -70,69 +55,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-<<<<<<< HEAD
-      - run: cargo fmt --all --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-
-  # Separate from lint because rustdoc under -D warnings also validates
-  # intra-doc links, and a broken link in a public crate is a release bug.
-  docs:
-    timeout-minutes: 15
-    name: docs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc --locked --no-deps
-        env:
-          RUSTDOCFLAGS: -Dwarnings
-
-  # telemetry and no_std are separate compile universes: a change can be
-  # green on default features and break either. The README lists both as
-  # gates, so CI has to run them.
-  features:
-    timeout-minutes: 20
-    name: telemetry + no_std
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - name: Telemetry build + tests
-        run: |
-          cargo build --locked --features telemetry
-          cargo test --locked --features telemetry
-      - name: no_std build (unix)
-        run: cargo build --locked --no-default-features
-      - name: no_std build (wasm32)
-        run: cargo build --locked --no-default-features --target wasm32-unknown-unknown
-
-  # The declared MSRV is a promise in Cargo.toml; this is what keeps it one.
-  msrv:
-    timeout-minutes: 20
-    name: msrv 1.79
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.79.0
-      - run: cargo build --locked --verbose
-      - run: cargo build --locked --no-default-features --verbose
-
-  package:
-    timeout-minutes: 15
-    name: package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo package --locked
-=======
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
 
   # Separate from lint because rustdoc under -D warnings also validates
   # intra-doc links, and a broken link in a public crate is a release bug.
@@ -177,30 +102,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-<<<<<<< HEAD
-          toolchain: stable
-      - run: cargo package
-
-  wasm:
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-=======
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-<<<<<<< HEAD
-      - run: cargo build --locked --target wasm32-unknown-unknown --example wasm_smoke
-      - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
-      - run: cargo build --release --target wasm32-unknown-unknown --example wasm_smoke
-      - run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/examples/wasm_smoke.wasm
-=======
       - name: Build debug + release
         run: |
           cargo build --locked --target wasm32-unknown-unknown --example wasm_smoke
@@ -209,16 +115,11 @@ jobs:
         run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/debug/examples/wasm_smoke.wasm
       - name: Smoke release
         run: node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/examples/wasm_smoke.wasm
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
 
   # 32-bit ALU: the 512 MiB arena constant and the frequent (safe) legacy
   # fallback change under a narrower pointer width. Needs multilib to link.
   bit32:
-<<<<<<< HEAD
-    timeout-minutes: 25
-=======
     name: i686
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -235,22 +136,6 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-multilib libc6-dev-i386
-<<<<<<< HEAD
-      # 32-bit ALU: 512 MiB arena const + frequent (safe) legacy fallback.
-      # Runs natively on x86_64 runners; arena unit tests use small isolated
-      # instances on any pointer width, so exhaustion/fallback shapes are
-      # covered here too.
-      - run: cargo build --locked --target i686-unknown-linux-gnu --verbose
-      - run: cargo test --locked --target i686-unknown-linux-gnu --verbose
-
-  bench:
-    timeout-minutes: 90
-    # Scheduled only. The full matrix is ~22 workloads x 6 allocators x
-    # 5 reps x 3s plus warmup per OS, which is tens of minutes on a
-    # shared runner that cannot host a meaningful measurement anyway
-    # (see the README's measurement methodology section). Results are
-    # uploaded as artifacts for re-scoring, not asserted as gates.
-=======
       - run: cargo build --locked --target i686-unknown-linux-gnu --verbose
       - run: cargo test --locked --target i686-unknown-linux-gnu --verbose
 
@@ -287,7 +172,6 @@ jobs:
     # Excluded from the push path: the full matrix is tens of minutes per OS
     # and a shared runner cannot host a measurement worth reading anyway.
     # Results are collected as artifacts for re-scoring, not as a gate.
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -301,13 +185,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-<<<<<<< HEAD
-      # pipefail is load-bearing: without it a failed `cargo bench` exits
-      # zero because `tee` is last in the pipeline, and a broken build gets
-      # uploaded as though it were a measurement.
-=======
       - uses: Swatinem/rust-cache@v2
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
       - name: Run matrix
         # pipefail is load-bearing: without it a failed `cargo bench` exits
         # zero because `tee` is last in the pipeline, and a broken build
@@ -322,13 +200,11 @@ jobs:
           path: bench-*.txt
           if-no-files-found: warn
 
-<<<<<<< HEAD
-  profile:
-    timeout-minutes: 45
-=======
+  # jemalloc comparator — CI box has make+autoconf (dev box does not).
+  # Runs the scoreboard with the extra column; uploaded for re-scoring
+  # against the other OS bench artifacts.
   jemalloc-bench:
     name: bench (jemalloc)
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -338,8 +214,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-<<<<<<< HEAD
-=======
       - uses: Swatinem/rust-cache@v2
       - name: Install make + autoconf (jemalloc build)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq make autoconf
@@ -365,13 +239,15 @@ jobs:
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - run: cargo miri setup
+      - run: cargo +nightly miri setup
       # --lib only. Miri cannot execute the allocator's raw map/unmap
       # syscalls, so tests needing real mmap are cfg_attr(miri, ignore)d;
       # the span/big carve paths use std::alloc buffers and run here.
       # No MIRIFLAGS: strict provenance is the default now, and passing the
-      # old -Zmiri-strict-provenance flag makes current nightly reject it.
-      - run: cargo miri test --lib
+      # old -Zmiri-strict-provenance flag makes current nightly reject it
+      # as an unknown option. The pointer-int casts in the header probes
+      # are covered by the default strict mode.
+      - run: cargo +nightly miri test --lib
 
   fuzz:
     name: fuzz
@@ -394,9 +270,9 @@ jobs:
           cargo fuzz run zero_init_seq -- -max_total_time=60
           cargo fuzz run tier_boundary_seq -- -max_total_time=60
 
-  # Formal proofs for the span/big-carving arithmetic and medium-page
-  # packing. Proofs live in src/page.rs `kani_proofs` under
-  # #[cfg(all(kani, unix, feature = "std"))].
+  # Kani proofs for the span/big-carving arithmetic and medium-page packing.
+  # Proofs live in src/page.rs `kani_proofs` under
+  # `#[cfg(all(kani, unix, feature = "std"))]`.
   kani:
     name: kani
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -424,10 +300,10 @@ jobs:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-llvm-cov
-      # Deliberately NOT --all-features. It would enable every app-* backend
-      # at once, which trips the compile_error! in examples/app_workload.rs,
-      # and would pull in bench-jemalloc without make/autoconf present.
-      # The measured surface is the library and its tests.
+      # Deliberately NOT --all-features: it enables every app-* backend at
+      # once, which trips the compile_error! in examples/app_workload.rs,
+      # and pulls in bench-jemalloc without make/autoconf installed. The
+      # measured surface is the library and its tests.
       - name: Generate LCOV report
         run: cargo llvm-cov --locked --lib --tests --lcov --output-path lcov.info
       - name: Summary
@@ -455,7 +331,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
       - name: Install perf (best effort)
         continue-on-error: true
         run: sudo apt-get update -qq && sudo apt-get install -y -qq linux-tools-common linux-tools-generic
@@ -465,15 +340,10 @@ jobs:
         continue-on-error: true
         run: |
           for wl in "mixed-all 8T" "spawn-churn"; do
-<<<<<<< HEAD
-            safe=$(echo "$wl" | tr ' ' '-');
-            BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses -o "perf-${safe}.txt" cargo bench --locked --bench alloc -- --nocapture || true;
-=======
             safe=$(echo "$wl" | tr ' ' '-')
             BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat \
               -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses \
               -o "perf-${safe}.txt" cargo bench --locked --bench alloc -- --nocapture || true
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
           done
           ls perf-*.txt 2>/dev/null || echo "no perf output captured" > perf-unavailable.txt
       - name: Upload profiles
@@ -482,118 +352,4 @@ jobs:
         with:
           name: perf-profiles
           path: perf-*.txt
-<<<<<<< HEAD
-
-  fuzz:
-    timeout-minutes: 45
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: fuzz
-      # actions-rs/install is archived and node12-based; taiki-e is the
-      # maintained replacement and installs a prebuilt cargo-fuzz.
-      - uses: taiki-e/install-action@cargo-fuzz
-      - run: cargo fuzz build
-      - name: Smoke-run fuzz targets
-        run: |
-          cargo fuzz run alloc_seq -- -max_total_time=60
-          cargo fuzz run zero_init_seq -- -max_total_time=60
-          cargo fuzz run tier_boundary_seq -- -max_total_time=60
-
-  miri:
-    timeout-minutes: 45
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: miri
-      # Miri cannot execute real syscalls for map/unmap; unit tests that
-      # need raw mmap are cfg_attr(miri, ignore). Span/big carve and
-      # large_header_of probes use std::alloc buffers and run here.
-      #
-      # No MIRIFLAGS: strict provenance is the default now, and passing the
-      # old -Zmiri-strict-provenance flag makes current nightly reject it
-      # as an unknown option. The pointer-int casts in the header probes
-      # are covered by the default strict mode.
-      - run: cargo +nightly miri setup
-      - run: cargo +nightly miri test --lib
-
-  # The Windows Fls path is exercised by the 3-OS `test` matrix
-  # (windows-latest runs tests/thread_exit.rs + stress.rs) and the 3-OS
-  # `bench` matrix — no separate job needed; kept as a comment so the
-  # coverage is visible when reviewing CI.
-
-  coverage:
-    timeout-minutes: 40
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-llvm-cov
-      # Deliberately NOT --all-features: it enables every app-* backend at
-      # once, which trips the compile_error! in examples/app_workload.rs,
-      # and pulls in bench-jemalloc without make/autoconf installed. The
-      # measured surface is the library and its tests.
-      - name: Generate LCOV report
-        run: cargo llvm-cov --locked --lib --tests --lcov --output-path lcov.info
-      - name: Summary
-        run: cargo llvm-cov report --summary-only
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-lcov
-          path: lcov.info
-
-  # jemalloc comparator — CI box has make+autoconf (dev box does not).
-  # Runs the scoreboard with the extra column; uploaded for re-scoring
-  # against the other OS bench artifacts.
-  jemalloc-bench:
-    timeout-minutes: 90
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install make + autoconf (jemalloc build)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq make autoconf
-      - name: Bench with jemalloc column
-        run: |
-          set -o pipefail
-          cargo bench --locked --features bench-jemalloc -- --nocapture 2>&1 | tee bench-jemalloc.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bench-jemalloc
-          path: bench-jemalloc.txt
-
-  # Kani proofs for the span/big-carving arithmetic and medium-page packing.
-  # Proofs live in src/page.rs `kani_proofs` under
-  # `#[cfg(all(kani, unix, feature = "std"))]`.
-  kani:
-    timeout-minutes: 60
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Install Kani
-        run: |
-          cargo install --locked kani-verifier
-          cargo kani setup
-      - name: Run carving proofs
-        run: cargo kani
-=======
           if-no-files-found: ignore
->>>>>>> e8bfe7e (ci: pin toolchains, cache builds, and bound every job)
