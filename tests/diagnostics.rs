@@ -1,4 +1,4 @@
-//! Sensitivity coverage for the diagnostic counters.
+﻿//! Sensitivity coverage for the diagnostic counters.
 //!
 //! The batched volume counters (refills, flushes, trims, owner probes,
 //! realloc work) are telemetry-gated, so their tests are too; a default
@@ -109,9 +109,9 @@ fn realloc_growth_counts_promotion_and_copies() {
         //     frontier do not exist, so each step is an ordinary
         //     allocate-copy-free through the large path.
         #[cfg(all(unix, feature = "std"))]
-        let expected_relocations = 1usize;
+        let expected_relocations: u64 = 1;
         #[cfg(not(all(unix, feature = "std")))]
-        let expected_relocations = 4usize;
+        let expected_relocations: u64 = 4;
 
         assert_eq!(
             delta(
