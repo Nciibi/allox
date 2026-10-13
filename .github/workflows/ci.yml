@@ -66,6 +66,38 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
 
+  # `lint` above only ever sees the host target, so it cannot catch a
+  # dependency or `#[cfg]` that breaks a target nobody builds on the runner.
+  # That is exactly how `cargo clippy --all-targets --target
+  # x86_64-unknown-illumos` came to fail inside `dlmalloc` — a dev-dependency
+  # nothing on that target references. illumos and the BSDs are in this matrix
+  # precisely because they are the unsupported ones: they are where
+  # "works on my platform" quietly stops being true.
+  cross-lint:
+    name: cross-lint (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-illumos
+          - x86_64-unknown-freebsd
+          - aarch64-apple-darwin
+          - x86_64-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+          - wasm32-unknown-unknown
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # --all-targets on purpose: it is the configuration that builds benches,
+      # examples and dev-dependencies, and therefore the one that catches a
+      # comparator crate or cfg gate that only holds on the host.
+      - run: cargo clippy --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+
   # Separate from lint because rustdoc under -D warnings also validates
   # intra-doc links, and a broken link in a public crate is a release bug.
   docs:
