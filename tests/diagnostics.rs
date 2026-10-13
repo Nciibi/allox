@@ -1,4 +1,4 @@
-﻿//! Sensitivity coverage for the diagnostic counters.
+//! Sensitivity coverage for the diagnostic counters.
 //!
 //! The batched volume counters (refills, flushes, trims, owner probes,
 //! realloc work) are telemetry-gated, so their tests are too; a default
@@ -127,7 +127,11 @@ fn realloc_growth_counts_promotion_and_copies() {
         );
         assert_eq!(
             delta(chain_start.realloc_promotions, chain_end.realloc_promotions),
-            if cfg!(all(unix, feature = "std")) { 1 } else { 0 },
+            if cfg!(all(unix, feature = "std")) {
+                1
+            } else {
+                0
+            },
             "promotion only exists on arena targets"
         );
         assert!(
