@@ -59,22 +59,16 @@ tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
 # Benchmark comparators only — never dependencies of the library itself.
-# Pure-Rust ones are target-independent.
+# Pure-Rust ones are target-independent and always available.
 talc = "5"
 spinning_top = "0.3"
 dlmalloc = { version = "0.2", features = ["global"] }
-
-# P0 honest scoreboard: C comparators, dev-only so the lib stays zero-deps /
-# no-C. Gated off wasm32 on purpose. Cargo builds every dev-dependency when
-# it builds any example, test or bench — so `cargo build --target
-# wasm32-unknown-unknown --example wasm_smoke` used to drag snmalloc-sys and
-# libmimalloc-sys into a wasm build, and their cc-rs build scripts invoke
-# clang++ with --target=wasm32-unknown-unknown, which fails (no wasm sysroot,
-# and C++20 <atomic> headers do not target bare wasm). wasm_smoke.rs uses
-# only allox, so excluding these costs it nothing.
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-mimalloc = "0.1"
-snmalloc-rs = { version = "0.7", features = ["build_cc"] }
+# C comparators: optional so the default test suite needs no C toolchain (see
+# the `bench-c` feature note above). Their cc-rs build scripts invoke a C++
+# compiler, which also broke the wasm32 example build before the target gate
+# existed and would break `cargo test` for anyone without one.
+mimalloc = { version = "0.1", optional = true }
+snmalloc-rs = { version = "0.7", features = ["build_cc"], optional = true }
 
 [[bench]]
 name = "alloc"
