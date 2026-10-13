@@ -277,13 +277,20 @@ unsafe fn park_empty_page(list: &mut ListHead, page: *mut PageHeader) -> PageFat
         list.cold[idx] = page;
         list.cold_len += 1;
         list.cold_bytes += PAGE_SIZE;
-        // A successful discard is a *proof* that the page reads as zero
-        // again, so record it and let `calloc` skip the memset on reuse.
-        // Set after the call because the discard zeroes the header too.
-        if sys::discard(page.cast::<u8>(), PAGE_SIZE) {
+        // A successful discard is a *proof* that the page reads as zero again, so
+        // record it and let `calloc` skip the memset on reuse. Where the
+        // backend only drops physical memory without that guarantee (Windows
+        // `MEM_DECOMMIT`), the page is still marked DECOMMITTED so the pop
+        // path knows to recommit it, but not DISCARDED, so `calloc` still
+        // memsets. Set after the call because the discard zeroes the header
+        // too.
+        let discarded = sys::discard(page.cast::<u8>(), PAGE_SIZE);
+        (*page).flags &= !(FLAG_DISCARDED | FLAG_DECOMMITTED);
+        if discarded.zeroed {
             (*page).flags |= FLAG_DISCARDED;
-        } else {
-            (*page).flags &= !FLAG_DISCARDED;
+        }
+        if discarded.physical {
+            (*page).flags |= FLAG_DECOMMITTED;
         }
         PageFate::Cold
     } else {
