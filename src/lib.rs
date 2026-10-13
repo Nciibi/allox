@@ -1644,7 +1644,7 @@ unsafe fn dealloc_tiered(p: *mut u8, size: usize, align: usize) {
             return;
         }
         #[cfg(all(unix, feature = "std"))]
-        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
+        if size > MAX_BIG_BLOCK {
             #[cfg(debug_assertions)]
             if !large_region_known(p) {
                 corrupt_pointer();
