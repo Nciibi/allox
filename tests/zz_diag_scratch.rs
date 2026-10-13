@@ -15,14 +15,15 @@ fn diag_scratch() {
         .position(|n| *n == "exit_flushes")
         .unwrap();
 
-    std::thread::spawn(|| {
+    let worker_id = std::thread::spawn(|| {
+        eprintln!("TIMING worker {:?} starting", std::thread::current().id());
         for _ in 0..2_000 {
             let p = unsafe { allox::calloc(512, 1) };
             unsafe { allox::free(p) };
         }
     })
-    .join()
-    .unwrap();
+    }).join().unwrap();
+    eprintln!("TIMING worker was {:?}", worker_id);
     eprintln!("TIMING join returned at {:?} ms", t0.elapsed().as_millis());
 
     for i in 0..5_000 {

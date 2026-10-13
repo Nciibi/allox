@@ -180,7 +180,7 @@ mod tls {
                     eprintln!("ALLOXDIAG retire: in_use=true, SKIPPED");
                     return;
                 }
-                eprintln!("ALLOXDIAG retire: reached, calling cache::retire");
+                eprintln!("ALLOXDIAG retire: reached on tid={:?}, calling cache::retire", std::thread::current().id());
                 let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
             });
