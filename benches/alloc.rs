@@ -1183,17 +1183,111 @@ fn current_rss_kib() -> u64 {
     status_kib("VmRSS:")
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Windows working-set probe.
+///
+/// `sys::windows` decommits its cold retention tiers, and the entire point of
+/// that is to make resident bytes fall. There was no way to observe it: the
+/// non-Linux path returned a literal `0`, so every Windows run reported
+/// `rss_kib: 0, peak_rss_kib: 0` and reclaiming memory was indistinguishable
+/// from doing nothing at all.
+///
+/// `GetProcessMemoryInfo` rather than `HeapWalk`: `HeapWalk` reports heap
+/// *reserved* and *committed* sizes, not resident bytes, so it would happily
+/// report a decommitted range as still present — measuring the allocation the
+/// allocator never makes, rather than the memory the OS actually holds.
+#[cfg(target_os = "windows")]
+mod windows_mem {
+    use core::ffi::c_void;
+
+    /// `PROCESS_MEMORY_COUNTERS`. Must match the Win32 layout exactly; every
+    /// field is 4 or 8 bytes and the struct is naturally aligned on 64-bit.
+    #[repr(C)]
+    pub struct ProcessMemoryCounters {
+        pub cb: u32,
+        pub page_fault_count: u32,
+        pub peak_working_set_size: usize,
+        pub working_set_size: usize,
+        pub quota_peak_paged_pool_usage: usize,
+        pub quota_paged_pool_usage: usize,
+        pub quota_peak_non_paged_pool_usage: usize,
+        pub quota_non_paged_pool_usage: usize,
+        pub pagefile_usage: usize,
+        pub peak_pagefile_usage: usize,
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
+        fn GetProcessMemoryInfo(
+            process: *mut c_void,
+            counters: *mut ProcessMemoryCounters,
+            cb: u32,
+        ) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+    }
+
+    /// `(working_set, peak_working_set)` in KiB, or `(0, 0)` on failure.
+    pub fn working_set_kib() -> (u64, u64) {
+        let size = core::mem::size_of::<ProcessMemoryCounters>();
+        let mut counters = ProcessMemoryCounters {
+            cb: size as u32,
+            page_fault_count: 0,
+            peak_working_set_size: 0,
+            working_set_size: 0,
+            quota_peak_paged_pool_usage: 0,
+            quota_paged_pool_usage: 0,
+            quota_peak_non_paged_pool_usage: 0,
+            quota_non_paged_pool_usage: 0,
+            pagefile_usage: 0,
+            peak_pagefile_usage: 0,
+        };
+        // SAFETY: the pseudo-handle from `GetCurrentProcess` is always valid,
+        // and `counters` is a live, correctly sized, zeroed out-param.
+        let ok = unsafe {
+            GetProcessMemoryInfo(
+                GetCurrentProcess(),
+                &mut counters,
+                size as u32,
+            )
+        };
+        if ok == 0 {
+            (0, 0)
+        } else {
+            (
+                (counters.working_set_size / 1024) as u64,
+                (counters.peak_working_set_size / 1024) as u64,
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn current_rss_kib() -> u64 {
+    windows_mem::working_set_kib().0
+}
+
+#[cfg(target_os = "windows")]
+fn peak_rss_kib() -> u64 {
+    windows_mem::working_set_kib().1
+}
+
+/// Non-Linux, non-Windows.
+///
+/// macOS is left at `0` deliberately rather than guessed at. The available
+/// probe is `task_info(TASK_BASIC_INFO)`, and a wrong `mach_task_basic_info`
+/// layout would not fail loudly — it would read adjacent stack memory and
+/// report a plausible-looking but fictional resident size, which is worse than
+/// an obvious zero. It is not verifiable from a non-Darwin host. Anyone with
+/// a Mac should fill it in and check the number against Activity Monitor.
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn current_rss_kib() -> u64 {
     0
 }
 
-#[cfg(target_os = "linux")]
-fn peak_rss_kib() -> u64 {
-    status_kib("VmHWM:")
-}
-
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 fn peak_rss_kib() -> u64 {
     0
 }
