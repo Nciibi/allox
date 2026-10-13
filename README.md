@@ -536,7 +536,14 @@ The counters are therefore **accurate to a known bound, not exact**. For
 "is this workload 2x the cost of that one" the throughput tables stand on
 their own; for anything that reads a single counter once, call
 `allox::flush_current_thread()` on the thread you are measuring, or accept
-the bound.
+the bound. The benchmark harness now does this for you: it drains the main
+thread and waits for late exit hooks before reading, which is the difference
+between a race and a bound.
+
+None of this touches throughput. `DIAG_FLUSH_OPS` is `#[cfg(feature =
+"telemetry")]`, so the default build — the one `cargo bench` uses — is
+byte-identical in behaviour. The batched counters are diagnostics, and
+diagnostics are not measured.
 
 Separately, `spawn-churn` remains bimodal in every build and must not gate a
 release, and the tables above rest on 3 × 2 s samples against a ~10% noise
