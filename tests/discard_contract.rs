@@ -92,17 +92,52 @@ fn calloc_stays_zero_after_heavy_purge_pressure() {
     recycle_then_calloc(block, 64);
 }
 
+/// The large-path handoff, exercised through `malloc`/`free` so the recycle
+/// actually reaches the sharded region cache (the tier that purges).
+#[test]
+fn recycled_large_regions_stay_readable_after_purge() {
+    for size in [70_000usize, 131_072, 262_144, 1_048_576, 4_194_304] {
+        let mut ptrs = Vec::new();
+        for _ in 0..64 {
+            let p = unsafe { allox::malloc(size) };
+            assert!(!p.is_null(), "OOM at {size}");
+            unsafe {
+                for i in (0..size).step_by(512) {
+                    *p.add(i) = POISON;
+                }
+            }
+            ptrs.push(p);
+        }
+        for p in ptrs {
+            unsafe {
+                // Every byte must still be readable: a recycled region is
+                // purged before it is handed back out, and on Windows that
+                // leaves it decommitted until recommitted.
+                for i in (0..size).step_by(512) {
+                    assert_eq!(*p.add(i), POISON, "recycled region lost its contents at byte {i}");
+                }
+                allox::free(p);
+            }
+        }
+    }
+}
+
 /// Over-aligned allocations always take the large path, so they are the ones
 /// most likely to be served from a recycled region.
 #[test]
 fn calloc_is_zero_for_over_aligned_recycling() {
+    // `calloc` takes no alignment argument — it is `align = 1` by design —
+    // so this goes through `GlobalAlloc::alloc_zeroed` to get an over-aligned
+    // zeroed block on the large path.
+    use std::alloc::{alloc_zeroed, Layout};
     for align in [32usize, 4096, 65_536] {
+        let layout = Layout::from_size_align(200_000, align).expect("valid layout");
         for _ in 0..40 {
-            let p = unsafe { allox::calloc(200_000, 1) };
+            let p = unsafe { alloc_zeroed(layout) };
             assert!(!p.is_null());
             assert_eq!(p as usize % align, 0, "alignment {align} not honoured");
             for i in 0..200_000 {
-                assert_eq!(unsafe { *p.add(i) }, 0, "calloc returned dirty byte {i}");
+                assert_eq!(unsafe { *p.add(i) }, 0, "alloc_zeroed returned dirty byte {i}");
             }
             unsafe {
                 for i in 0..200_000 {
