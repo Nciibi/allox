@@ -89,9 +89,14 @@ jobs:
           - wasm32-unknown-unknown
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+- uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          # Required: the action installs only the host's std without this, and
+          # clippy on a cross target then fails with "can't find crate for
+          # `std`" before it ever reaches our code. Harmless when the matrix
+          # entry happens to be the host triple.
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       # --all-targets on purpose: it is the configuration that builds benches,
       # examples and dev-dependencies, and therefore the one that catches a
