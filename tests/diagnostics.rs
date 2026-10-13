@@ -224,8 +224,22 @@ fn worker_exit_publishes_its_final_counter_window() {
     handle.join().unwrap();
     allox::set_thread_cache_budget(32 * 1024 * 1024); // restore
 
-    let after = volume();
-    let calls = delta(before.zeroed_calls, after.zeroed_calls);
+    // `join()` is not enough to order against the exit hook. On Windows the
+    // FLS callback runs during CRT teardown, which is after the thread has
+    // become joinable; on unix the pthread key destructor runs before the
+    // thread is joinable. Polling is the portable way to say "wait for the
+    // drain", and it is the same trick `thread_exit_counts_flushes` uses.
+    let mut calls = 0;
+    let mut after = volume();
+    for _ in 0..1_000 {
+        calls = delta(before.zeroed_calls, after.zeroed_calls);
+        if calls > 0 {
+            break;
+        }
+        after = volume();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
     assert!(
         calls > 0,
         "the exiting thread's final counter window was lost: zeroed_calls \
