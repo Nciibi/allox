@@ -45,8 +45,8 @@ bench-jemalloc = ["dep:tikv-jemallocator"]
 # sampled per-call latency (a second binary; see the script).
 app-allox = []
 app-system = []
-# The C backends pull their dev-dependency in, so selecting one of these is
-# enough to build it; `bench-c` is only needed for the matrix harness.
+# The C backends pull their optional dependency in, so selecting one of
+# these is enough to build it; `bench-c` is only needed for the matrix harness.
 app-mimalloc = ["dep:mimalloc"]
 app-snmalloc = ["dep:snmalloc-rs"]
 app-talc = []
