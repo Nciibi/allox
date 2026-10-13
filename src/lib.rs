@@ -2413,13 +2413,7 @@ mod tls_reentrancy_tests {
         // silently fall back to the global heap Ã¢â‚¬â€ correct but pathologically
         // slow. Prove the flag is cleared by running a real allocation after
         // the guarded call above and confirming the cache is usable again.
-        let first = with_cache(
-            |c| {
-                let p = unsafe { c.alloc(0) };
-                p
-            },
-            || core::ptr::null_mut(),
-        );
+        let first = with_cache(|c| unsafe { c.alloc(0) }, core::ptr::null_mut);
         assert!(!first.is_null(), "cache-backed alloc must succeed");
 
         let second = with_cache(|_c| (1usize,), || (0usize,));
