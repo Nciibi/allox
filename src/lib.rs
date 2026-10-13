@@ -945,12 +945,19 @@ unsafe fn alloc_large_ex(
             let mut c = LARGE_SHARDS[large_shard(mapped_pages as usize, salt)].lock();
             c.take_fit(mapped)
         };
-        if let Some((base, pages, zeroed)) = taken {
+        if let Some((base, pages, zeroed, decommitted)) = taken {
             let region_size = pages as usize * page::PAGE_SIZE;
+            // A cold entry may have had its physical pages dropped, which
+            // leaves it unreadable until recommitted. No-op on unix; on
+            // Windows this is the commit that makes the decommit usable.
+            // Must precede the header write below.
+            if decommitted {
+                sys::recommit(base, region_size);
+            }
             let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
             if ret + size <= base as usize + region_size {
                 let known_zeroed = if zeroed_requested && !zeroed {
-                    sys::discard(base, region_size)
+                    sys::discard(base, region_size).zeroed
                 } else {
                     zeroed
                 };
