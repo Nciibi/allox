@@ -175,17 +175,18 @@ mod tls {
         /// lifecycle to hook.
         #[cfg(all(feature = "std", any(unix, windows)))]
         pub(crate) unsafe fn retire() {
-            let _ = TLS.try_with(|tls| {
-                // The exit hook fires at thread exit, where no allocator code
-                // should be on the stack. If `in_use` says otherwise, moving
-                // the cache out from under a live `&mut` would be UB Ã¢â‚¬â€ so
-                // skip and let the normal teardown path have it.
+            let r = TLS.try_with(|tls| {
                 if tls.in_use.get() {
+                    eprintln!("ALLOXDIAG retire: in_use=true, SKIPPED");
                     return;
                 }
+                eprintln!("ALLOXDIAG retire: reached, calling cache::retire");
                 let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
             });
+            if r.is_err() {
+                eprintln!("ALLOXDIAG retire: TLS.try_with FAILED (tls gone)");
+            }
         }
     }
 
