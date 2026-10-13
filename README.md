@@ -496,15 +496,21 @@ inlining decisions.
 
 v0.1.0 released — working and tested (unit, integration as
 `#[global_allocator]`, multi-threaded randomized stress with full integrity
-verification, C ABI, zero-size and double-free validation). Green in
-debug, release, `telemetry` and `--no-default-features`, warning-free, and
+verification, C ABI, zero-size and double-free validation). 91 tests, plus a
+timing-ratio probe that runs only when asked. Green in debug, release,
+`telemetry` and `--no-default-features`, `clippy -D warnings` clean across
+nine target/feature configurations, rustdoc clean under `-D warnings`, and
 `cargo package` verifies clean. Fastest allocator measured on 21 of the 22
 direct-call workloads, and on the process-global application workload
 single-threaded; the 4-thread application row is the one place it does
-not lead (see above). Not yet audited; API may still change before 0.2.
-The Windows table predates the span/arena/exit-flush/fast-path work
-(re-verify via CI bench artifacts); macOS results pending CI runs on that
-platform.
+not lead (see above). The Windows table predates the span/arena/exit-flush/
+fast-path work (re-verify via CI bench artifacts); macOS results pending CI
+runs on that platform.
+
+**Not yet security-audited.** There are no guard pages, no encoded free lists
+and no randomized allocation order, i.e. none of mimalloc's secure-mode
+mitigations. Heap-metadata confidentiality and exploit-mitigation are
+explicitly out of scope for 0.1.
 
 **Known measurement defects, stated here rather than buried.** The
 benchmark harness's per-event counters appear to lose their final batched
@@ -516,6 +522,12 @@ is fixed, counter-derived conclusions — including the whole `zeroed-small
 the tables above rest on 3 × 2 s samples against a ~10% noise floor; see
 [Measurement methodology](#measurement-methodology) for the protocol that
 replaces them.
+
+Two more measurement caveats that follow from the fix history rather than the
+tuning: the throughput tables were produced **before** the large-region lookup
+became O(1) and before Windows started purging committed memory, so both are
+stale in allox's favour; and `tests/large_free_scaling.rs` is `#[ignore]`d,
+because a several-minute timing probe does not belong in the default suite.
 
 ## Development
 
