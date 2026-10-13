@@ -675,10 +675,11 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
 
     // Ring channels: thread i sends to (i+1)%n. Pointers cross threads as
     // usize (raw *mut u8 is !Send); cast back on receipt.
-    let mut senders: Vec<Sender<Option<(usize, usize)>>> = Vec::new();
-    let mut receivers: Vec<Option<Receiver<Option<(usize, usize)>>>> = Vec::new();
+    type Msg = Option<(usize, usize)>;
+    let mut senders: Vec<Sender<Msg>> = Vec::new();
+    let mut receivers: Vec<Option<Receiver<Msg>>> = Vec::new();
     for _ in 0..n {
-        let (tx, rx) = channel::<Option<(usize, usize)>>();
+        let (tx, rx) = channel::<Msg>();
         senders.push(tx);
         receivers.push(Some(rx));
     }
