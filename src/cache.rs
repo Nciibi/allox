@@ -800,7 +800,6 @@ impl ThreadCache {
             src.head = ptr::null_mut();
             src.len = 0;
             src.virgin = 0;
-            let dst = &mut self.bins[class];
             dst.head = head;
             dst.len = len;
             dst.virgin = virgin;
