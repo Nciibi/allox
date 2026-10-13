@@ -47,7 +47,7 @@ bench-jemalloc = ["dep:tikv-jemallocator"]
 # feature has no implementation, even though nothing there references it.
 # Feature-gating keeps them out of the graph entirely on those targets.
 # See the note on `[[bench]] required-features` below.
-bench-compare = ["dep:talc", "dep:spinning-top", "dep:dlmalloc"]
+bench-compare = ["dep:talc", "dep:spinning_top", "dep:dlmalloc"]
 # Process-global app benchmark (examples/app_workload.rs). Exactly one
 # backend feature selects the installed `#[global_allocator]`, so the
 # measured process has no runtime dispatch on the allocation path — one
@@ -59,7 +59,7 @@ app-system = []
 # these is enough to build it; `bench-c` is only needed for the matrix harness.
 app-mimalloc = ["dep:mimalloc"]
 app-snmalloc = ["dep:snmalloc-rs"]
-app-talc = ["dep:talc", "dep:spinning-top"]
+app-talc = ["dep:talc", "dep:spinning_top"]
 app-p99 = []
 
 [dependencies]
@@ -82,7 +82,7 @@ tikv-jemallocator = { version = "0.6", optional = true }
 # as dev-dependencies they were built by every `cargo test --all-targets`,
 # including on targets where `dlmalloc`'s `global` feature does not exist.
 talc = { version = "5", optional = true }
-spinning-top = { version = "0.3", optional = true }
+spinning_top = { version = "0.3", optional = true }
 dlmalloc = { version = "0.2", features = ["global"], optional = true }
 
 [[bench]]
