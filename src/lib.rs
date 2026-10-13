@@ -150,8 +150,10 @@ mod tls {
                 Outcome::Ran(out)
             });
             match result {
-                Outcome::Ran(r) => r,
-                Outcome::Reentrant | Outcome::Gone => fallback(),
+                Ok(Outcome::Ran(r)) => r,
+                // Re-entered, or TLS is gone (thread teardown): both are
+                // served from the global heap.
+                Ok(Outcome::Reentrant) | Ok(Outcome::Gone) | Err(_) => fallback(),
             }
         }
 
