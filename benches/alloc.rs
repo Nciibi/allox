@@ -1884,24 +1884,21 @@ fn main() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);
 
+    // Order preserved exactly: the harness rotates by repetition offset to cancel
+    // first-measured bias, so this sequence is methodology, not presentation.
+    // Two bindings rather than `cfg!`: `cfg!` is a runtime macro, so both arms
+    // are still name-resolved and the unsupported-target build would demand
+    // `TALC`/`DLMALLOC` exist there.
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
-    let mut allocators: Vec<Named> = if cfg!(any(
-        target_os = "linux",
-        target_os = "windows",
-        target_os = "macos"
-    )) {
-        // Order preserved exactly: the harness rotates by repetition offset to
-        // cancel first-measured bias, so this sequence is methodology, not
-        // presentation.
-        vec![
-            Named("allox", &ALLOX),
-            Named("talc ", &TALC),
-            Named("dlmalloc", &DLMALLOC),
-            Named("system", &HARNESS),
-        ]
-    } else {
-        vec![Named("allox", &ALLOX), Named("system", &HARNESS)]
-    };
+    let mut allocators: Vec<Named> = vec![
+        Named("allox", &ALLOX),
+        Named("talc ", &TALC),
+        Named("dlmalloc", &DLMALLOC),
+        Named("system", &HARNESS),
+    ];
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    let allocators: Vec<Named> = vec![Named("allox", &ALLOX), Named("system", &HARNESS)];
     #[cfg(feature = "bench-c")]
     allocators.extend([Named("mimalloc", &MIMALLOC), Named("snmalloc", &SNMALLOC)]);
     #[cfg(feature = "bench-jemalloc")]
