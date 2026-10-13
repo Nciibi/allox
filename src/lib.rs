@@ -920,7 +920,17 @@ unsafe fn alloc_large_ex(
         Some(t) => t,
         None => return (ptr::null_mut(), false, false),
     };
-    let mapped = align_up(total.max(LARGE_HEADER_SIZE), page::PAGE_SIZE);
+    // `checked_add` all the way: `align_up` itself adds `align - 1`, so a
+    // `total` within a page-multiple of `usize::MAX` would wrap that add
+    // (panic in debug, silent truncation in release). Falling back to null
+    // is the same answer the earlier checks give.
+    let mapped = match total
+        .max(LARGE_HEADER_SIZE)
+        .checked_add(page::PAGE_SIZE - 1)
+    {
+        Some(v) => v & !(page::PAGE_SIZE - 1),
+        None => return (ptr::null_mut(), false, false),
+    };
     let mapped_pages = (mapped / page::PAGE_SIZE) as u32;
 
     // Tier 1: per-thread stash, no locks. Also yields a salt (the cache
