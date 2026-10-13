@@ -1415,7 +1415,8 @@ unsafe fn zero_large_allocation(p: *mut u8, size: usize, known_zeroed: bool) {
 /// default build compiles this down to the bare memset.
 #[inline]
 unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
-    ptr::write_bytes(p, 0, size);
+    // DIAGNOSTIC ONLY - REVERT
+    let _ = (p, size);
     #[cfg(feature = "telemetry")]
     note_zeroed(size);
 }
