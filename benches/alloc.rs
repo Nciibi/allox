@@ -402,7 +402,11 @@ struct SampleSummary {
 struct AlloxDiagnostics {
     map_delta: u64,
     unmap_delta: u64,
-    mapped_delta: i64,
+    /// Live-mappings delta. The JSON key stays mapped_delta because
+    /// llox.bench.v1 is a published schema; the Rust name matches the
+    /// corrected Stats::live_mappings rather than re-spreading the old
+    /// "pages" misreading.
+    mapping_delta: i64,
     span_maps: u64,
     span_unmaps: u64,
     small_maps: u64,
@@ -1705,7 +1709,7 @@ fn append_json_diagnostics(output: &mut String, diagnostics: &AlloxDiagnostics) 
         "{{\"map_delta\":{},\"unmap_delta\":{},\"mapped_delta\":{},\"span_maps\":{},\"span_unmaps\":{},\"small_maps\":{},\"small_unmaps\":{},\"arena_reuses\":{},\"arena_commits\":{},\"big_maps\":{},\"big_unmaps\":{},\"abandoned_delta\":{},\"abandoned_total\":{},\"arena_high_water\":{},\"volume\":{{",
         diagnostics.map_delta,
         diagnostics.unmap_delta,
-        diagnostics.mapped_delta,
+        diagnostics.mapping_delta,
         diagnostics.span_maps,
         diagnostics.span_unmaps,
         diagnostics.small_maps,
@@ -2005,7 +2009,7 @@ fn main() {
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
                 unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
-                mapped_delta: s1.live_mappings as i64 - s0.live_mappings as i64,
+                mapping_delta: s1.live_mappings as i64 - s0.live_mappings as i64,
                 span_maps: d1sp.saturating_sub(d0sp),
                 span_unmaps: d1su.saturating_sub(d0su),
                 small_maps: d1sm.saturating_sub(d0sm),
@@ -2046,7 +2050,7 @@ fn main() {
                         diagnostics.map_delta,
                         diagnostics.span_maps,
                         diagnostics.small_maps,
-                        diagnostics.mapped_delta,
+                        diagnostics.mapping_delta,
                         diagnostics.arena_reuses,
                         diagnostics.big_maps
                     )
