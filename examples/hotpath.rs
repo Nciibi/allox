@@ -70,11 +70,19 @@ fn split<A: GlobalAlloc>(name: &str, a: &A, n: usize) {
 }
 
 fn main() {
-    let n = 2_000_000usize;
-    println!("alloc/free split, 128B, {} blocks", n);
-    for _ in 0..2 {
-        split("allox", &ALLOX, n);
-        split("mimalloc", &Mima, n);
-        split("system", &std::alloc::System, n);
+    let iters = 20_000_000u64;
+    println!("tight 128B alloc+dirty+free, single thread");
+    for round in 0..2 {
+        println!(" round {round} (default budget)");
+        run2("allox", &ALLOX, iters, true);
+        run2("allox", &ALLOX, iters, false);
+        run2("mimalloc", &Mima, iters, true);
+        run2("mimalloc", &Mima, iters, false);
+
+        allox::set_thread_cache_budget(256 * 1024 * 1024);
+        println!(" round {round} (budget 256 MiB - shed/trim effectively off)");
+        run2("allox", &ALLOX, iters, true);
+        run2("allox", &ALLOX, iters, false);
+        allox::set_thread_cache_budget(32 * 1024 * 1024);
     }
 }
