@@ -443,6 +443,10 @@ mod tests {
     fn medium_tables_cover_range_with_bound() {
         use crate::page::SPAN_MASTER_SIZE;
         assert_eq!(MEDIUM_CHUNK_RESERVE, SPAN_MASTER_SIZE);
+        // Deliberate tripwire on a compile-time constant: if the class table
+        // is ever regenerated with fewer classes, this must fail loudly rather
+        // than silently change the medium/big boundary.
+        #[allow(clippy::assertions_on_constants)]
         assert!(
             NUM_MEDIUM >= 8,
             "expected ~13 medium classes, got {}",
@@ -471,7 +475,7 @@ mod tests {
         }
         for &b in MEDIUM_CLASSES.iter() {
             let pages = span_pages_for(b);
-            assert!(pages >= 2 && pages <= 16, "block {} pages {}", b, pages);
+            assert!((2..=16).contains(&pages), "block {} pages {}", b, pages);
             let capacity = medium_capacity_for(b, pages);
             assert!(
                 capacity >= TARGET_BLOCKS_PER_SPAN,
