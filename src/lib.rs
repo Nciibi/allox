@@ -722,21 +722,26 @@ pub(crate) unsafe fn map_large_region(mapped: usize) -> (*mut u8, bool) {
 /// syscall), true `munmap` otherwise. Arena slices are never unmapped (that
 /// would punch holes third parties could claim); legacy mappings need the
 /// real unmap plus counter updates.
+///
+/// Returns whether the region was parked in the arena's hole store, so a
+/// caller that already holds `&mut ThreadCache` can record it without
+/// re-entering the thread cache (see `cache::flush_all`).
 #[inline]
-pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) {
+pub(crate) unsafe fn unmap_or_return(base: *mut u8, mapped: usize) -> bool {
     #[cfg(all(unix, feature = "std"))]
     {
         if crate::arena::contains(base, mapped) {
             crate::arena::release(base, (mapped / page::PAGE_SIZE) as usize);
             #[cfg(feature = "telemetry")]
             note_arena_event(true);
-            return;
+            return true;
         }
     }
     if sys::unmap(base, mapped) {
         heap::MAPPED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
         heap::UNMAP_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
+    false
 }
 
 #[cfg(feature = "telemetry")]
