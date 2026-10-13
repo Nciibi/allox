@@ -1885,9 +1885,23 @@ fn main() {
         .unwrap_or(0);
 
     #[cfg_attr(not(feature = "bench-jemalloc"), allow(unused_mut))]
-    let mut allocators: Vec<Named> = vec![Named("allox", &ALLOX), Named("system", &HARNESS)];
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    allocators.extend([Named("talc ", &TALC), Named("dlmalloc", &DLMALLOC)]);
+    let mut allocators: Vec<Named> = if cfg!(any(
+        target_os = "linux",
+        target_os = "windows",
+        target_os = "macos"
+    )) {
+        // Order preserved exactly: the harness rotates by repetition offset to
+        // cancel first-measured bias, so this sequence is methodology, not
+        // presentation.
+        vec![
+            Named("allox", &ALLOX),
+            Named("talc ", &TALC),
+            Named("dlmalloc", &DLMALLOC),
+            Named("system", &HARNESS),
+        ]
+    } else {
+        vec![Named("allox", &ALLOX), Named("system", &HARNESS)]
+    };
     #[cfg(feature = "bench-c")]
     allocators.extend([Named("mimalloc", &MIMALLOC), Named("snmalloc", &SNMALLOC)]);
     #[cfg(feature = "bench-jemalloc")]
