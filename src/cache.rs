@@ -2228,6 +2228,21 @@ impl ThreadCache {
 
 #[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) fn retire(mut cache: ThreadCache) {
+    // Publish before any early return.
+    //
+    // This used to sit after the `bytes == 0` check, which silently discarded
+    // the thread's entire final counter batch — and `bytes == 0` is not an
+    // exotic state, it is what a thread that allocated and freed everything
+    // looks like whenever a trim has already drained its bins back to the
+    // heap. Those threads do accumulate a pending window (every trim, refill
+    // and zeroed call records into it); they just have no *memory* left to
+    // hand a later thread. The README's "virginity telemetry reports ~50% of
+    // callocs against 9 refills" is what that looks like from the outside.
+    //
+    // Nothing else can publish it: `ThreadCache` deliberately has no `Drop`
+    // (it is moved with `ptr::read` into the retirement queue), and this hook
+    // is the only drain point at thread exit.
+    cache.publish();
     let bytes = cache.cached_bytes.saturating_add(cache.large_bytes);
     if bytes == 0 {
         return;
@@ -2236,7 +2251,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
         unsafe { cache.flush_all() };
         return;
     }
-    cache.publish();
     for slot in &RETIRED_SLOTS {
         if slot
             .state
