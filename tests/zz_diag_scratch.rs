@@ -16,7 +16,8 @@ fn diag_scratch() {
 
     let handles: Vec<_> = (0..2)
         .map(|_| {
-            std::thread::spawn(|| {
+std::thread::spawn(move || {
+                let zc_i = zc_i;
                 let inner_before = allox::__diagnostics::volume_raw();
                 for _ in 0..2_000 {
                     let p = unsafe { allox::calloc(512, 1) };
