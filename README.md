@@ -145,11 +145,11 @@ not enough: snmalloc reads ~149 M/s and mimalloc ~124 M/s. Single-threaded
 
 **Four explanations for the remainder were tested and all four are dead
 ends**, which is worth stating because the obvious one is not the answer:
-the per-operation `cached_bytes` accounting (ablated: âˆ’0.8% to +3.0%, i.e.
+the per-operation `cached_bytes` accounting (ablated: −0.8% to +3.0%, i.e.
 noise — the byte counter is an independent accumulator off the critical
 dependency chain so it never stalls the core); the `memset` call itself
 (replaced with an inline 16-byte store loop, the way mimalloc inlines its
-small clear: **âˆ’12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
+small clear: **−12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
 and beats a scalar loop even at 16–256 B); the relocation rate (parity,
 see the application-shape section); and the **virginity rate** itself.
 
@@ -158,7 +158,7 @@ does not move this row. `park_empty_page` marks a page `FLAG_DISCARDED` only
 after `sys::discard` actually succeeded — `madvise(MADV_DONTNEED)` on Unix,
 `VirtualAlloc(MEM_RESET)` on Windows, and `false` on WASM, so WASM stays
 safely dirty — and a page carrying that flag may serve `calloc` without a
-memset. Measured: **+0.9%** on `zeroed-small 8T` in one paired A/B, âˆ’5.3% in
+memset. Measured: **+0.9%** on `zeroed-small 8T` in one paired A/B, −5.3% in
 another, i.e. neutral. The reason is structural rather than a tuning failure:
 this workload keeps 2048 blocks live per thread, so pages rarely become
 *fully* free, and parking a page is what requires exactly that. The cold tier
@@ -202,7 +202,7 @@ across the old RSS range.
 
 `ecs 8T` is the growable-extent workload: a 64 KiB buffer realloc-doubled
 to 1 MiB, four at a time per thread, plus small-component churn. It used
-to be the project's one structural loss (â‰ˆ0.06× the system allocator,
+to be the project's one structural loss (≈0.06× the system allocator,
 whose glibc grows with zero-copy `mremap`). Big blocks are carved
 contiguously out of a shared span, so growing one in place was impossible
 and every step of the chain copied. The first cross-class growth now
@@ -232,8 +232,8 @@ the early "wins" *and* "regressions" recorded in this project were that
 artifact, and the honest ones were caught only by re-measuring.
 
 Worked example, one day, one pair of binaries: `mixed-all 8T` measured
-**âˆ’5.3%** on a 3-rep A/B and **flat** (median 38.01 → 38.11) on a 10-sample
-distribution. `zeroed-small 8T` measured **âˆ’4.5%** on 3 reps and **+5.0%**
+**−5.3%** on a 3-rep A/B and **flat** (median 38.01 → 38.11) on a 10-sample
+distribution. `zeroed-small 8T` measured **−4.5%** on 3 reps and **+5.0%**
 (median 94.67 → 99.36) on 10. Both 3-rep readings were noise; both reversed
 once there were enough samples to see it.
 
