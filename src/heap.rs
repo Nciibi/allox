@@ -515,34 +515,49 @@ impl GlobalHeap {
             if partial {
                 // Walk the chain once, routing each block to its page's slot.
                 //
-                // This used to be `while chunks[slot].page != page { slot += 1 }`,
-                // an unbounded linear scan per block: O(len x groups) under the
-                // class lock, up to ~4M comparisons for a full 2048-block flush
-                // that touched many pages — and an out-of-bounds read if the
-                // caller's grouping ever disagreed with the chain.
+                // This used to be `while chunks[slot].page != page { slot += 1 }`
+                // with no bound: an out-of-bounds read if the caller's grouping
+                // ever disagreed with the chain. Now it is bounded, and a block
+                // whose page is not in `chunks` is dropped rather than walked
+                // off the end. The last hit is memoised because blocks freed
+                // together are usually free-run by page, which turns most of
+                // this into a single compare.
                 //
-                // Pages are 64 KiB-aligned, so the block's own address already
-                // carries the index. `chunks` is small enough that a linear
-                // pass over it is fine; what matters is not repeating that pass
-                // per block.
-                for (slot, g) in chunks.iter().enumerate() {
-                    slots[PageHeader::of(g.head_or_first_block()).0] = slot as u16;
-                }
+                // Worst case is still O(len x groups). That is deliberate: this
+                // only runs on the thread-exit flush (`flush_bin`, the hot
+                // trim path, goes through `release_many`), and an O(1) page
+                // index would cost more stack and complexity than the scan
+                // saves on a cold path.
+                let mut last_page: *mut PageHeader = ptr::null_mut();
+                let mut last_slot = 0usize;
                 let mut cursor = chain;
                 for _ in 0..len {
                     let next = *cursor.cast::<*mut u8>();
-                    let slot = *slots.get(PageHeader::of(cursor).0).unwrap_or(&u16::MAX);
-                    if slot != u16::MAX {
-                        let g = &mut chunks[slot as usize];
-                        if g.n & PAGE_RELEASE_RETIRED == 0 {
-                            if g.head.is_null() {
-                                g.head = cursor;
-                            } else {
-                                *g.tail.cast::<*mut u8>() = cursor;
+                    let page = PageHeader::of(cursor);
+                    let mut slot = last_slot;
+                    if last_page != page {
+                        slot = match chunks.iter().position(|g| g.page == page) {
+                            Some(found) => found,
+                            None => {
+                                // Not ours: leave the link alone rather than
+                                // reading past the end of `chunks`.
+                                debug_assert!(false, "released block's page missing from chunks");
+                                cursor = next;
+                                continue;
                             }
-                            g.tail = cursor;
-                            *cursor.cast::<*mut u8>() = ptr::null_mut();
+                        };
+                        last_page = page;
+                        last_slot = slot;
+                    }
+                    let g = &mut chunks[slot];
+                    if g.n & PAGE_RELEASE_RETIRED == 0 {
+                        if g.head.is_null() {
+                            g.head = cursor;
+                        } else {
+                            *g.tail.cast::<*mut u8>() = cursor;
                         }
+                        g.tail = cursor;
+                        *cursor.cast::<*mut u8>() = ptr::null_mut();
                     }
                     cursor = next;
                 }
