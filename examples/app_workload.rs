@@ -341,7 +341,7 @@ fn build_document(rng: &mut Rng, depth: u32) -> Node {
                 let mut key = String::with_capacity(12);
                 key.push_str(WORDS[(rng.next() % WORDS.len() as u64) as usize]);
                 key.push('-');
-                key.push_str(WORDS[((i as u64 + rng.next() % 5) % WORDS.len() as u64) as usize]);
+                key.push_str(WORDS[((i + rng.next() % 5) % WORDS.len() as u64) as usize]);
                 map.push((key, build_document(rng, depth + 1)));
             }
             Node::Map(map)
