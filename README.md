@@ -369,6 +369,41 @@ mimalloc-inspired, adapted for Rust's world:
 - **Delayed page reclamation**: fully-freed pages are kept mapped (capped at
   4 per class, ~16 MiB worst case) and recycled on the next refill instead of
   paying unmap/map syscalls on churn.
+- **Purging that never over-promises.** Dropping physical memory and proving
+  the range reads as zero again are two different claims, and only the second
+  one lets a recycled block serve `calloc` without a memset. `sys::discard`
+  reports them separately. On unix the second claim is *probed once per
+  process* — map a page, dirty it, `madvise(MADV_DONTNEED)`, read it back —
+  because the man page guarantees zero-fill on Linux but says something much
+  weaker on the BSDs. That is the same shape as jemalloc's
+  `opt.trust_madvise`, which does not trust the flag anywhere it has not
+  checked. On Windows the claim is never made: no Win32 call provides a
+  decommitted-and-readable-as-zero primitive, so recycled blocks memset and
+  `calloc` stays correct by construction.
+- **Windows actually returns memory.** `VirtualFree(MEM_DECOMMIT)` does drop
+  committed pages, but leaves the range unreadable until it is recommitted —
+  so `recommit` is called on every path that hands a retained range back out.
+  Windows therefore purges its cold retention tiers instead of holding every
+  page it ever touched. (`VirtualFree(MEM_RESET)` is deliberately *not* used:
+  it succeeds and then zeroes nothing, which is the one outcome worse than
+  failure because it is indistinguishable from a real purge.)
+- **O(1) large-region lookup off the arena.** On targets without an arena
+  (Windows, 32-bit, `no_std`) a large free used to resolve its region by
+  walking a linked list behind one process-global mutex — and because
+  dispatch consulted it before the small-page magic check, that cost was paid
+  by *every* `free()`, small blocks included. Freeing 16 000 simultaneously
+  live large regions took 69 s, and a 16× larger live set grew the time 692×.
+  It is now a bucketed index under the same lock, so the traversal stays safe
+  while the critical section shrinks from "every live large region" to one
+  bucket. `tests/large_free_scaling.rs` pins the sub-quadratic behaviour.
+- **Reentrancy is handled, not assumed.** The one piece of code the allocator
+  calls that might allocate is `pthread_key_create`/`FlsAlloc`, reached from
+  the first refill of every thread — and whether they allocate is a libc
+  internal that has changed across glibc releases (pre-2.34 `pthread_key_create`
+  `calloc`'d its key table). A thread-local guard detects re-entry and serves
+  the nested allocation from the global heap, which both removes the aliasing
+  hazard of minting a second `&mut ThreadCache` and makes the hook-install
+  wait cross-thread rather than self-deadlocking.
 - **Retired-cache partial adoption**: a thread's OS-exit hook parks its cache in
   a fixed queue instead of walking it, and a later slow path reclaims from that
   queue. Adoption originally required the reclaiming cache to be *empty*, which
