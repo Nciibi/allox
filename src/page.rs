@@ -41,15 +41,25 @@ pub(crate) const FLAG_NEEDS_REINIT: u16 = 4;
 ///
 /// This is a strictly stronger statement than "we no longer know what is in
 /// here", and it is what lets a recycled cold page serve `calloc` without a
-/// memset. It is only ever set from a successful backend discard
-/// (`MADV_DONTNEED` on unix, `VirtualAlloc(MEM_RESET)` on windows — both
-/// guarantee zero-fill), and never on a backend where discard is a no-op
-/// (wasm returns false), so the invariant stays sound everywhere.
+/// memset. It is only ever set when the backend has *proven* that property:
+/// on unix that means the one-time `MADV_DONTNEED` probe passed (see
+/// `sys::unix::dontneed_zeroes` — the man page guarantees it on Linux but not
+/// on every `cfg(unix)`), and no Win32 call provides it at all, so Windows
+/// never sets this and `calloc` always memsets there.
 ///
 /// Written *after* the discard call, because the discard zeroes the page —
 /// header included — so a flag set beforehand would be erased by its own
 /// proof. Read before `PageHeader::init` rewrites the header.
 pub(crate) const FLAG_DISCARDED: u16 = 8;
+/// Flag: this page is parked cold and the backend dropped its physical pages
+/// without guaranteeing they read as zero.
+///
+/// Distinct from [`FLAG_DISCARDED`], which claims both. On Windows
+/// `MEM_DECOMMIT` gives this state: committed memory falls, but the range
+/// faults until it is recommitted, and its contents are undefined, so a
+/// `calloc` served from it must still memset. Cleared and acted on by the
+/// cold pop path, which calls `sys::recommit` before touching the page.
+pub(crate) const FLAG_DECOMMITTED: u16 = 16;
 
 // magic + prev + next + free_head + free_count/used/class/flags + owner = 44
 // bytes, padded by align(16) to 48 (HEADER_SIZE unchanged).
