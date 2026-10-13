@@ -1725,6 +1725,10 @@ unsafe impl GlobalAlloc for Allox {
         realloc_slow(p, layout, new_size)
     }
 
+    /// Batched into one call: `calloc` is a cold-ish path but `alloc_zeroed` is
+    /// still reached from every `vec![0; n]`, so it gets the same inlining
+    /// treatment as the other three `GlobalAlloc` methods.
+    #[inline]
     unsafe fn alloc_zeroed(&self, layout: core::alloc::Layout) -> *mut u8 {
         alloc_zeroed_impl(layout.size(), layout.align())
     }
