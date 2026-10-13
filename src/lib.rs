@@ -1494,7 +1494,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
 /// `p` inside `[base, base+mapped)`). Returns `(base, mapped_size)`.
 ///
 /// The range check turns a coincidental 8-byte magic match in adjacent user
-/// data (2Ã¢ÂÂ»Ã¢ÂÂ¶Ã¢ÂÂ´ on its own) into a ~2Ã¢ÂÂ»Ã‚Â¹Ã¢ÂÂ°Ã¢ÂÂ° non-event, which matters now that
+/// data (2⁻⁶⁴ on its own) into a ~2⁻¹⁰⁰ non-event, which matters now that
 /// this probe runs before the exact small-page check.
 #[inline]
 unsafe fn large_header_of(p: *mut u8) -> Option<(*mut u8, usize)> {
