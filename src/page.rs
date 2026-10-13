@@ -35,31 +35,20 @@ pub(crate) const FLAG_IN_PARTIAL: u16 = 1;
 /// block is returned to the page.
 pub(crate) const FLAG_VIRGIN: u16 = 2;
 pub(crate) const FLAG_NEEDS_REINIT: u16 = 4;
-/// Flag: this page is parked cold and the backend's `discard` **succeeded**,
-/// so the OS has dropped the physical pages and every byte of the page reads
-/// as zero again on next touch.
-///
-/// This is a strictly stronger statement than "we no longer know what is in
-/// here", and it is what lets a recycled cold page serve `calloc` without a
-/// memset. It is only ever set when the backend has *proven* that property:
-/// on unix that means the one-time `MADV_DONTNEED` probe passed (see
-/// `sys::unix::dontneed_zeroes` — the man page guarantees it on Linux but not
-/// on every `cfg(unix)`), and no Win32 call provides it at all, so Windows
-/// never sets this and `calloc` always memsets there.
-///
-/// Written *after* the discard call, because the discard zeroes the page —
-/// header included — so a flag set beforehand would be erased by its own
-/// proof. Read before `PageHeader::init` rewrites the header.
-pub(crate) const FLAG_DISCARDED: u16 = 8;
-/// Flag: this page is parked cold and the backend dropped its physical pages
-/// without guaranteeing they read as zero.
-///
-/// Distinct from [`FLAG_DISCARDED`], which claims both. On Windows
-/// `MEM_DECOMMIT` gives this state: committed memory falls, but the range
-/// faults until it is recommitted, and its contents are undefined, so a
-/// `calloc` served from it must still memset. Cleared and acted on by the
-/// cold pop path, which calls `sys::recommit` before touching the page.
-pub(crate) const FLAG_DECOMMITTED: u16 = 16;
+
+// Note: there is deliberately no "this page was purged" flag here.
+//
+// It used to be `FLAG_DISCARDED`, set after the purge and read on the next
+// pop to let `calloc` skip its memset. That is only sound while the purge
+// leaves the page *readable* — true for `MADV_DONTNEED` (which zeroes it),
+// false for `VirtualFree(MEM_DECOMMIT)`, which leaves the range unreadable
+// until it is recommitted. Storing the bit inside the page it describes
+// therefore broke the moment Windows started purging for real: the write
+// after the purge faulted, and so did the read before the recommit.
+//
+// The bookkeeping lives in the class list next to the cold pointer instead
+// (`ListHead::cold_zeroed` / `cold_decommitted`), which is readable by
+// construction. Keep it there.
 
 // magic + prev + next + free_head + free_count/used/class/flags + owner = 44
 // bytes, padded by align(16) to 48 (HEADER_SIZE unchanged).
