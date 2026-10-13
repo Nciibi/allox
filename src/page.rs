@@ -1,4 +1,4 @@
-//! Page structures: 64 KiB OS-mapped pages holding blocks of one size class,
+﻿//! Page structures: 64 KiB OS-mapped pages holding blocks of one size class,
 //! multi-page spans for medium blocks, plus the header layout used for large
 //! (directly mapped) regions.
 
@@ -20,8 +20,8 @@ pub(crate) const SPAN_MAGIC: u64 = 0xA110_CCA7_5EED_5A11;
 /// Marks a non-first 64 KiB unit of a medium span; +8 holds the master ptr.
 pub(crate) const SPAN_SUBMAGIC: u64 = 0xA110_CCA7_5EED_5A12;
 /// Marks the base of a big multi-page span (first 64 KiB unit). Data chunks
-/// (non-first units) carry NO headers — blocks run contiguously across
-/// chunk boundaries — so lookup goes through the arena side table, never
+/// (non-first units) carry NO headers â€” blocks run contiguously across
+/// chunk boundaries â€” so lookup goes through the arena side table, never
 /// through masking (see DESIGN_SPANS_BIG.md).
 #[cfg(all(unix, feature = "std"))]
 pub(crate) const BIGMAGIC: u64 = 0x0A11_0CCA_7B16_5A13;
@@ -40,7 +40,7 @@ pub(crate) const FLAG_NEEDS_REINIT: u16 = 4;
 //
 // It used to be `FLAG_DISCARDED`, set after the purge and read on the next
 // pop to let `calloc` skip its memset. That is only sound while the purge
-// leaves the page *readable* — true for `MADV_DONTNEED` (which zeroes it),
+// leaves the page *readable* â€” true for `MADV_DONTNEED` (which zeroes it),
 // false for `VirtualFree(MEM_DECOMMIT)`, which leaves the range unreadable
 // until it is recommitted. Storing the bit inside the page it describes
 // therefore broke the moment Windows started purging for real: the write
@@ -65,7 +65,7 @@ pub(crate) struct PageHeader {
     pub(crate) flags: u16,
     /// Heuristic owner thread-id (0 = unowned). Set when a thread refills
     /// from this page; used only to detect remote frees under cache pressure
-    /// (drift cap) — never for correctness. Concurrent stores are last-writer-wins.
+    /// (drift cap) â€” never for correctness. Concurrent stores are last-writer-wins.
     pub(crate) owner: AtomicU32,
 }
 
@@ -124,7 +124,7 @@ impl PageHeader {
 // medium class (16 KiB, 64 KiB]. The first page carries a SpanMaster; every
 // further page carries a 16-byte sub-header (SUBMAGIC + master pointer) at
 // its base. Blocks are sliced per page-chunk so none straddles a page base
-// or covers a header — which is why medium blocks cap at 65472 bytes.
+// or covers a header â€” which is why medium blocks cap at 65472 bytes.
 // Pointer -> master: mask to the 64 KiB page, match the magic, follow one
 // pointer for sub-pages. The small-page fast path (`PAGE_MAGIC` check first)
 // is unaffected.
@@ -250,7 +250,7 @@ impl SpanMaster {
 
     /// Ownership check: master magic intact, class in range, and `p` inside
     /// the span extent. Guards the free path against (astronomically rare)
-    /// magic collisions with user data — collisions fail safe to the large
+    /// magic collisions with user data â€” collisions fail safe to the large
     /// check / corrupt-pointer abort instead of heap corruption.
     #[inline]
     pub(crate) unsafe fn contains(&self, p: *mut u8) -> bool {
@@ -301,7 +301,7 @@ pub(crate) const BIG_MASTER_SIZE: usize = core::mem::size_of::<BigMaster>();
 impl BigMaster {
     /// Carve freshly mapped `npages` pages (base 64 KiB-aligned) into a full
     /// free list of big-`bclass` blocks, packed contiguously from just past
-    /// the master header — including across chunk boundaries, which hold no
+    /// the master header â€” including across chunk boundaries, which hold no
     /// headers. The span is born with no users.
     pub(crate) unsafe fn init(&mut self, bclass: usize, npages: u32) {
         debug_assert!(bclass < NUM_BIG);
@@ -390,7 +390,7 @@ mod tests {
     use super::*;
     use crate::classes::{
         big_span_pages_for, medium_capacity_legacy_for, span_pages_for, BIG_CLASSES,
-        MEDIUM_CLASSES, MIN_ALIGN, NUM_BIG, NUM_MEDIUM,
+        MEDIUM_CLASSES, MIN_ALIGN, NUM_BIG,
     };
 
     /// 64 KiB-aligned multi-page buffer without OS mmap (Miri-safe).
@@ -411,7 +411,7 @@ mod tests {
 
     /// Carve audit per big class on 64 KiB-aligned buffers: magic + virgin
     /// flags, exact capacity formula, every block 16-aligned inside the
-    /// extent, packed at exactly one-block stride (contiguous carve — P1/P2/
+    /// extent, packed at exactly one-block stride (contiguous carve â€” P1/P2/
     /// P3), and containment of sample pointers (P5). Uses std::alloc so the
     /// whole check runs under Miri (no raw mmap).
     #[test]
@@ -654,7 +654,7 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
-// Kani proofs — DESIGN_SPANS_BIG.md §6 carving properties P1–P6 (and the
+// Kani proofs â€” DESIGN_SPANS_BIG.md Â§6 carving properties P1â€“P6 (and the
 // equivalent medium-span packing invariants). Pure arithmetic: no mmap, so
 // these run under `cargo kani` in CI (nightly + kani-verifier).
 // P4 (virgin) and P5 (lookup totality) are state/pointer properties covered
