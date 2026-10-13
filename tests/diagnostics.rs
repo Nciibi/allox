@@ -95,19 +95,40 @@ fn realloc_growth_counts_promotion_and_copies() {
         a.dealloc(p, layout);
         publish_pending();
         let chain_end = volume();
-        // 65536 -> 131072 -> 262144 -> 524288 -> 1048576: four growths,
-        // of which only the first can relocate (the rest fit the reserve).
+        // 65536 -> 131072 -> 262144 -> 524288 -> 1048576: four growths.
+        //
+        // How many of them relocate is platform-dependent, and getting this
+        // wrong was a latent failure: the `features` CI job runs the telemetry
+        // suite on Linux only, so a Windows assertion like this passes review
+        // and fails nobody until someone runs it there.
+        //
+        //   - Arena targets (unix + std): exactly one. The first cross-class
+        //     growth is promoted into a large region with slack reserved, and
+        //     every later step grows in place against that reserve.
+        //   - Everywhere else: one per growth. Big spans and the arena
+        //     frontier do not exist, so each step is an ordinary
+        //     allocate-copy-free through the large path.
+        #[cfg(all(unix, feature = "std"))]
+        let expected_relocations = 1usize;
+        #[cfg(not(all(unix, feature = "std")))]
+        let expected_relocations = 4usize;
+
         assert_eq!(
             delta(
                 chain_start.realloc_relocations,
                 chain_end.realloc_relocations
             ),
-            1,
-            "a doubling chain should relocate exactly once (the promotion)"
+            expected_relocations,
+            "doubling chain relocated {} times, expected {expected_relocations}",
+            delta(
+                chain_start.realloc_relocations,
+                chain_end.realloc_relocations
+            )
         );
         assert_eq!(
             delta(chain_start.realloc_promotions, chain_end.realloc_promotions),
-            1
+            if cfg!(all(unix, feature = "std")) { 1 } else { 0 },
+            "promotion only exists on arena targets"
         );
         assert!(
             delta(chain_start.realloc_copy_bytes, chain_end.realloc_copy_bytes) > 0,
