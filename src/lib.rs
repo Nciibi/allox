@@ -957,7 +957,7 @@ unsafe fn alloc_large_ex(
             let ret = align_up(base as usize + LARGE_HEADER_SIZE, align);
             if ret + size <= base as usize + region_size {
                 let known_zeroed = if zeroed_requested && !zeroed {
-                    sys::discard(base, region_size).zeroed
+                    purge_for_handoff(base, region_size)
                 } else {
                     zeroed
                 };
