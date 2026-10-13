@@ -1,7 +1,7 @@
-//! TEMPORARY diagnostic — not a permanent test.
+﻿//! TEMPORARY diagnostic â€” not a permanent test.
 #![cfg(feature = "telemetry")]
 
-use allox::__diagnostics::{volume, VOLUME_FIELDS};
+use allox::__diagnostics::VOLUME_FIELDS;
 
 #[test]
 fn diag_scratch() {
