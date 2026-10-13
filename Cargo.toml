@@ -53,22 +53,28 @@ app-talc = []
 app-p99 = []
 
 [dependencies]
-# Optional, off by default: only `cargo bench --features bench-jemalloc`
-# (CI) pulls it in. See feature comment.
+# Benchmark comparators only — never dependencies of the library itself.
+# They are optional regular dependencies rather than dev-dependencies
+# because Cargo does not allow dev-dependencies to be optional, and making
+# them unconditional is what made `cargo test` require a C toolchain: Cargo
+# builds every dev-dependency whenever it builds any test, bench or example,
+# so their cc-rs build scripts ran (and failed, "link.exe not found") even
+# for `cargo test --lib`. Gating on a feature is the only lever that keeps
+# them out of the default graph. Same treatment tikv-jemallocator already
+# has; the default build is still zero-dependency.
+#
+# None of these are reachable unless the matching feature is enabled, and
+# none of them are documented for library consumers.
+bench-c = ["dep:mimalloc", "dep:snmalloc-rs"]
+mimalloc = { version = "0.1", optional = true }
+snmalloc-rs = { version = "0.7", features = ["build_cc"], optional = true }
 tikv-jemallocator = { version = "0.6", optional = true }
 
 [dev-dependencies]
-# Benchmark comparators only — never dependencies of the library itself.
-# Pure-Rust ones are target-independent and always available.
+# Always-built comparators: pure Rust, no toolchain, target-independent.
 talc = "5"
 spinning_top = "0.3"
 dlmalloc = { version = "0.2", features = ["global"] }
-# C comparators: optional so the default test suite needs no C toolchain (see
-# the `bench-c` feature note above). Their cc-rs build scripts invoke a C++
-# compiler, which also broke the wasm32 example build before the target gate
-# existed and would break `cargo test` for anyone without one.
-mimalloc = { version = "0.1", optional = true }
-snmalloc-rs = { version = "0.7", features = ["build_cc"], optional = true }
 
 [[bench]]
 name = "alloc"
