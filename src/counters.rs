@@ -313,6 +313,11 @@ pub(crate) fn bump_ns(counter: &AtomicU64, by: u64) {
 mod tests {
     use super::*;
 
+    /// Uses `bump`, which is `telemetry`-gated. Without this cfg the module
+    /// fails to compile under `cargo clippy --all-targets` on any target
+    /// where `telemetry` is off (wasm32, `no_std`), because the cfg removes
+    /// `bump` but not this test.
+    #[cfg(feature = "telemetry")]
     #[test]
     fn volume_counters_start_clean_and_bump() {
         // Fresh statics: this test binary has not run the allocator yet, but
