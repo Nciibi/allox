@@ -70,10 +70,7 @@ const PROT_NONE: i32 = 0x00;
 // Same allowlist and reasoning as `crate::sys::unix`: MAP_ANONYMOUS is not
 // portable, so only targets whose value has been checked are listed, and an
 // unlisted target is a compile error rather than a silently wrong constant.
-#[cfg(any(
-    target_os = "linux",
-    target_os = "android",
-))]
+#[cfg(any(target_os = "linux", target_os = "android",))]
 const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
 
 #[cfg(any(
@@ -89,10 +86,7 @@ const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
 ))]
 const MAP_ANONYMOUS: i32 = 0x1000; // MAP_ANON
 
-#[cfg(any(
-    target_os = "solaris",
-    target_os = "illumos",
-))]
+#[cfg(any(target_os = "solaris", target_os = "illumos",))]
 const MAP_ANONYMOUS: i32 = 0x100; // MAP_ANON
 
 #[cfg(not(any(

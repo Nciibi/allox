@@ -41,7 +41,10 @@ pub(crate) struct Discarded {
 /// `zeroed` is false, so recycled WASM memory is always memset for `calloc`.
 /// Sound on every backend, which is the point of asking.
 pub(crate) unsafe fn discard(_p: *mut u8, _size: usize) -> Discarded {
-    Discarded { physical: false, zeroed: false }
+    Discarded {
+        physical: false,
+        zeroed: false,
+    }
 }
 
 /// No-op: a discarded range was never decommitted, so there is nothing to

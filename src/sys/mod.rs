@@ -1,4 +1,4 @@
-﻿//! OS virtual memory primitives and a dependency-free mutex.
+//! OS virtual memory primitives and a dependency-free mutex.
 //!
 //! Everything here avoids heap allocation so the allocator can never
 //! recursively re-enter itself through `GlobalAlloc`.
@@ -13,20 +13,20 @@ pub(crate) mod windows;
 use core::cell::UnsafeCell;
 
 #[cfg(all(unix, not(feature = "std")))]
-pub(crate) use unix::{discard, recommit, map, map_any, unmap};
+pub(crate) use unix::{discard, map, map_any, recommit, unmap};
 #[cfg(all(unix, feature = "std"))]
-pub(crate) use unix::{discard, recommit, map, map_any, unmap, RawMutex};
+pub(crate) use unix::{discard, map, map_any, recommit, unmap, RawMutex};
 #[cfg(all(not(windows), not(unix), target_family = "wasm"))]
 pub(crate) use wasm::map as map_any;
 #[cfg(all(not(windows), not(unix), target_family = "wasm"))]
-pub(crate) use wasm::{discard, recommit, map, unmap};
+pub(crate) use wasm::{discard, map, recommit, unmap};
 #[cfg(all(not(windows), not(unix), not(target_family = "wasm")))]
 compile_error!("allox has no memory backend for this target");
 /// Windows VirtualAlloc is already single-syscall and 64 KiB-aligned.
 #[cfg(windows)]
 pub(crate) use windows::map as map_any;
 #[cfg(windows)]
-pub(crate) use windows::{discard, recommit, map, unmap, RawMutex};
+pub(crate) use windows::{discard, map, recommit, unmap, RawMutex};
 
 /// Fallback spin mutex: Windows has SRWLock, hosted unix has pthread above;
 /// everything else (no_std targets, wasm) spins. Only ever taken on batched

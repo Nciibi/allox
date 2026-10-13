@@ -1,4 +1,4 @@
-﻿//! `allox` â€” a pure-Rust, thread-cached general-purpose memory allocator.
+//! `allox` â€” a pure-Rust, thread-cached general-purpose memory allocator.
 //!
 //! Zero dependencies, zero build scripts, no C toolchain: compiles anywhere
 //! `rustc` does. Design overview in `DESIGN.md` at the repository root.
@@ -169,7 +169,7 @@ mod tls {
             with(|c| unsafe { c.flush_all() }, || {});
         }
 
-/// Hand the calling thread's cache to the retirement queue. Paired
+        /// Hand the calling thread's cache to the retirement queue. Paired
         /// with the `cfg` on the re-export below: the queue and
         /// [`crate::cache::retire`] only exist where there is an OS thread
         /// lifecycle to hook.
@@ -184,7 +184,7 @@ mod tls {
                     return;
                 }
                 let cache = core::ptr::read(tls.cache.get());
-crate::cache::retire(cache);
+                crate::cache::retire(cache);
             });
         }
     }
@@ -2413,10 +2413,13 @@ mod tls_reentrancy_tests {
         // silently fall back to the global heap â€” correct but pathologically
         // slow. Prove the flag is cleared by running a real allocation after
         // the guarded call above and confirming the cache is usable again.
-        let first = with_cache(|c| {
-            let p = unsafe { c.alloc(0) };
-            p
-        }, || core::ptr::null_mut());
+        let first = with_cache(
+            |c| {
+                let p = unsafe { c.alloc(0) };
+                p
+            },
+            || core::ptr::null_mut(),
+        );
         assert!(!first.is_null(), "cache-backed alloc must succeed");
 
         let second = with_cache(|_c| (1usize,), || (0usize,));
@@ -2434,10 +2437,7 @@ mod tls_reentrancy_tests {
             with_cache(
                 |_c| {
                     // Nested, deeper, and re-entering the nested call too.
-                    with_cache(
-                        |_c2| with_cache(|_c3| 7usize, || 0),
-                        || 0,
-                    );
+                    with_cache(|_c2| with_cache(|_c3| 7usize, || 0), || 0);
                     flag.store(true, core::sync::atomic::Ordering::SeqCst);
                 },
                 || {},
@@ -2569,15 +2569,27 @@ mod large_cache_tests {
         let cold_four = add_cold(&mut cache, 4);
         let cold_six = add_cold(&mut cache, 6);
 
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((hot_four, 4, false, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((hot_four, 4, false, false))
+        );
         let replacement = add_hot(&mut cache, 4);
         assert_eq!(
             cache.take_fit(4 * PAGE_SIZE),
             Some((replacement, 4, false, false))
         );
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_four, 4, true, false)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((cold_six, 6, true, false)));
-        assert_eq!(cache.take_fit(6 * PAGE_SIZE), Some((hot_eight, 8, false, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((cold_four, 4, true, false))
+        );
+        assert_eq!(
+            cache.take_fit(6 * PAGE_SIZE),
+            Some((cold_six, 6, true, false))
+        );
+        assert_eq!(
+            cache.take_fit(6 * PAGE_SIZE),
+            Some((hot_eight, 8, false, false))
+        );
         assert_eq!(cache.len, 0);
         assert_eq!(cache.bytes, 0);
         assert_eq!(cache.cold_len, 0);
@@ -2590,18 +2602,33 @@ mod large_cache_tests {
         let first = add_hot(&mut cache, 4);
         let second = add_hot(&mut cache, 4);
         let third = add_hot(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((first, 4, false, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((first, 4, false, false))
+        );
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((third, 4, false, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((third, 4, false, false))
+        );
         assert_eq!(cache.hot_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((second, 4, false, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((second, 4, false, false))
+        );
         assert_eq!(cache.hot_exact[4], EMPTY_LARGE_INDEX);
 
         let cold_first = add_cold(&mut cache, 4);
         let cold_second = add_cold(&mut cache, 4);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_first, 4, true, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((cold_first, 4, true, false))
+        );
         assert_eq!(cache.cold_exact[4], 0);
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((cold_second, 4, true, false)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((cold_second, 4, true, false))
+        );
         assert_eq!(cache.cold_exact[4], EMPTY_LARGE_INDEX);
     }
 
@@ -2620,7 +2647,10 @@ mod large_cache_tests {
         assert_eq!(cache.cold_decommitted[0], true);
 
         // And it still comes back out with the right entry.
-        assert_eq!(cache.take_fit(4 * PAGE_SIZE), Some((dropped, 4, true, true)));
+        assert_eq!(
+            cache.take_fit(4 * PAGE_SIZE),
+            Some((dropped, 4, true, true))
+        );
         assert_eq!(cache.cold_len, 0);
         assert_eq!(cache.cold_bytes, 0);
     }

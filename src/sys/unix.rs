@@ -15,10 +15,7 @@
 // So the list below is an allowlist of targets whose value has been checked,
 // and anything else is a compile error naming the fix. Adding a target means
 // checking its `<sys/mman.h>`, not guessing.
-#[cfg(any(
-    target_os = "linux",
-    target_os = "android",
-))]
+#[cfg(any(target_os = "linux", target_os = "android",))]
 const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
 
 #[cfg(any(
@@ -34,10 +31,7 @@ const MAP_ANONYMOUS: i32 = 0x20; // MAP_ANONYMOUS
 ))]
 const MAP_ANONYMOUS: i32 = 0x1000; // MAP_ANON
 
-#[cfg(any(
-    target_os = "solaris",
-    target_os = "illumos",
-))]
+#[cfg(any(target_os = "solaris", target_os = "illumos",))]
 const MAP_ANONYMOUS: i32 = 0x100; // MAP_ANON
 
 // Fail at compile time rather than silently mapping nothing at runtime.

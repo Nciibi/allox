@@ -92,8 +92,7 @@ pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> Discarded {
     // silently costing memory forever.
     crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
     crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
-    let physical = size != 0
-        && VirtualFree(p.cast::<core::ffi::c_void>(), size, MEM_DECOMMIT) != 0;
+    let physical = size != 0 && VirtualFree(p.cast::<core::ffi::c_void>(), size, MEM_DECOMMIT) != 0;
     Discarded {
         physical,
         zeroed: false,

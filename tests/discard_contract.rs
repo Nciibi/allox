@@ -30,7 +30,11 @@ fn recycle_then_calloc(n: usize, rounds: usize) {
         let p = unsafe { allox::calloc(n, 1) };
         assert!(!p.is_null());
         for i in 0..n {
-            assert_eq!(unsafe { *p.add(i) }, 0, "calloc returned dirty byte {i} of {n}");
+            assert_eq!(
+                unsafe { *p.add(i) },
+                0,
+                "calloc returned dirty byte {i} of {n}"
+            );
         }
         unsafe {
             for i in 0..n {
@@ -114,7 +118,11 @@ fn recycled_large_regions_stay_readable_after_purge() {
                 // purged before it is handed back out, and on Windows that
                 // leaves it decommitted until recommitted.
                 for i in (0..size).step_by(512) {
-                    assert_eq!(*p.add(i), POISON, "recycled region lost its contents at byte {i}");
+                    assert_eq!(
+                        *p.add(i),
+                        POISON,
+                        "recycled region lost its contents at byte {i}"
+                    );
                 }
                 allox::free(p);
             }
@@ -137,7 +145,11 @@ fn calloc_is_zero_for_over_aligned_recycling() {
             assert!(!p.is_null());
             assert_eq!(p as usize % align, 0, "alignment {align} not honoured");
             for i in 0..200_000 {
-                assert_eq!(unsafe { *p.add(i) }, 0, "alloc_zeroed returned dirty byte {i}");
+                assert_eq!(
+                    unsafe { *p.add(i) },
+                    0,
+                    "alloc_zeroed returned dirty byte {i}"
+                );
             }
             unsafe {
                 for i in 0..200_000 {

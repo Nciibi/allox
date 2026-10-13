@@ -1913,21 +1913,21 @@ impl ThreadCache {
                         g.tail = b;
                         g.n += 1;
                     }
-None => {
-                    // See the note in `flush_bin_exit`: unreachable given
-                    // `popped < FLUSH_CHUNK`, but guarded for the same reason.
-                    debug_assert!(ng < MAX_FLUSH_GROUPS, "small flush group overflow");
-                    if ng >= MAX_FLUSH_GROUPS {
-                        continue;
+                    None => {
+                        // See the note in `flush_bin_exit`: unreachable given
+                        // `popped < FLUSH_CHUNK`, but guarded for the same reason.
+                        debug_assert!(ng < MAX_FLUSH_GROUPS, "small flush group overflow");
+                        if ng >= MAX_FLUSH_GROUPS {
+                            continue;
+                        }
+                        groups[ng] = MaybeUninit::new(PageReleaseChunk {
+                            page,
+                            head: b,
+                            tail: b,
+                            n: 1,
+                        });
+                        ng += 1;
                     }
-                    groups[ng] = MaybeUninit::new(PageReleaseChunk {
-                        page,
-                        head: b,
-                        tail: b,
-                        n: 1,
-                    });
-                    ng += 1;
-                }
                 }
             }
 
