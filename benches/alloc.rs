@@ -424,6 +424,49 @@ struct AlloxDiagnostics {
     probe: RunSample,
 }
 
+/// Drain every counter window this process can still reach, before a sample
+/// reads them.
+///
+/// The workload runs on worker threads, and a thread's batched counters only
+/// reach the global atomics at a batch boundary or when its exit hook fires.
+/// `run()` returning means the workers are joined, but it does not mean their
+/// hooks have drained: on Windows the `FlsAlloc` callback can run after
+/// `join()` returns, and can find the thread's TLS already gone. Reading
+/// immediately after the workload is therefore a race, and it is the race
+/// that made this harness report "~50% of `calloc`s against 9 refills, which
+/// cannot both be true" — a number that was reasoned about at length before
+/// anyone established it was wrong.
+///
+/// Two steps, both cheap and both bounded:
+/// - `flush_current_thread` drains the main thread, which is exact.
+/// - poll `exit_flushes` until it stops moving, so hooks that are merely late
+///   still land.
+///
+/// What this cannot recover is a worker whose TLS is already torn down. That
+/// residue is bounded by one diagnostic batch per thread (see
+/// `DIAG_FLUSH_OPS`), which at these workloads' event rates is noise. The
+/// alternative — reading early — is not a bound, it is a race.
+fn settle_counters() {
+    allox::flush_current_thread();
+    let exit_idx = allox::__diagnostics::VOLUME_FIELDS
+        .iter()
+        .position(|n| *n == "exit_flushes");
+    let Some(exit_idx) = exit_idx else { return };
+    let mut last = allox::__diagnostics::volume_raw()[exit_idx];
+    // Bounded: 200 x 1 ms. Only ever waits for hooks to *arrive*, so a
+    // healthy run exits on the first or second poll.
+    for _ in 0..200 {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let now = allox::__diagnostics::volume_raw()[exit_idx];
+        if now == last {
+            // Two consecutive equal reads: no hook is still landing.
+            break;
+        }
+        last = now;
+    }
+    allox::flush_current_thread();
+}
+
 fn run<A: GlobalAlloc + Sync + ?Sized>(
     alloc: &'static A,
     wl: &Workload,
