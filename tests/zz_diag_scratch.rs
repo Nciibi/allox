@@ -13,6 +13,7 @@ fn diag_scratch() {
             .unwrap()
     };
     let (zc_i, ef_i) = (idx("zeroed_calls"), idx("exit_flushes"));
+    let (rf_i, op_i) = (idx("remote_frees"), idx("owner_probes"));
 
     let handle = std::thread::spawn(|| {
         eprintln!("TIMING worker {:?} starting", std::thread::current().id());
@@ -42,9 +43,8 @@ fn diag_scratch() {
             );
             return;
         }
-        if i % 500 == 0 {
-            eprintln!("TIMING  iter {i}: zeroed +0, exit_flushes +{ef}");
-        }
+        eprintln!("TIMING  iter {i}: zeroed +{zc}, exit_flushes +{ef}, retire_called +{}, retire_saw_zeroed +{}", v[rf_i].saturating_sub(before[rf_i]), v[op_i].saturating_sub(before[op_i]));
+        if i > 3 { break; }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     eprintln!("TIMING NEVER VISIBLE");
