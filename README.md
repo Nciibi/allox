@@ -512,16 +512,36 @@ and no randomized allocation order, i.e. none of mimalloc's secure-mode
 mitigations. Heap-metadata confidentiality and exploit-mitigation are
 explicitly out of scope for 0.1.
 
-**Known measurement defects, stated here rather than buried.** The
-benchmark harness's per-event counters appear to lose their final batched
-window on some path: virginity telemetry reports ~50% of `calloc`s memsetting
-against 9 refills and 72 refill blocks, which cannot both be true. Until that
-is fixed, counter-derived conclusions â€” including the whole `zeroed-small
-8T` analysis â€” carry less weight than the throughput numbers. Separately,
-`spawn-churn` remains bimodal in every build and must not gate a release, and
-the tables above rest on 3 Ã— 2 s samples against a ~10% noise floor; see
-[Measurement methodology](#measurement-methodology) for the protocol that
-replaces them.
+**Measurement defect: bounded, not fixed.** The batched diagnostic counters
+only reach the global atomics at a batch boundary. A thread's last partial
+window can only be recovered by the OS exit hook calling back into that
+thread's TLS — and on Windows the `FlsAlloc` callback can run *after* the
+thread's TLS has been torn down, at which point the drain is simply skipped.
+Measured on Windows/GNU: two worker threads doing 20 000 `calloc`/`free`
+rounds each published 32 766 of 39 998 events, an 18% shortfall that is the
+"~50% of `calloc`s against 9 refills, which cannot both be true" report.
+
+Two things changed. `retire` now publishes its batch *before* the
+`bytes == 0` early return, so a thread that exits holding no cached memory no
+longer discards its whole window (that was a separate, unconditional loss).
+And the diagnostic batch is sized to bound the residual error rather than to
+amortize the atomic: 1024 events instead of 8192, so worst-case loss is one
+batch per thread — ~0.03% of a `zeroed-small 8T` run — at the cost of 8x the
+shared-atomic traffic, which is tens of thousands of `fetch_add`s per second
+and irrelevant next to the counters being read.
+`tests/diagnostics.rs::worker_counters_are_accurate_within_the_batch_bound`
+pins the bound, and fails at 82% accuracy if the batch goes back up.
+
+The counters are therefore **accurate to a known bound, not exact**. For
+"is this workload 2x the cost of that one" the throughput tables stand on
+their own; for anything that reads a single counter once, call
+`allox::flush_current_thread()` on the thread you are measuring, or accept
+the bound.
+
+Separately, `spawn-churn` remains bimodal in every build and must not gate a
+release, and the tables above rest on 3 × 2 s samples against a ~10% noise
+floor; see [Measurement methodology](#measurement-methodology) for the
+protocol that replaces them.
 
 Two more measurement caveats that follow from the fix history rather than the
 tuning: the throughput tables were produced **before** the large-region lookup
