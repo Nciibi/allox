@@ -78,6 +78,7 @@ mod imp {
     }
 
     pub(crate) fn ensure_hook() -> bool {
+        let mut spins = 0u32;
         loop {
             if let Some(k) = HOOK_KEY.get() {
                 return unsafe { pthread_setspecific(*k, 1 as *const c_void) == 0 };
@@ -90,8 +91,17 @@ mod imp {
                     Some(*k)
                 } else {
                     let mut k: Key = 0;
-                    // SAFETY: out-pointer valid for the call; destructor is a plain
-                    // extern fn with no allocator interaction beyond the full flush.
+                    // SAFETY: the out-pointer is valid for the call.
+                    //
+                    // Reentrancy is the hazard here, not the destructor.
+                    // Some libcs allocate inside this call (glibc before 2.34
+                    // `calloc`'d its key table), which lands back in the
+                    // allocator. That is safe now because `tls::with` detects
+                    // the nested entry and serves it from the global heap, so
+                    // the nested allocation never reaches `arm_exit_hook` and
+                    // this loop is never re-entered by the same thread. It
+                    // therefore waits only on *other* threads, which finish
+                    // this call promptly.
                     let r = unsafe { pthread_key_create(&mut k, Some(thread_exit_flush)) };
                     if r == 0 {
                         match HOOK_KEY.set(k) {
@@ -108,13 +118,12 @@ mod imp {
                     None => false,
                 };
             }
-while INSTALLING.load(Ordering::Acquire) {
+            while INSTALLING.load(Ordering::Acquire) {
                 core::hint::spin_loop();
                 // Cross-thread wait: another thread is inside
-                // `pthread_key_create`/`FlsAlloc`. That call is short and does
-                // not re-enter the allocator (the `tls` reentrancy guard
-                // serves any nested allocation from the global heap), so a
-                // bounded spin is enough — but yield rather than burn the
+                // `pthread_key_create`/`FlsAlloc`. That call is short and
+                // cannot re-enter the allocator (see above), so a bounded
+                // spin-then-yield is enough — but yield rather than burn the
                 // core for the duration.
                 spins += 1;
                 if spins % 64 == 0 {
