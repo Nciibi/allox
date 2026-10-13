@@ -493,14 +493,6 @@ impl ThreadCache {
     /// one per event.
     #[cfg(feature = "telemetry")]
     fn publish_diagnostics(&mut self) {
-        eprintln!(
-            "ALLOXDIAG publish_diagnostics: diag_ops={} zeroed_calls={} trims={} small_refills={} owner_probes={}",
-            self.pending.diag_ops,
-            self.pending.zeroed_calls,
-            self.pending.trims,
-            self.pending.small_refills,
-            self.pending.owner_probes
-        );
         use crate::counters::{bump, VOLUME};
         macro_rules! drain {
             ($field:ident, $counter:ident) => {
