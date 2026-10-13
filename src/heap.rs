@@ -93,9 +93,25 @@ pub(crate) struct ListHead {
     /// via `next`. Retired pages may carry a reinitialization marker.
     empty: *mut PageHeader,
     empty_count: u32,
-    /// Cold pages: discarded (madvise) but virtually retained, stored as
-    /// base values. Re-carved on reuse; no syscalls in steady churn.
+    /// Cold pages: physical dropped, virtual retained, stored as base values
+    /// so the purge cannot destroy the linkage. Re-carved on reuse.
+    ///
+    /// The two `cold_*` flag arrays live here rather than in the page header
+    /// because of what the purge actually does to the page. On unix
+    /// `MADV_DONTNEED` zeroes it; on Windows `MEM_DECOMMIT` leaves it
+    /// *unreadable* until it is recommitted. Either way the page cannot be
+    /// trusted to hold its own purge state — and worse, the bit describing
+    /// "this page is gone" would be stored inside the thing that is gone.
+    /// So the bookkeeping is out here, next to the pointer it describes.
     cold: [*mut PageHeader; MAX_COLD_PAGE_SLOTS],
+    /// Cold entries whose physical pages were dropped, so the pop path must
+    /// `sys::recommit` before touching the page. No-op on unix.
+    cold_decommitted: [bool; MAX_COLD_PAGE_SLOTS],
+    /// Cold entries the backend *proved* now read as zero, which is what
+    /// lets a recycled page serve `calloc` without a memset. Never set on a
+    /// backend that cannot prove it (Windows, wasm), so `calloc` stays
+    /// correct everywhere.
+    cold_zeroed: [bool; MAX_COLD_PAGE_SLOTS],
     cold_len: u32,
     cold_bytes: usize,
 }
@@ -110,6 +126,8 @@ impl ListHead {
             empty: ptr::null_mut(),
             empty_count: 0,
             cold: [ptr::null_mut(); MAX_COLD_PAGE_SLOTS],
+            cold_decommitted: [false; MAX_COLD_PAGE_SLOTS],
+            cold_zeroed: [false; MAX_COLD_PAGE_SLOTS],
             cold_len: 0,
             cold_bytes: 0,
         }
