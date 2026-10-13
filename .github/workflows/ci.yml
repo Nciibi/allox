@@ -26,7 +26,7 @@ jobs:
   # that block a change.
   # ---------------------------------------------------------------------------
 
-  test:
+test:
     name: test (${{ matrix.os }}, ${{ matrix.profile }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -43,6 +43,13 @@ jobs:
         run: cargo build --verbose --locked
       - name: Test (${{ matrix.profile }})
         run: cargo test --verbose --locked ${{ matrix.profile == 'release' && '--release' || '' }}
+      # Telemetry is a separate compile universe, and it is also where the
+      # platform-divergent counters live: how many times a doubling realloc
+      # chain relocates depends on whether the arena exists. Running it only
+      # on Linux let a Windows-only assertion sit in the suite unnoticed.
+      - name: Telemetry tests
+        if: matrix.profile == 'debug'
+        run: cargo test --locked --features telemetry
 
   # The suite is what proves the allocator is correct; clippy and rustfmt
   # are cheap and run once rather than across the OS matrix.
