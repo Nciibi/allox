@@ -1,13 +1,13 @@
-# allox
+﻿# allox
 
 A pure-Rust, thread-cached general-purpose memory allocator.
 
 **Zero dependencies. Zero build scripts. No C toolchain.** If `rustc` can
-target it, `allox` builds for it — Windows, Linux, macOS, and any
+target it, `allox` builds for it â€” Windows, Linux, macOS, and any
 cross-compilation target, without `cc`, without CMake, without per-target
 C library setup.
 
-MSRV 1.79 · license MIT OR Apache-2.0 · stable channel only
+MSRV 1.79 Â· license MIT OR Apache-2.0 Â· stable channel only
 
 ```toml
 [dependencies]
@@ -74,16 +74,16 @@ for (class, n) in t.per_class_allocs.iter().enumerate() {
 Median of 5 interleaved runs, Windows x86-64, `cargo bench` (ops/s,
 higher is better). All comparators run identical workloads through their
 `GlobalAlloc` implementations. talc uses `GlobalAllocSource` (dynamic
-growth/shrink through the system allocator) — its strongest hosted
+growth/shrink through the system allocator) â€” its strongest hosted
 configuration, not a strawman arena.
 
 | Workload | allox | talc | dlmalloc | system | vs talc | vs dlm | vs sys |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 40.8 M/s | 26.3 M/s | 21.4 M/s | 11.0 M/s | **1.55×** | **1.91×** | **3.70×** |
-| mixed-small 1T (16–4096 B) | 29.3 M/s | 9.3 M/s | 5.7 M/s | 7.8 M/s | **3.15×** | **5.17×** | **3.77×** |
-| tight-small 8T (64 B) | 209.6 M/s | 2.0 M/s | 3.8 M/s | 44.9 M/s | **105×** | **55×** | **4.67×** |
-| mixed-small 8T (16–4096 B) | 132.1 M/s | 1.8 M/s | 1.6 M/s | 26.6 M/s | **73×** | **82×** | **4.96×** |
-| mixed-all 8T (16–65536 B) | 1.27 M/s | 1.08 M/s | 0.67 M/s | 53 K/s | **1.18×** | **1.91×** | **23.8×** |
+| tight-small 1T (64 B) | 40.8 M/s | 26.3 M/s | 21.4 M/s | 11.0 M/s | **1.55Ã—** | **1.91Ã—** | **3.70Ã—** |
+| mixed-small 1T (16â€“4096 B) | 29.3 M/s | 9.3 M/s | 5.7 M/s | 7.8 M/s | **3.15Ã—** | **5.17Ã—** | **3.77Ã—** |
+| tight-small 8T (64 B) | 209.6 M/s | 2.0 M/s | 3.8 M/s | 44.9 M/s | **105Ã—** | **55Ã—** | **4.67Ã—** |
+| mixed-small 8T (16â€“4096 B) | 132.1 M/s | 1.8 M/s | 1.6 M/s | 26.6 M/s | **73Ã—** | **82Ã—** | **4.96Ã—** |
+| mixed-all 8T (16â€“65536 B) | 1.27 M/s | 1.08 M/s | 0.67 M/s | 53 K/s | **1.18Ã—** | **1.91Ã—** | **23.8Ã—** |
 
 5/5 wins against every comparator. Why the multi-threaded gaps are
 structural: every allox fast path is lock-free per thread (sharded class
@@ -91,7 +91,7 @@ locks are touched only by batched slow paths), while single-heap
 allocators serialize on one mutex. Reproduce with `cargo bench`.
 
 Linux x86-64 (Ryzen 5 1600), **one fresh process per allocator/workload/
-repetition**, median of 3 × 2 s runs, `taskset -c 0-7`, `BENCH_FRESH=1
+repetition**, median of 3 Ã— 2 s runs, `taskset -c 0-7`, `BENCH_FRESH=1
 BENCH_SAFE_LIVE=1` in a 3 GiB cgroup (ops/s, higher is better). Every
 comparator runs the identical workload through its `GlobalAlloc` impl
 (mimalloc/snmalloc/talc/jemalloc are dev-only; the library stays zero-C).
@@ -99,72 +99,72 @@ comparator runs the identical workload through its `GlobalAlloc` impl
 
 | Workload | allox | system | mimalloc | snmalloc | dlmalloc | talc | vs best | allox peak RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| tight-small 1T (64 B) | 52.52 M/s | 44.77 M/s | 48.00 M/s | 41.54 M/s | 20.48 M/s | 26.47 M/s | **1.09×** | 5.3 MiB |
-| mixed-small 1T (16–4096 B) | 38.16 M/s | 7.18 M/s | 14.78 M/s | 12.49 M/s | 6.08 M/s | 10.46 M/s | **2.58×** | 16.1 MiB |
-| tight-small 8T (64 B) | 257.18 M/s | 240.73 M/s | 216.89 M/s | 231.07 M/s | 1.62 M/s | 2.11 M/s | **1.07×** | 7.7 MiB |
-| mixed-small 8T (16–4096 B) | 196.03 M/s | 37.17 M/s | 40.42 M/s | 57.87 M/s | 707 K/s | 1.85 M/s | **3.39×** | 93.0 MiB |
-| mixed-all 1T (16–65536 B) | 17.51 M/s | 2.79 M/s | 5.10 M/s | 543 K/s | 424 K/s | 515 K/s | **3.43×** | 21.4 MiB |
-| mixed-all 8T (16–65536 B) | 41.85 M/s | 11.25 M/s | 22.21 M/s | 1.30 M/s | 440 K/s | 1.12 M/s | **1.88×** | 118.4 MiB |
-| medium-only 1T (16–64 K) | 19.55 M/s | 2.36 M/s | 5.54 M/s | 276 K/s | 395 K/s | 417 K/s | **3.53×** | 16.9 MiB |
-| medium-only 8T (16–64 K) | 47.62 M/s | 11.08 M/s | 24.41 M/s | 618 K/s | 413 K/s | 991 K/s | **1.95×** | 91.0 MiB |
-| large-only 1T (32 K–1 M) | 7.36 M/s | 340 K/s | 2.52 M/s | 17 K/s | 497 K/s | 279 K/s | **2.91×** | 7.3 MiB |
-| big-tail 1T (64 K–256 K) | 17.79 M/s | 344 K/s | 6.73 M/s | 22 K/s | 387 K/s | 308 K/s | **2.64×** | 6.6 MiB |
-| big-upper-tail 1T (256 K–1 M) | 10.98 M/s | 309 K/s | 1.75 M/s | 11 K/s | 516 K/s | 215 K/s | **6.28×** | 5.8 MiB |
-| large-only 8T (32 K–1 M) | 31.53 M/s | 1.14 M/s | 25.19 M/s | 141 K/s | 454 K/s | 1.02 M/s | **1.25×** | 34.5 MiB |
-| huge-only 1T (5–8 MiB) | 1.82 M/s | 166 K/s | 1.40 M/s | 1 K/s | 439 K/s | 130 K/s | **1.30×** | 5.2 MiB |
-| zeroed-small 1T (16–256 B) | 28.90 M/s | 18.63 M/s | 25.80 M/s | 21.38 M/s | 13.42 M/s | 18.40 M/s | **1.12×** | 5.4 MiB |
-| zeroed-small 8T (16–256 B) | 100.45 M/s | 111.86 M/s | 124.27 M/s | 148.91 M/s | 1.19 M/s | 1.49 M/s | **0.67×** | 8.6 MiB |
-| zeroed-large 1T | 206 K/s | 612.6 /s | 2 K/s | 980.0 /s | 1 K/s | 413.6 /s | **86.63×** | 5.3 MiB |
-| prodcons 8T (remote free) † | 38.59 M/s | 7.16 M/s | 25.19 M/s | 31.45 M/s | 888 K/s | 1.10 M/s | **1.23×** | 300 MiB |
-| spawn-churn (thread churn) † | 23.20 M/s | 2.96 M/s | 16.13 M/s | 6.89 M/s | 1.01 M/s | 1.59 M/s | **1.44×** | 18.4 MiB |
-| spawn-empty (calibration) | 36 K/s | 35 K/s | 35 K/s | 34 K/s | 35 K/s | 34 K/s | **1.02×** | 4.9 MiB |
-| json-ish 8T | 258.37 M/s | 238.08 M/s | 167.16 M/s | 219.43 M/s | 1.32 M/s | 2.02 M/s | **1.09×** | 6.0 MiB |
-| request 8T | 449.32 M/s | 191.74 M/s | 364.98 M/s | 405.00 M/s | 1.24 M/s | 2.15 M/s | **1.11×** | 8.0 MiB |
-| ecs 8T (realloc growth) | 93.03 M/s | 74.16 M/s | 2.07 M/s | 380 K/s | 1.05 M/s | 1.50 M/s | **1.25×** | 12.3 MiB |
+| tight-small 1T (64 B) | 52.52 M/s | 44.77 M/s | 48.00 M/s | 41.54 M/s | 20.48 M/s | 26.47 M/s | **1.09Ã—** | 5.3 MiB |
+| mixed-small 1T (16â€“4096 B) | 38.16 M/s | 7.18 M/s | 14.78 M/s | 12.49 M/s | 6.08 M/s | 10.46 M/s | **2.58Ã—** | 16.1 MiB |
+| tight-small 8T (64 B) | 257.18 M/s | 240.73 M/s | 216.89 M/s | 231.07 M/s | 1.62 M/s | 2.11 M/s | **1.07Ã—** | 7.7 MiB |
+| mixed-small 8T (16â€“4096 B) | 196.03 M/s | 37.17 M/s | 40.42 M/s | 57.87 M/s | 707 K/s | 1.85 M/s | **3.39Ã—** | 93.0 MiB |
+| mixed-all 1T (16â€“65536 B) | 17.51 M/s | 2.79 M/s | 5.10 M/s | 543 K/s | 424 K/s | 515 K/s | **3.43Ã—** | 21.4 MiB |
+| mixed-all 8T (16â€“65536 B) | 41.85 M/s | 11.25 M/s | 22.21 M/s | 1.30 M/s | 440 K/s | 1.12 M/s | **1.88Ã—** | 118.4 MiB |
+| medium-only 1T (16â€“64 K) | 19.55 M/s | 2.36 M/s | 5.54 M/s | 276 K/s | 395 K/s | 417 K/s | **3.53Ã—** | 16.9 MiB |
+| medium-only 8T (16â€“64 K) | 47.62 M/s | 11.08 M/s | 24.41 M/s | 618 K/s | 413 K/s | 991 K/s | **1.95Ã—** | 91.0 MiB |
+| large-only 1T (32 Kâ€“1 M) | 7.36 M/s | 340 K/s | 2.52 M/s | 17 K/s | 497 K/s | 279 K/s | **2.91Ã—** | 7.3 MiB |
+| big-tail 1T (64 Kâ€“256 K) | 17.79 M/s | 344 K/s | 6.73 M/s | 22 K/s | 387 K/s | 308 K/s | **2.64Ã—** | 6.6 MiB |
+| big-upper-tail 1T (256 Kâ€“1 M) | 10.98 M/s | 309 K/s | 1.75 M/s | 11 K/s | 516 K/s | 215 K/s | **6.28Ã—** | 5.8 MiB |
+| large-only 8T (32 Kâ€“1 M) | 31.53 M/s | 1.14 M/s | 25.19 M/s | 141 K/s | 454 K/s | 1.02 M/s | **1.25Ã—** | 34.5 MiB |
+| huge-only 1T (5â€“8 MiB) | 1.82 M/s | 166 K/s | 1.40 M/s | 1 K/s | 439 K/s | 130 K/s | **1.30Ã—** | 5.2 MiB |
+| zeroed-small 1T (16â€“256 B) | 28.90 M/s | 18.63 M/s | 25.80 M/s | 21.38 M/s | 13.42 M/s | 18.40 M/s | **1.12Ã—** | 5.4 MiB |
+| zeroed-small 8T (16â€“256 B) | 100.45 M/s | 111.86 M/s | 124.27 M/s | 148.91 M/s | 1.19 M/s | 1.49 M/s | **0.67Ã—** | 8.6 MiB |
+| zeroed-large 1T | 206 K/s | 612.6 /s | 2 K/s | 980.0 /s | 1 K/s | 413.6 /s | **86.63Ã—** | 5.3 MiB |
+| prodcons 8T (remote free) â€  | 38.59 M/s | 7.16 M/s | 25.19 M/s | 31.45 M/s | 888 K/s | 1.10 M/s | **1.23Ã—** | 300 MiB |
+| spawn-churn (thread churn) â€  | 23.20 M/s | 2.96 M/s | 16.13 M/s | 6.89 M/s | 1.01 M/s | 1.59 M/s | **1.44Ã—** | 18.4 MiB |
+| spawn-empty (calibration) | 36 K/s | 35 K/s | 35 K/s | 34 K/s | 35 K/s | 34 K/s | **1.02Ã—** | 4.9 MiB |
+| json-ish 8T | 258.37 M/s | 238.08 M/s | 167.16 M/s | 219.43 M/s | 1.32 M/s | 2.02 M/s | **1.09Ã—** | 6.0 MiB |
+| request 8T | 449.32 M/s | 191.74 M/s | 364.98 M/s | 405.00 M/s | 1.24 M/s | 2.15 M/s | **1.11Ã—** | 8.0 MiB |
+| ecs 8T (realloc growth) | 93.03 M/s | 74.16 M/s | 2.07 M/s | 380 K/s | 1.05 M/s | 1.50 M/s | **1.25Ã—** | 12.3 MiB |
 
-**21/22 win-or-tie against the best comparator.** † marks the two rows
+**21/22 win-or-tie against the best comparator.** â€  marks the two rows
 re-measured with the paired protocol described below; every other allox figure
-is from the single 3 × 2 s matrix run its neighbours come from, and is
+is from the single 3 Ã— 2 s matrix run its neighbours come from, and is
 therefore subject to the ~10% noise floor. The comparator columns are
 unaffected by allox-internal changes and still come from the matrix run.
 `spawn-empty` is the
 pthread calibration row (allocator-independent by construction: every
 allocator reads the same 35 K/s, so the row measures the host's
 thread-creation rate, not the allocator) and `spawn-churn` is a near-tie
-inside its own run-to-run spread — see the note on that row below.
+inside its own run-to-run spread â€” see the note on that row below.
 
-**The one real loss, `zeroed-small 8T` at 0.67×, is a row added on
+**The one real loss, `zeroed-small 8T` at 0.67Ã—, is a row added on
 2026-09-26 and it is the honest result of adding it.** 8-thread `calloc`
 churn sized to recycle, so every allocation takes the software-zeroing
 path. Adding it immediately exposed what it was built to find: the
 `zeroed_calls`/`zeroed_bytes` counters were two shared `lock xadd`s per
 `calloc` call, and moving them into the thread cache's batched telemetry
-took this row from 30.0 M/s to ~100 M/s — a 3.4× improvement that is still
+took this row from 30.0 M/s to ~100 M/s â€” a 3.4Ã— improvement that is still
 not enough: snmalloc reads ~149 M/s and mimalloc ~124 M/s. Single-threaded
-(`zeroed-small 1T`) allox leads at 1.12×.
+(`zeroed-small 1T`) allox leads at 1.12Ã—.
 
 **Four explanations for the remainder were tested and all four are dead
 ends**, which is worth stating because the obvious one is not the answer:
-the per-operation `cached_bytes` accounting (ablated: −0.8% to +3.0%, i.e.
-noise — the byte counter is an independent accumulator off the critical
+the per-operation `cached_bytes` accounting (ablated: âˆ’0.8% to +3.0%, i.e.
+noise â€” the byte counter is an independent accumulator off the critical
 dependency chain so it never stalls the core); the `memset` call itself
 (replaced with an inline 16-byte store loop, the way mimalloc inlines its
-small clear: **−12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
-and beats a scalar loop even at 16–256 B); the relocation rate (parity,
+small clear: **âˆ’12.6%**, because glibc's `memset` is AVX2/ERMS-vectorised
+and beats a scalar loop even at 16â€“256 B); the relocation rate (parity,
 see the application-shape section); and the **virginity rate** itself.
 
 That last one is a real mechanism and it is now implemented and sound, but it
 does not move this row. `park_empty_page` marks a page `FLAG_DISCARDED` only
-after `sys::discard` actually succeeded — `madvise(MADV_DONTNEED)` on Unix,
+after `sys::discard` actually succeeded â€” `madvise(MADV_DONTNEED)` on Unix,
 `VirtualAlloc(MEM_RESET)` on Windows, and `false` on WASM, so WASM stays
-safely dirty — and a page carrying that flag may serve `calloc` without a
-memset. Measured: **+0.9%** on `zeroed-small 8T` in one paired A/B, −5.3% in
+safely dirty â€” and a page carrying that flag may serve `calloc` without a
+memset. Measured: **+0.9%** on `zeroed-small 8T` in one paired A/B, âˆ’5.3% in
 another, i.e. neutral. The reason is structural rather than a tuning failure:
 this workload keeps 2048 blocks live per thread, so pages rarely become
 *fully* free, and parking a page is what requires exactly that. The cold tier
-is simply not hot enough here. The flag is kept — it is sound, it is
+is simply not hot enough here. The flag is kept â€” it is sound, it is
 sensitivity-checked, and it strictly reduces zeroing work in workloads that do
-recycle cold pages — but it earns nothing on this row.
+recycle cold pages â€” but it earns nothing on this row.
 
 An upper-bound ablation confirms the row is winnable in principle: marking
 every recycled page virgin (deliberately incorrect, never used) reaches
@@ -181,9 +181,9 @@ so fix the counters before spending more effort on this row.
 including the ones before this release. Retired-cache partial adoption (see
 Design) took `adopted_caches`/`retired_caches` from ~77% to a uniform 100% and
 `spawn-churn` from a 19.56M to a 23.20M median over 16 paired samples,
-improving every order statistic (min 11.01M → 11.87M, p10 11.21M → 12.10M).
-**The bimodality itself is not fixed.** Both builds still span 11–24M, and
-the slow mode is a purge storm on the ordinary free path — every purge is
+improving every order statistic (min 11.01M â†’ 11.87M, p10 11.21M â†’ 12.10M).
+**The bimodality itself is not fixed.** Both builds still span 11â€“24M, and
+the slow mode is a purge storm on the ordinary free path â€” every purge is
 exactly 64 KiB, and slow samples run ~1000 purges against ~300 in fast ones.
 It is not a retirement problem: adoption is 100% in the slow mode too. Do not
 gate a release on this row without a quiet host and enough repetitions to
@@ -196,21 +196,21 @@ arena holds on to depended on which threads happened to be remote-freeing.
 Retired-cache partial adoption (see Design) largely settled it, because
 short-lived producer caches now hand their blocks to a live consumer instead
 of returning them to the global heap: two independent paired runs put allox
-at **293 MiB and 313 MiB against baselines of 346 MiB and 509 MiB**, a 15–38%
+at **293 MiB and 313 MiB against baselines of 346 MiB and 509 MiB**, a 15â€“38%
 reduction at neutral-to-better throughput. Throughput was already stable
 across the old RSS range.
 
 `ecs 8T` is the growable-extent workload: a 64 KiB buffer realloc-doubled
 to 1 MiB, four at a time per thread, plus small-component churn. It used
-to be the project's one structural loss (≈0.06× the system allocator,
+to be the project's one structural loss (â‰ˆ0.06Ã— the system allocator,
 whose glibc grows with zero-copy `mremap`). Big blocks are carved
 contiguously out of a shared span, so growing one in place was impossible
 and every step of the chain copied. The first cross-class growth now
 relocates **once** into a large region that reserves slack up to the big
 cap; every later step then grows in place, with no copy, no syscall and
-no span traffic. Controlled A/B (same box, same session, fresh 2 s × 3
-processes): **9.59 M/s → 92.09 M/s (9.6×), peak RSS 19.7 → 12.2 MiB**, and
-1.20× the system allocator in a 2 s × 5 confirmation (91.45 vs 76.27 M/s).
+no span traffic. Controlled A/B (same box, same session, fresh 2 s Ã— 3
+processes): **9.59 M/s â†’ 92.09 M/s (9.6Ã—), peak RSS 19.7 â†’ 12.2 MiB**, and
+1.20Ã— the system allocator in a 2 s Ã— 5 confirmation (91.45 vs 76.27 M/s).
 
 The direct comparison uses the system allocator for harness bookkeeping.
 Use `BENCH_OUTPUT=json` for machine-readable samples. Use
@@ -232,16 +232,16 @@ the early "wins" *and* "regressions" recorded in this project were that
 artifact, and the honest ones were caught only by re-measuring.
 
 Worked example, one day, one pair of binaries: `mixed-all 8T` measured
-**−5.3%** on a 3-rep A/B and **flat** (median 38.01 → 38.11) on a 10-sample
-distribution. `zeroed-small 8T` measured **−4.5%** on 3 reps and **+5.0%**
-(median 94.67 → 99.36) on 10. Both 3-rep readings were noise; both reversed
+**âˆ’5.3%** on a 3-rep A/B and **flat** (median 38.01 â†’ 38.11) on a 10-sample
+distribution. `zeroed-small 8T` measured **âˆ’4.5%** on 3 reps and **+5.0%**
+(median 94.67 â†’ 99.36) on 10. Both 3-rep readings were noise; both reversed
 once there were enough samples to see it.
 
 **Protocol required before a change is believed:**
 
 - Paired A/B of two prebuilt binaries, alternated within each repetition so
   neither build permanently owns the better position in the load cycle.
-- **N ≥ 10 pairs, reporting median, mean, min and p10** — never a 3-rep mean.
+- **N â‰¥ 10 pairs, reporting median, mean, min and p10** â€” never a 3-rep mean.
   A change has to win on the order statistics, not only the average.
 - One fresh process per sample; release binaries, verified byte-for-byte
   against the measured artifact so it is provable which code produced a number.
@@ -261,7 +261,7 @@ mimalloc 1080, system 3330 and snmalloc 4740.
 `allox::__diagnostics::volume()` exposes 23 counters (refills, flushes,
 trims, owner probes, remote frees, zeroed bytes, purges, arena fallbacks,
 realloc relocations and copied bytes, ...). The per-event ones are
-**telemetry-gated** — a default build compiles them out and pays nothing;
+**telemetry-gated** â€” a default build compiles them out and pays nothing;
 build with `--features telemetry` to read them. Only the genuinely cold ones
 are always on: purges (one per `madvise`), exit flushes, and retired/adopted
 caches (one per thread). `telemetry::timing()` adds nanosecond lock-wait,
@@ -271,14 +271,14 @@ purge and exit-flush totals.
 reasoning that a software-zeroing memset is rare. It is not: it is per
 *`calloc` call* for any code that zeroes recycled memory, so those two were
 two shared `lock xadd`s per call. They moved into the batched telemetry on
-2026-09-26, which is **+252% on `zeroed-small 8T`** — eight threads doing
+2026-09-26, which is **+252% on `zeroed-small 8T`** â€” eight threads doing
 ~26M atomic pairs per second onto one cache line. They therefore now read 0
 unless you build with `--features telemetry`, like the other per-event
 counters; their positions in `VOLUME_FIELDS` are unchanged.
 
 That gating is not a detail. The first version shipped one shared atomic per
 event and cost **33% on `mixed-all 8T` and 36% on `large-only 8T`**; batching
-brought that to 0–3.6%, and gating it to the feature brought it to zero. At
+brought that to 0â€“3.6%, and gating it to the feature brought it to zero. At
 4M trims/s and 12M owner probes/s, threads ping-pong one cache line faster
 than the work being counted. If you add a counter, check its event rate
 before you check its position in the source.
@@ -298,17 +298,17 @@ APP_P99=1024 scripts/app_bench.sh       # per-call latency
 
 | threads | allox | system | mimalloc | snmalloc | vs mimalloc | vs snmalloc | allox peak RSS |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1 | **78.6k** | 53.8k | 74.3k | 74.3k | **1.06×** | **1.06×** | 3.1 MiB |
-| 4 | **250.8k** | 205.0k | 268.1k | 280.1k | 0.94× | 0.90× | 4.0 MiB |
+| 1 | **78.6k** | 53.8k | 74.3k | 74.3k | **1.06Ã—** | **1.06Ã—** | 3.1 MiB |
+| 4 | **250.8k** | 205.0k | 268.1k | 280.1k | 0.94Ã— | 0.90Ã— | 4.0 MiB |
 
-Median of 3–5 × 2 s, fresh process per sample, `taskset -c 0-7`,
+Median of 3â€“5 Ã— 2 s, fresh process per sample, `taskset -c 0-7`,
 interleaved with the comparators inside each repetition.
 
 **This is the one mode allox does not lead, and it is reported here because
 a scoreboard that only contains the flattering mode is not a scoreboard.**
 Single-threaded allox now leads both C comparators; the 4-thread row is
 still behind, and the deficit is a scaling effect, not a per-operation one
-— the same build is 1.06× mimalloc at one thread and 0.94× at four.
+â€” the same build is 1.06Ã— mimalloc at one thread and 0.94Ã— at four.
 
 What was fixed to get here (paired A/B, two prebuilt binaries, order-
 alternating, 3 reps: +5.9% on this workload at both 1 and 4 threads):
@@ -316,7 +316,7 @@ the small `alloc`/`free`/`realloc` fast paths were carrying a stack frame
 and five callee-saved register pairs that existed only for their slow-path
 bodies, and the bounds check on the bin array survived every inlining
 decision. The `frameless fast paths` entry under [Design](#design) records
-the measurements and the reasoning — chiefly that 27% of this workload's
+the measurements and the reasoning â€” chiefly that 27% of this workload's
 allocations are `realloc` relocations, and eliminating those needs a
 per-page free bitmap (a structural change to the small tier, not a
 tuning change).
@@ -325,21 +325,21 @@ tuning change).
 
 mimalloc-inspired, adapted for Rust's world:
 
-- **Size classes**: ~12.5% geometric growth from 16 B to 16 KiB — internal
+- **Size classes**: ~12.5% geometric growth from 16 B to 16 KiB â€” internal
   fragmentation never exceeds ~12.5%. Direct-mapped lookup table:
-  size → class is one shift and one load.
-- **64 KiB pages** hold blocks of one class; pointer → page header is a
+  size â†’ class is one shift and one load.
+- **64 KiB pages** hold blocks of one class; pointer â†’ page header is a
   single bit-mask, no lookup tables.
 - **Per-thread free lists**: allocation and deallocation fast paths take no
   locks and perform no atomic operations. Freed blocks stay in the freeing
-  thread's cache — they almost always come back to the same thread.
+  thread's cache â€” they almost always come back to the same thread.
 - **Frameless fast paths**: the small/medium `alloc`, `free` and `realloc`
   fast paths contain no calls at all, so they compile to a leaf with no
   stack frame and no callee-saved registers. Every slow path (refill,
   medium/big refill, drift-cap probe, exit-hook install, trim) is
   `#[inline(never)]` and reached by a tail jump, and a small allocation
   costs one TLS read, one class-table load and one bin pop. This is not
-  cosmetic: it was worth 5–19% across the benchmark matrix, because a
+  cosmetic: it was worth 5â€“19% across the benchmark matrix, because a
   single `call` anywhere in a hot path forces the register allocator to
   spill every live value around it. glibc converged on the identical change
   independently in 2025 (splitting `__libc_malloc` into a frameless tcache
@@ -355,7 +355,7 @@ mimalloc-inspired, adapted for Rust's world:
   read for each half.
 - **Byte-budgeted caches**: thread caches grow freely and are trimmed only
   when a thread's total exceeds its budget (biggest bin first); flush/refill
-  round-trips through the global heap were measured to cost 5× on mixed
+  round-trips through the global heap were measured to cost 5Ã— on mixed
   workloads, so they are made rare rather than fast.
 - **Sharded global heap**: each size class' partial-page list has its own
   mutex; slow paths are batched (~64 blocks per lock acquisition).
@@ -373,7 +373,7 @@ mimalloc-inspired, adapted for Rust's world:
   the range reads as zero again are two different claims, and only the second
   one lets a recycled block serve `calloc` without a memset. `sys::discard`
   reports them separately. On unix the second claim is *probed once per
-  process* — map a page, dirty it, `madvise(MADV_DONTNEED)`, read it back —
+  process* â€” map a page, dirty it, `madvise(MADV_DONTNEED)`, read it back â€”
   because the man page guarantees zero-fill on Linux but says something much
   weaker on the BSDs. That is the same shape as jemalloc's
   `opt.trust_madvise`, which does not trust the flag anywhere it has not
@@ -381,7 +381,7 @@ mimalloc-inspired, adapted for Rust's world:
   decommitted-and-readable-as-zero primitive, so recycled blocks memset and
   `calloc` stays correct by construction.
 - **Windows actually returns memory.** `VirtualFree(MEM_DECOMMIT)` does drop
-  committed pages, but leaves the range unreadable until it is recommitted —
+  committed pages, but leaves the range unreadable until it is recommitted â€”
   so `recommit` is called on every path that hands a retained range back out.
   Windows therefore purges its cold retention tiers instead of holding every
   page it ever touched. (`VirtualFree(MEM_RESET)` is deliberately *not* used:
@@ -389,16 +389,16 @@ mimalloc-inspired, adapted for Rust's world:
   failure because it is indistinguishable from a real purge.)
 - **O(1) large-region lookup off the arena.** On targets without an arena
   (Windows, 32-bit, `no_std`) a large free used to resolve its region by
-  walking a linked list behind one process-global mutex — and because
+  walking a linked list behind one process-global mutex â€” and because
   dispatch consulted it before the small-page magic check, that cost was paid
   by *every* `free()`, small blocks included. Freeing 16 000 simultaneously
-  live large regions took 69 s, and a 16× larger live set grew the time 692×.
+  live large regions took 69 s, and a 16Ã— larger live set grew the time 692Ã—.
   It is now a bucketed index under the same lock, so the traversal stays safe
   while the critical section shrinks from "every live large region" to one
   bucket. `tests/large_free_scaling.rs` pins the sub-quadratic behaviour.
 - **Reentrancy is handled, not assumed.** The one piece of code the allocator
   calls that might allocate is `pthread_key_create`/`FlsAlloc`, reached from
-  the first refill of every thread — and whether they allocate is a libc
+  the first refill of every thread â€” and whether they allocate is a libc
   internal that has changed across glibc releases (pre-2.34 `pthread_key_create`
   `calloc`'d its key table). A thread-local guard detects re-entry and serves
   the nested allocation from the global heap, which both removes the aliasing
@@ -407,16 +407,16 @@ mimalloc-inspired, adapted for Rust's world:
 - **Retired-cache partial adoption**: a thread's OS-exit hook parks its cache in
   a fixed queue instead of walking it, and a later slow path reclaims from that
   queue. Adoption originally required the reclaiming cache to be *empty*, which
-  a busy worker never is — so under thread churn nearly every retired cache was
+  a busy worker never is â€” so under thread churn nearly every retired cache was
   flushed back to the global heap instead, measured directly as
   `adopted_caches`/`retired_caches` stuck at ~77%. A worker only holds blocks
   for the few classes it is actively using, so allox now takes over the chains
   for the classes whose bins it does not hold: O(1) per class, no walk, no
   lock, no allocation, carrying the byte accounting and virgin watermark with
   the chain. Adoption went to 100%, `spawn-churn` gained 18.6% on its median,
-  and `prodcons 8T` peak RSS fell 15–38%.
+  and `prodcons 8T` peak RSS fell 15â€“38%.
 - **Zero-init fast path**: `calloc`/`alloc_zeroed` from never-used ("virgin")
-  memory skips the memset — only the freelist link word is cleared. Recycled
+  memory skips the memset â€” only the freelist link word is cleared. Recycled
   memory is explicitly zeroed unless a *proven* discard established it was
   already zero.
 - **Debug builds validate every free**: pointer bounds, class alignment, and
@@ -428,10 +428,10 @@ mimalloc-inspired, adapted for Rust's world:
   guard that serves any nested call from the global heap, and explicit
   `flush_current_thread()` for thread pools.
 
-The architecture is documented in the module headers themselves — `src/arena.rs`
+The architecture is documented in the module headers themselves â€” `src/arena.rs`
 (reservation/commit split and its rules), `src/heap.rs` (sharding and
 invariants), `src/cache.rs` (byte-budgeted per-thread bins) and
-`src/counters.rs` (why per-event counters are telemetry-gated) — with the
+`src/counters.rs` (why per-event counters are telemetry-gated) â€” with the
 summary above as the map.
 
 ## Why not X?
@@ -440,7 +440,7 @@ summary above as the map.
 |---|---|
 | System allocator | HeapAlloc lock contention on Windows; no observability |
 | `jemallocator` / `mimalloc` | Require a working C toolchain for every target; break cross-compilation |
-| `talc` / other pure-Rust allocators | Linked-list designs without thread caching or virtual-memory integration — they scale poorly past a few threads |
+| `talc` / other pure-Rust allocators | Linked-list designs without thread caching or virtual-memory integration â€” they scale poorly past a few threads |
 
 ## no_std / embedded
 
@@ -452,7 +452,7 @@ With `default-features = false` allox builds against `core` alone on targets
 with a supported memory backend (currently Unix, Windows, and WASM): the
 per-thread cache becomes a single global cache behind the allocator's own
 spin mutex (single-threaded targets; the allocator never re-enters that
-lock). Corruption diagnostics use `panic!` instead of `abort()` — pair with
+lock). Corruption diagnostics use `panic!` instead of `abort()` â€” pair with
 `panic = "abort"` in your profile as usual. Bare-metal targets without a
 backend fail at compile time until a backend is supplied.
 The `wasm32` backend works with or without the `std` feature.
@@ -463,7 +463,7 @@ Declaring `mmap`/`madvise` by hand is what keeps the crate dependency-free,
 but `MAP_ANONYMOUS` is not a POSIX constant and its value is not portable:
 `0x20` on Linux and Android, `0x1000` on the BSDs and Darwin, `0x100` on
 illumos/Solaris. A blanket `cfg(unix)` fallback silently handed Linux's
-constant to targets that use a different one, where every `mmap` then fails —
+constant to targets that use a different one, where every `mmap` then fails â€”
 so this crate now lists the targets whose value has been checked, and
 `compile_error!`s on anything else naming the fix, rather than building an
 allocator that cannot allocate.
@@ -478,7 +478,7 @@ both `src/sys/unix.rs` and `src/arena.rs`. It does not mean guessing.
 ## WebAssembly
 
 allox compiles for `wasm32-unknown-unknown` with no imports and no build
-tooling — linear memory grows via `memory.grow` (64 KiB pages, matching our
+tooling â€” linear memory grows via `memory.grow` (64 KiB pages, matching our
 page size). Since WASM cannot release memory pages, freed pages are recycled
 through the delayed-reclamation cache and dead pages beyond the cap stay
 mapped (the same trade-off dlmalloc makes).
@@ -494,7 +494,7 @@ inlining decisions.
 
 ## Status
 
-v0.1.0 released — working and tested (unit, integration as
+v0.1.0 released â€” working and tested (unit, integration as
 `#[global_allocator]`, multi-threaded randomized stress with full integrity
 verification, C ABI, zero-size and double-free validation). 91 tests, plus a
 timing-ratio probe that runs only when asked. Green in debug, release,
@@ -516,10 +516,10 @@ explicitly out of scope for 0.1.
 benchmark harness's per-event counters appear to lose their final batched
 window on some path: virginity telemetry reports ~50% of `calloc`s memsetting
 against 9 refills and 72 refill blocks, which cannot both be true. Until that
-is fixed, counter-derived conclusions — including the whole `zeroed-small
-8T` analysis — carry less weight than the throughput numbers. Separately,
+is fixed, counter-derived conclusions â€” including the whole `zeroed-small
+8T` analysis â€” carry less weight than the throughput numbers. Separately,
 `spawn-churn` remains bimodal in every build and must not gate a release, and
-the tables above rest on 3 × 2 s samples against a ~10% noise floor; see
+the tables above rest on 3 Ã— 2 s samples against a ~10% noise floor; see
 [Measurement methodology](#measurement-methodology) for the protocol that
 replaces them.
 
@@ -545,7 +545,7 @@ cargo bench --features bench-c   # adds the mimalloc + snmalloc columns
 
 The default test and benchmark paths need **no C toolchain**. `mimalloc` and
 `snmalloc` are behind `bench-c` precisely so that `cargo test` does not pull
-in their `cc`-based build scripts — Cargo builds every dev-dependency whenever
+in their `cc`-based build scripts â€” Cargo builds every dev-dependency whenever
 it builds any test, bench or example, so leaving them unconditional made a
 plain `cargo test` fail on any machine without a C compiler. That is a bad
 thing for a crate whose entire pitch is "no build scripts, no C toolchain", so
@@ -563,7 +563,7 @@ Every one of those gates runs in CI. `ci.yml` splits into the checks that
 gate a push (`test`, `lint`, `docs`, `features`, `wasm32`, `bit32`, `msrv`,
 `package`) and the heavy or informational work that does not (`miri`,
 `fuzz`, `kani`, `coverage`, `profile`, and the benchmark matrix on a weekly
-schedule) — the benchmarks in particular are excluded from the push path
+schedule) â€” the benchmarks in particular are excluded from the push path
 because the full matrix takes tens of minutes per OS and a shared runner
 cannot host a meaningful measurement anyway. See
 [Continuous integration](#continuous-integration).
@@ -587,7 +587,7 @@ shared runner are not comparable to anything.
 `.github/workflows/ci.yml` is split by what should be able to block a
 change.
 
-**Gates a push** — fast, deterministic, no timing claims:
+**Gates a push** â€” fast, deterministic, no timing claims:
 
 | Job | What it proves |
 |---|---|
@@ -604,16 +604,16 @@ change.
 each is either slow, needs hardware the runner may not have, or produces
 numbers that mean nothing on a shared VM:
 
-- `bench` — the comparison matrix, per OS, with artifacts uploaded rather
+- `bench` â€” the comparison matrix, per OS, with artifacts uploaded rather
   than gates asserted.
-- `jemalloc-bench` — the extra comparator column (needs make+autoconf).
-- `miri` — UB and provenance checking under nightly. Runs `--lib` only;
+- `jemalloc-bench` â€” the extra comparator column (needs make+autoconf).
+- `miri` â€” UB and provenance checking under nightly. Runs `--lib` only;
   Miri cannot execute the allocator's raw syscalls, so the mmap-dependent
   tests are `cfg_attr(miri, ignore)`d by design.
-- `fuzz` — builds the `libfuzzer-sys` targets and smoke-runs each briefly.
-- `kani` — formal proofs for the span/big-carving arithmetic.
-- `coverage` — LCOV for reviewing which paths the suite actually reaches.
-- `profile` — `perf` counters; informational only, since perf availability
+- `fuzz` â€” builds the `libfuzzer-sys` targets and smoke-runs each briefly.
+- `kani` â€” formal proofs for the span/big-carving arithmetic.
+- `coverage` â€” LCOV for reviewing which paths the suite actually reaches.
+- `profile` â€” `perf` counters; informational only, since perf availability
   varies by runner kernel.
 
 Two details worth knowing if you touch the benchmarks in CI: they run
@@ -627,43 +627,3 @@ deliberately does not use `--all-features`, which would enable every
 ## License
 
 MIT OR Apache-2.0
-
-<!-- updated: thread-caching description clarified -->
-
-<!-- updated: typo fix in usage example -->
-
-<!-- updated: MSRV requirement note -->
-
-<!-- updated: dependency snippet formatting -->
-
-<!-- updated: intro paragraph wording -->
-
-<!-- updated: badge placeholder added -->
-
-<!-- updated: cross-compilation note reworded -->
-
-<!-- updated: stable channel mention -->
-
-<!-- updated: license section wording -->
-
-<!-- updated: whitespace cleanup -->
-
-<!-- updated: zero-dependency details expanded -->
-
-<!-- updated: crates.io link reference -->
-
-<!-- updated: markdown formatting cleaned -->
-
-<!-- updated: code example readability -->
-
-<!-- updated: build instructions note -->
-
-<!-- updated: allocator feature summary refined -->
-
-<!-- updated: section headings adjusted -->
-
-<!-- updated: performance note added -->
-
-<!-- updated: compatibility information -->
-
-<!-- updated: minor README improvements -->
