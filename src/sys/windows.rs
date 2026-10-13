@@ -8,12 +8,6 @@ const MEM_RELEASE: u32 = 0x8000;
 const PAGE_READWRITE: u32 = 0x04;
 
 extern "system" {
-    fn VirtualAlloc(
-        addr: *mut core::ffi::c_void,
-        size: usize,
-        alloc_type: u32,
-        protect: u32,
-    ) -> *mut core::ffi::c_void;
     fn VirtualFree(addr: *mut core::ffi::c_void, size: usize, free_type: u32) -> i32;
 }
 
