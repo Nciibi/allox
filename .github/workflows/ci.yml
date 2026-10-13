@@ -232,6 +232,18 @@ jobs:
         run: |
           set -o pipefail
           cargo bench --locked -- --nocapture 2>&1 | tee bench-${{ matrix.os }}.txt
+      - name: Assert the matrix actually ran
+        # pipefail catches a bench that *fails*; it cannot catch one that never
+        # starts. Cargo skips a bench target whose `required-features` are
+        # unmet and still exits 0, so adding `required-features` to
+        # `[[bench]]` would make this job green with an empty artifact and
+        # nothing downstream would notice until a table went stale.
+        # `raw <allocator>` lines are only printed by a run that happened.
+        run: |
+          set -o pipefail
+          grep -q "raw allox" "bench-${{ matrix.os }}.txt" \
+            || { echo "::error::benchmark produced no results — bench target was skipped, not run"; exit 1; }
+          grep -c "^raw " "bench-${{ matrix.os }}.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
