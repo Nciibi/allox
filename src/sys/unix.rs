@@ -137,17 +137,89 @@ pub(crate) unsafe fn map_any(size: usize) -> *mut u8 {
     p as *mut u8
 }
 
+/// Result of a purge request. See [`discard`].
+pub(crate) struct Discarded {
+    /// Physical pages were actually dropped, so resident memory fell even
+    /// though the virtual range survives for reuse.
+    pub physical: bool,
+    /// The range is still readable *and* reads as zero, which is a strictly
+    /// stronger claim than `physical` and is what lets a recycled range serve
+    /// `calloc` without a memset.
+    pub zeroed: bool,
+}
+
+impl Discarded {
+    const NOOP: Discarded = Discarded { physical: false, zeroed: false };
+}
+
+/// Tri-state cache for the one-time `MADV_DONTNEED` probe below.
+static MADV_ZEROES: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0); // 0 unknown, 1 yes, 2 no
+
+/// Does `madvise(MADV_DONTNEED)` actually leave the range reading as zero?
+///
+/// Linux documents it: after a successful `MADV_DONTNEED` on an anonymous
+/// private mapping, "the caller will see zero-fill-on-demand pages upon
+/// subsequent page references". That is what makes `FLAG_DISCARDED` — and
+/// therefore `calloc`'s memset skip — sound there.
+///
+/// It is *not* documented the same way everywhere `cfg(unix)` reaches.
+/// FreeBSD and NetBSD describe `MADV_DONTNEED` as lowering the in-memory
+/// priority of pages, and their `MADV_FREE` explicitly says the next
+/// reference "might contain the data that was there before the call". A
+/// false `FLAG_DISCARDED` would hand a `calloc` caller recycled bytes, which
+/// is a memory-disclosure bug, not a missed optimization.
+///
+/// So measure it once per process rather than trusting the port. This is the
+/// same shape as jemalloc's `opt.trust_madvise`, which defaults to *not*
+/// trusting the flag anywhere it has not been checked.
+fn dontneed_zeroes() -> bool {
+    use core::sync::atomic::Ordering;
+    match MADV_ZEROES.load(Ordering::Acquire) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+
+    // Probe: map, dirty, advise, read back. Uses `mmap` directly so it
+    // cannot re-enter the allocator (this runs under heap locks).
+    const PROBE: usize = 8 * 1024;
+    let verdict = {
+        let p = map_any(PROBE);
+        if p.is_null() {
+            false
+        } else {
+            for i in 0..PROBE {
+                p.add(i).write(0xA5);
+            }
+            // A tail byte catches a partial-range bug that a whole-page
+            // pattern would hide.
+            p.add(PROBE - 1).write(0x5A);
+            let advised = madvise(p.cast::<core::ffi::c_void>(), PROBE, MADV_DONTNEED) == 0;
+            let reads_zero = advised && p.add(PROBE - 1).read() == 0;
+            let _ = munmap(p.cast::<core::ffi::c_void>(), PROBE);
+            reads_zero
+        }
+    };
+    MADV_ZEROES.store(if verdict { 1 } else { 2 }, Ordering::Release);
+    verdict
+}
+
 /// Drop physical pages but keep the virtual reservation: the range faults
-/// back (zero-filled) on next access. Best-effort — failure just means the
-/// caller must treat the range as still dirty.
-pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
+/// back in on next access. Best-effort — failure just means the caller must
+/// treat the range as still dirty and still mapped.
+///
+/// [`Discarded::zeroed`] is only true where that re-fault is *proven* to
+/// deliver zeros; see [`dontneed_zeroes`]. It is false on any platform whose
+/// `MADV_DONTNEED` merely lowers priority, which keeps `calloc` correct
+/// there at the cost of a memset.
+pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> Discarded {
     // Instrumented at the single backend entry point so every retention
     // tier (small cold pages, medium/big cold spans, large cold regions)
     // is counted once, in one place. The counts are two relaxed adds; the
     // timing needs a clock read and stays telemetry-only.
     #[cfg(all(feature = "telemetry", feature = "std"))]
     let t0 = std::time::Instant::now();
-    let discarded = madvise(p as *mut core::ffi::c_void, size, MADV_DONTNEED) == 0;
+    let ok = madvise(p.cast::<core::ffi::c_void>(), size, MADV_DONTNEED) == 0;
     crate::counters::bump(&crate::counters::VOLUME.purge_calls, 1);
     crate::counters::bump(&crate::counters::VOLUME.purge_bytes, size as u64);
     #[cfg(all(feature = "telemetry", feature = "std"))]
@@ -155,8 +227,19 @@ pub(crate) unsafe fn discard(p: *mut u8, size: usize) -> bool {
         &crate::counters::TIMING.purge_ns,
         t0.elapsed().as_nanos().min(u64::MAX as u128) as u64,
     );
-    discarded
+    Discarded {
+        physical: ok,
+        zeroed: ok && dontneed_zeroes(),
+    }
 }
+
+/// Prepare a previously discarded range for reuse.
+///
+/// A no-op here: on unix the range was never unmapped, so the next access
+/// faults the zero page back in. It exists because the Windows backend does
+/// need an explicit recommit (see `sys::windows`), and callers should not
+/// have to know which one they are on.
+pub(crate) unsafe fn recommit(_p: *mut u8, _size: usize) {}
 
 // ---------------------------------------------------------------------------
 // pthread mutex: contended waiters park in the kernel instead of burning CPU
