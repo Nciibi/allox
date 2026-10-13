@@ -1,4 +1,4 @@
-﻿//! `allox` — a pure-Rust, thread-cached general-purpose memory allocator.
+//! `allox` — a pure-Rust, thread-cached general-purpose memory allocator.
 //!
 //! Zero dependencies, zero build scripts, no C toolchain: compiles anywhere
 //! `rustc` does. Design overview in `DESIGN.md` at the repository root.
@@ -2112,12 +2112,19 @@ pub unsafe fn usable_size(p: *mut u8) -> usize {
 /// Snapshot current statistics.
 #[derive(Clone, Copy, Debug)]
 pub struct Stats {
-    /// Live virtual mappings from the OS: one per fresh take, regardless of
+    /// Live virtual *mappings* from the OS: one per fresh take, regardless of
     /// mapping size (a 16-page span counts the same as a 1-page small page),
     /// including large allocations' regions. Arena hole reuses recommit
     /// already-counted virtual and don't move it; only genuinely new address
     /// space increments, true unmaps decrement.
-    pub mapped_pages: u64,
+    ///
+    /// This is a count of mappings, **not** of pages — the old name
+    /// `mapped_pages` invited exactly that reading and is why this is a
+    /// `u64` of regions, not a page total. 512 live 2 MiB allocations read as
+    /// `512`, not `16_384`. Multiply by a region's page count (which
+    /// `__debug_map_split` exposes per call as its return value) if you want
+    /// address space; for resident bytes use the platform RSS probe.
+    pub live_mappings: u64,
     /// Total successful OS mappings so far.
     pub map_calls: u64,
     /// Total OS unmaps so far.
@@ -2128,7 +2135,7 @@ pub struct Stats {
 pub fn stats() -> Stats {
     use core::sync::atomic::Ordering::Relaxed;
     Stats {
-        mapped_pages: heap::MAPPED_PAGES.load(Relaxed),
+        live_mappings: heap::MAPPED_PAGES.load(Relaxed),
         map_calls: heap::MAP_CALLS.load(Relaxed),
         unmap_calls: heap::UNMAP_CALLS.load(Relaxed),
     }
@@ -2249,8 +2256,9 @@ pub mod telemetry {
         /// Allocations served by direct OS mappings (large/over-aligned).
         pub large_allocs: u64,
         /// Live virtual mappings from the OS (one per fresh take, any size;
-        /// same counting rule as `Stats::mapped_pages`).
-        pub mapped_pages: u64,
+        /// same counting rule as `Stats::live_mappings` — a count of regions,
+        /// not of pages).
+        pub live_mappings: u64,
         /// Total OS map calls.
         pub map_calls: u64,
         /// Total OS unmap calls.
@@ -2281,7 +2289,7 @@ pub mod telemetry {
             live_bytes: allocated_bytes.saturating_sub(freed_bytes),
             peak_live_bytes: t.peak_live_bytes.load(Relaxed),
             large_allocs: t.large_allocs.load(Relaxed),
-            mapped_pages: crate::heap::MAPPED_PAGES.load(Relaxed),
+            live_mappings: crate::heap::MAPPED_PAGES.load(Relaxed),
             map_calls: crate::heap::MAP_CALLS.load(Relaxed),
             unmap_calls: crate::heap::UNMAP_CALLS.load(Relaxed),
             per_class_allocs: per_class,
@@ -2299,7 +2307,7 @@ pub mod telemetry {
                 live_bytes: 0,
                 peak_live_bytes: 0,
                 large_allocs: 0,
-                mapped_pages: 0,
+                live_mappings: 0,
                 map_calls: 0,
                 unmap_calls: 0,
                 per_class_allocs: [0; crate::classes::TOTAL_CLASSES],
