@@ -154,7 +154,7 @@ mod tls {
                 Ok(Outcome::Ran(r)) => r,
                 // Re-entered, or TLS is gone (thread teardown): both are
                 // served from the global heap.
-                Ok(Outcome::Reentrant) | Ok(Outcome::Gone) | Err(_) => fallback(),
+                Ok(Outcome::Reentrant) | Err(_) => fallback(),
             }
         }
 
