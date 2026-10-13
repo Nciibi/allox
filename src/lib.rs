@@ -1441,6 +1441,14 @@ unsafe fn dealloc_impl(p: *mut u8) {
     if p.is_null() {
         return;
     }
+    // No live allocation can live below the large header, so a pointer here
+    // is garbage. Without this the masked page read below dereferences
+    // address 0 and takes the process down with SIGSEGV instead of the
+    // allocator's own diagnostic — `realloc` and `usable_size` already make
+    // this same check for the same reason.
+    if (p as usize) < LARGE_HEADER_SIZE {
+        corrupt_pointer();
+    }
     #[cfg(all(unix, feature = "std"))]
     if crate::arena::contains(p, 1) {
         let large = crate::arena::large_table_get(p);
