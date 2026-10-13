@@ -2228,17 +2228,6 @@ impl ThreadCache {
 
 #[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) fn retire(mut cache: ThreadCache) {
-    eprintln!(
-        "ALLOXDIAG cache::retire called; ops={} diag_ops={} zeroed_calls={} \
-         small_refills={} trims={} cached={} large={}",
-        cache.pending.ops,
-        cache.pending.diag_ops,
-        cache.pending.zeroed_calls,
-        cache.pending.small_refills,
-        cache.pending.trims,
-        cache.cached_bytes,
-        cache.large_bytes
-    );
     // Publish before any early return.
     //
     // This used to sit after the `bytes == 0` check, which silently discarded
