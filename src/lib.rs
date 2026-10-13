@@ -590,14 +590,17 @@ impl LargeRegionCache {
         (entry.0, entry.1, zeroed)
     }
 
-    fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool) {
+    fn remove_cold(&mut self, index: usize) -> (*mut u8, u32, bool, bool) {
         let last = self.cold_len - 1;
         let entry = self.cold[index];
         let zeroed = self.cold_zeroed[index];
+        let decommitted = self.cold_decommitted[index];
         self.cold[index] = self.cold[last];
         self.cold[last] = (ptr::null_mut(), 0);
         self.cold_zeroed[index] = self.cold_zeroed[last];
         self.cold_zeroed[last] = false;
+        self.cold_decommitted[index] = self.cold_decommitted[last];
+        self.cold_decommitted[last] = false;
         self.cold_len = last;
         self.cold_bytes -= entry.1 as usize * page::PAGE_SIZE;
         if index < self.cold_len {
@@ -621,7 +624,7 @@ impl LargeRegionCache {
                 );
             }
         }
-        (entry.0, entry.1, zeroed)
+        (entry.0, entry.1, zeroed, decommitted)
     }
 
     /// Best-fit entry with at least `mapped` bytes: hot first, then cold.
