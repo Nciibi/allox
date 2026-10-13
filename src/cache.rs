@@ -2242,7 +2242,6 @@ pub(crate) fn retire(mut cache: ThreadCache) {
     // Nothing else can publish it: `ThreadCache` deliberately has no `Drop`
     // (it is moved with `ptr::read` into the retirement queue), and this hook
     // is the only drain point at thread exit.
-    cache.publish();
     let bytes = cache.cached_bytes.saturating_add(cache.large_bytes);
     if bytes == 0 {
         return;
@@ -2250,6 +2249,8 @@ pub(crate) fn retire(mut cache: ThreadCache) {
     if bytes > RETIRED_SLOT_BYTES {
         unsafe { cache.flush_all() };
         return;
+    }
+    cache.publish();
     }
     for slot in &RETIRED_SLOTS {
         if slot
@@ -2443,20 +2444,3 @@ unsafe fn debug_validate_free_big(p: *mut u8, span: *mut BigMaster) {
             invalid("allox: double free detected");
         }
         if cur.is_null() {
-            break;
-        }
-        cur = *cur.cast::<*mut u8>();
-        steps -= 1;
-    }
-}
-
-#[cfg(all(debug_assertions, feature = "std"))]
-fn invalid(msg: &'static str) -> ! {
-    eprintln!("{}", msg);
-    std::process::abort()
-}
-
-#[cfg(all(debug_assertions, not(feature = "std")))]
-fn invalid(msg: &'static str) -> ! {
-    panic!("{}", msg)
-}
