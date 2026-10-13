@@ -382,29 +382,33 @@ impl GlobalHeap {
             }
 
             if count == 0 && list.cold_len > 0 {
-                // Cold page: virtual survived. If the backend's discard
-                // actually landed, the OS guarantees the range reads as zero
-                // again, so the page is virgin once more and `calloc` can
-                // skip the memset. Where discard is a no-op (wasm) the flag
-                // was never set, so we fall back to treating it as dirty and
-                // memsetting — sound on every backend, not just the ones
-                // where discard works.
+                // Cold page: virtual survived. If the backend's purge
+                // actually landed *and* was proven to leave zeros, the page
+                // is virgin once more and `calloc` can skip the memset.
+                // Where that cannot be proven (Windows `MEM_DECOMMIT`, wasm
+                // no-purge) we treat it as dirty and memset — sound on every
+                // backend, not just the ones where purge proves zeroing.
                 list.cold_len -= 1;
                 let cidx = list.cold_len as usize;
                 let page = list.cold[cidx];
                 list.cold[cidx] = ptr::null_mut();
                 list.cold_bytes -= PAGE_SIZE;
-                // Read before `init`, which rewrites `flags`.
-                let provably_zero = (*page).flags & FLAG_DISCARDED != 0;
-                let decommitted = (*page).flags & FLAG_DECOMMITTED != 0;
-                (*page).flags &= !FLAG_DECOMMITTED;
+                // Read the bookkeeping before clearing it. It lives in this
+                // list, not in the page, because on Windows the page is
+                // unreadable until recommitted and reading its own flags
+                // would fault.
+                let provably_zero = list.cold_zeroed[cidx];
+                let decommitted = list.cold_decommitted[cidx];
+                list.cold_zeroed[cidx] = false;
+                list.cold_decommitted[cidx] = false;
                 if decommitted {
                     // The backend dropped the physical pages, so the range is
-                    // not readable until it is recommitted. On unix this is a
-                    // no-op (the mapping survived); on Windows it is the
-                    // `VirtualAlloc(MEM_COMMIT)` that makes `MEM_DECOMMIT`
-                    // usable at all. Done before `init` writes the header,
-                    // under the same class lock that made this page ours.
+                    // not readable until recommitted. On unix this is a no-op
+                    // (the mapping survived and will fault in a zero page);
+                    // on Windows it is the `VirtualAlloc(MEM_COMMIT)` that
+                    // makes `MEM_DECOMMIT` usable at all. Must precede any
+                    // access to the page, and runs under the same class lock
+                    // that made this page exclusively ours.
                     sys::recommit(page.cast::<u8>(), PAGE_SIZE);
                 }
                 (*page).init(class);
