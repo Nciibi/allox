@@ -887,6 +887,13 @@ impl MediumHeap {
                 list.cold[cidx] = (ptr::null_mut(), 0);
                 list.cold_bytes -= pages as usize * PAGE_SIZE;
                 let span = base.cast::<SpanMaster>();
+                // The cold park may have dropped the physical pages, which
+                // leaves the range unreadable until it is recommitted (a
+                // no-op on unix, where the mapping survived; on Windows the
+                // `VirtualAlloc(MEM_COMMIT)` that makes the decommit usable).
+                // Must happen before `init` writes the master header, and
+                // under the same class lock that made the span ours.
+                sys::recommit(base, pages as usize * PAGE_SIZE);
                 (*span).init(mclass, pages);
                 (*span).flags &= !FLAG_VIRGIN;
                 virgin = false;
