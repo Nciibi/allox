@@ -481,8 +481,6 @@ impl ThreadCache {
     /// them here is what keeps them off the per-op path. Allocation volume
     /// itself is telemetry-only, as before.
     fn publish(&mut self) {
-        // TEMPORARY non-allocating probe.
-        crate::counters::bump(&crate::counters::VOLUME.purge_bytes, self.pending.zeroed_calls);
         #[cfg(feature = "telemetry")]
         self.publish_diagnostics();
         #[cfg(feature = "telemetry")]
@@ -611,8 +609,6 @@ impl ThreadCache {
     /// comment in [`Pending`].
     #[cfg(feature = "telemetry")]
     pub(crate) fn note_zeroed(&mut self, size: usize) {
-        // TEMPORARY non-allocating probe.
-        crate::counters::bump(&crate::counters::VOLUME.owner_probes, 1);
         self.pending.zeroed_calls += 1;
         self.pending.zeroed_bytes += size as u64;
         self.pending.diag_ops += 1;
@@ -2232,9 +2228,6 @@ impl ThreadCache {
 
 #[cfg(all(feature = "std", any(unix, windows)))]
 pub(crate) fn retire(mut cache: ThreadCache) {
-    // TEMPORARY non-allocating probe.
-    crate::counters::bump(&crate::counters::VOLUME.remote_frees, 1);
-    crate::counters::bump(&crate::counters::VOLUME.medium_refills, cache.pending.zeroed_calls);
     // Publish before any early return.
     //
     // This used to sit after the `bytes == 0` check, which silently discarded
