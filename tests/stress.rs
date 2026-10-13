@@ -88,7 +88,7 @@ fn randomized_stress_multithreaded() {
     println!(
         "stress done in {:?}: {} pages mapped",
         start.elapsed(),
-        s.mapped_pages
+        s.live_mappings
     );
 }
 

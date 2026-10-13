@@ -159,7 +159,7 @@ fn randomized_churn_all_paths_multithreaded() {
 
     allox::flush_current_thread();
     let stats = allox::stats();
-    println!("post-flush mapped pages: {}", stats.mapped_pages);
+    println!("post-flush mapped pages: {}", stats.live_mappings);
 }
 
 /// calloc must zero even when memory is recycled from previous frees.

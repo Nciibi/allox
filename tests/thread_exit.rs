@@ -87,7 +87,7 @@ fn short_lived_threads_do_not_accumulate() {
     let mut mapped = Vec::new();
     for g in 0..GENERATIONS {
         one_generation(WORKERS);
-        let m = allox::stats().mapped_pages;
+        let m = allox::stats().live_mappings;
         eprintln!("generation {}: mapped_pages={}", g, m);
         mapped.push(m);
     }

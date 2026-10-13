@@ -2005,7 +2005,7 @@ fn main() {
             Some(AlloxDiagnostics {
                 map_delta: s1.map_calls.saturating_sub(s0.map_calls),
                 unmap_delta: s1.unmap_calls.saturating_sub(s0.unmap_calls),
-                mapped_delta: s1.mapped_pages as i64 - s0.mapped_pages as i64,
+                mapped_delta: s1.live_mappings as i64 - s0.live_mappings as i64,
                 span_maps: d1sp.saturating_sub(d0sp),
                 span_unmaps: d1su.saturating_sub(d0su),
                 small_maps: d1sm.saturating_sub(d0sm),
