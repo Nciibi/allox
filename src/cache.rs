@@ -2185,14 +2185,26 @@ impl ThreadCache {
         // here beyond the caller's cache ownership) so an explicit flush
         // actually returns memory instead of shuffling it to shared shards.
         // Arena-owned slices park in arena holes; legacy ones truly unmap.
+        //
+        // `unmap_or_return` reports whether it parked in the arena. Recording
+        // that here has to go through `note_arena_parks` on `self`, not the
+        // `note_arena_event` free function: this runs while a `&mut
+        // ThreadCache` is live, and that helper calls `with_cache`, which
+        // would nest.
+        let mut arena_parks = 0u64;
         for i in 0..self.large_len as usize {
             let (base, pages) = self.large[i];
             if !base.is_null() {
                 let size = pages as usize * crate::page::PAGE_SIZE;
-                crate::unmap_or_return(base, size);
+                if crate::unmap_or_return(base, size) {
+                    arena_parks += 1;
+                }
                 self.large[i] = (ptr::null_mut(), 0);
             }
         }
+        #[cfg(feature = "telemetry")]
+        self.note_arena_parks(arena_parks);
+        let _ = arena_parks;
         self.large_len = 0;
         self.large_bytes = 0;
         self.publish();
