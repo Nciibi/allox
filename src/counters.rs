@@ -295,7 +295,7 @@ pub(crate) fn bump(counter: &AtomicU64, by: u64) {
 }
 
 /// Read a volume counter (unit tests and the bench probe).
-#[cfg(test)]
+#[cfg(all(test, feature = "telemetry"))]
 #[inline]
 pub(crate) fn get(counter: &AtomicU64) -> u64 {
     counter.load(Relaxed)
