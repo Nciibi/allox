@@ -45,9 +45,16 @@ Observability:
 
 ```rust,ignore
 let s = allox::stats();
-println!("{} pages mapped", s.mapped_pages);
+println!("{} live mappings", s.live_mappings);
 allox::flush_current_thread(); // return this thread's caches (thread pools)
 ```
+
+`live_mappings` counts **regions, not pages** — one per OS mapping, whatever
+its size. 512 live 2 MiB allocations read as `512`, not `16_384`. (It was
+called `mapped_pages` until this release, which is precisely how someone
+concludes the allocator is holding a sixteenth of the memory it is.) For
+resident bytes, read the platform RSS; virtual address space is not a proxy
+for it once cold retention is discarding physical pages.
 
 **Allocation telemetry** (`telemetry` feature): totals, live bytes, peak
 usage, large-alloc counts, and a per-size-class allocation histogram.
