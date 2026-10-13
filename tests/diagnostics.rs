@@ -228,27 +228,26 @@ fn worker_counters_are_accurate_within_the_batch_bound() {
     // so poll rather than sample once — same trick as
     // `thread_exit_counts_flushes`.
     let mut calls = 0;
-    let mut bytes = 0;
     for _ in 0..5_000 {
         let after = volume();
         calls = delta(before.zeroed_calls, after.zeroed_calls);
-        bytes = delta(before.zeroed_bytes, after.zeroed_bytes);
         if calls >= FLOOR {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 
+    // Only a floor, deliberately. The suite runs these tests in parallel in
+    // one process, so other tests' `calloc`s land in the same global counter
+    // — which can only raise the total, never lower it. That is fine: this
+    // guards against the *large* loss (an 8192-batch tail lost ~41% of the
+    // events and would fail this), not against counting noise.
     assert!(
         calls >= FLOOR,
         "a worker thread lost too much of its counter window: {calls} of ~{EXPECTED} \
          `calloc`s were counted (floor {FLOOR}). The unflushed tail must stay \
          bounded by one batch per thread; if this regressed, DIAG_FLUSH_OPS \
          went back up or the exit-hook publish was dropped."
-    );
-    assert!(
-        bytes >= calls * BLOCK as u64,
-        "every counted zeroing covers at least one block: {bytes} bytes for {calls} calls"
     );
 }
 
