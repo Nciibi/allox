@@ -642,7 +642,7 @@ impl LargeRegionCache {
     fn take_fit(&mut self, mapped: usize) -> Option<(*mut u8, u32, bool, bool)> {
         let wanted = (mapped / page::PAGE_SIZE) as u32;
         if let Some(i) = self.exact_hot(wanted) {
-            return Some(self.remove_hot(i).0);
+            return Some(self.remove_hot(i));
         }
         if let Some(i) = self.exact_cold(wanted) {
             return Some(self.remove_cold(i));
