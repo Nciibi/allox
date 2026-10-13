@@ -461,6 +461,12 @@ struct LargeRegionCache {
     cold_bytes: usize,
     cold: [(*mut u8, u32); LARGE_COLD_SLOTS],
     cold_zeroed: [bool; LARGE_COLD_SLOTS],
+    /// Cold entries whose physical pages the backend actually dropped. On
+    /// Windows that means `MEM_DECOMMIT`, which leaves the range unreadable
+    /// until `sys::recommit` commits it again — so the flag travels with the
+    /// entry, exactly as `cold_zeroed` does, and the take path acts on it
+    /// before touching the region.
+    cold_decommitted: [bool; LARGE_COLD_SLOTS],
     cold_exact: [u16; LARGE_EXACT_MAX_PAGES + 1],
 }
 
