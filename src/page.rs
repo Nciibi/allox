@@ -535,8 +535,7 @@ mod tests {
 
     #[test]
     fn medium_carve_matches_capacity_for_every_class() {
-        for mclass in 0..NUM_MEDIUM {
-            let block = MEDIUM_CLASSES[mclass];
+        for (mclass, block) in MEDIUM_CLASSES.iter().copied().enumerate() {
             let pages = span_pages_for(block);
             let (raw, layout) = unsafe { aligned_pages(pages) };
             let span = raw.cast::<SpanMaster>();
