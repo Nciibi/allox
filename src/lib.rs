@@ -561,7 +561,9 @@ impl LargeRegionCache {
         }
     }
 
-    fn remove_hot(&mut self, index: usize) -> (*mut u8, u32, bool) {
+    /// Hot entries are never discarded, so the decommitted slot is always
+    /// false; the 4-tuple keeps `take_fit`'s return shape uniform.
+    fn remove_hot(&mut self, index: usize) -> (*mut u8, u32, bool, bool) {
         let last = self.len - 1;
         let entry = self.entries[index];
         let zeroed = self.hot_zeroed[index];
