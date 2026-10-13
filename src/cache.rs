@@ -1831,6 +1831,16 @@ impl ThreadCache {
                     g.n += 1;
                 }
                 None => {
+                    // `len <= FLUSH_CHUNK` and `MAX_FLUSH_GROUPS` is
+                    // `FLUSH_CHUNK + 8`, so this cannot fire today. The
+                    // medium and big flushes below guard the same array, and a
+                    // bound enforced in two places and not the others is how
+                    // it starts being wrong.
+                    debug_assert!(ng < MAX_FLUSH_GROUPS, "small flush group overflow");
+                    if ng >= MAX_FLUSH_GROUPS {
+                        cursor = next;
+                        continue;
+                    }
                     groups[ng] = MaybeUninit::new(PageReleaseChunk {
                         page,
                         head: ptr::null_mut(),
