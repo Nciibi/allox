@@ -1898,7 +1898,8 @@ fn main() {
         Named("system", &HARNESS),
     ];
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-    let allocators: Vec<Named> = vec![Named("allox", &ALLOX), Named("system", &HARNESS)];
+    #[allow(unused_mut)]
+    let mut allocators: Vec<Named> = vec![Named("allox", &ALLOX), Named("system", &HARNESS)];
     #[cfg(feature = "bench-c")]
     allocators.extend([Named("mimalloc", &MIMALLOC), Named("snmalloc", &SNMALLOC)]);
     #[cfg(feature = "bench-jemalloc")]
