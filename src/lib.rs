@@ -333,6 +333,13 @@ unsafe fn dealloc_small(p: *mut u8) {
 ///
 /// A zero `old_size` is Rust's dangling-pointer convention (`Vec` never does
 /// it, but the contract allows it): allocate, copy nothing, free nothing.
+///
+/// The telemetry note happens *after* `with_cache` returns, not inside the
+/// closure. `note_realloc` records into the calling thread's batched counters
+/// by calling `with_cache` again, and doing that while the closure's
+/// `&mut ThreadCache` is still live would mint a second one — aliasing UB.
+/// The `tls` reentrancy guard now turns that into a silently-dropped
+/// counter, so the copy length is returned instead and noted here.
 #[inline]
 unsafe fn realloc_small(
     p: *mut u8,
@@ -341,20 +348,16 @@ unsafe fn realloc_small(
     old_class: usize,
     new_class: usize,
 ) -> *mut u8 {
-    with_cache(
+    let copied = old_size.min(new_size);
+    let new_p = with_cache(
         |c| {
             let new_p = c.alloc(new_class);
             if new_p.is_null() {
                 return ptr::null_mut();
             }
             if old_size != 0 {
-                let copy = old_size.min(new_size);
-                ptr::copy_nonoverlapping(p, new_p, copy);
+                ptr::copy_nonoverlapping(p, new_p, copied);
                 c.dealloc(p, old_class);
-            }
-            #[cfg(feature = "telemetry")]
-            if old_size != 0 {
-                note_realloc(old_size.min(new_size), false);
             }
             new_p
         },
