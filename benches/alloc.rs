@@ -54,9 +54,13 @@ unsafe impl std::alloc::GlobalAlloc for Dlmalloc {
 
 static DLMALLOC: Dlmalloc = Dlmalloc;
 
-// C comparators (dev-only; lib stays zero-C). Wrappers delegate the native
-// GlobalAlloc operations so every workload below runs equivalently.
+// C comparators (dev-only; lib stays zero-C), behind `--features bench-c`.
+// Off by default so `cargo test` needs no C toolchain — see the `bench-c`
+// note in Cargo.toml. Wrappers delegate the native GlobalAlloc operations so
+// every workload below runs equivalently.
+#[cfg(feature = "bench-c")]
 struct Mimalloc;
+#[cfg(feature = "bench-c")]
 unsafe impl GlobalAlloc for Mimalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         mimalloc::MiMalloc.alloc(l)
@@ -71,9 +75,12 @@ unsafe impl GlobalAlloc for Mimalloc {
         mimalloc::MiMalloc.alloc_zeroed(l)
     }
 }
+#[cfg(feature = "bench-c")]
 static MIMALLOC: Mimalloc = Mimalloc;
 
+#[cfg(feature = "bench-c")]
 struct Snmalloc;
+#[cfg(feature = "bench-c")]
 unsafe impl GlobalAlloc for Snmalloc {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         snmalloc_rs::SnMalloc.alloc(l)
@@ -88,6 +95,7 @@ unsafe impl GlobalAlloc for Snmalloc {
         snmalloc_rs::SnMalloc.alloc_zeroed(l)
     }
 }
+#[cfg(feature = "bench-c")]
 static SNMALLOC: Snmalloc = Snmalloc;
 
 // jemalloc (optional, `--features bench-jemalloc`): CI box has make+autoconf.
