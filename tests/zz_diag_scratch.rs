@@ -6,43 +6,45 @@ fn diag_scratch() {
     allox::set_thread_cache_budget(1024);
     let t0 = std::time::Instant::now();
     let before = allox::__diagnostics::volume_raw();
-    let zeroed_idx = allox::__diagnostics::VOLUME_FIELDS
-        .iter()
-        .position(|n| *n == "zeroed_calls")
-        .unwrap();
-    let exit_idx = allox::__diagnostics::VOLUME_FIELDS
-        .iter()
-        .position(|n| *n == "exit_flushes")
-        .unwrap();
+    let idx = |name: &str| {
+        allox::__diagnostics::VOLUME_FIELDS
+            .iter()
+            .position(|n| *n == name)
+            .unwrap()
+    };
+    let (zc_i, ef_i) = (idx("zeroed_calls"), idx("exit_flushes"));
 
-    let worker_id = std::thread::spawn(|| {
+    let handle = std::thread::spawn(|| {
         eprintln!("TIMING worker {:?} starting", std::thread::current().id());
         for _ in 0..2_000 {
             let p = unsafe { allox::calloc(512, 1) };
             unsafe { allox::free(p) };
         }
-    })
-    }).join().unwrap();
-    eprintln!("TIMING worker was {:?}", worker_id);
-    eprintln!("TIMING join returned at {:?} ms", t0.elapsed().as_millis());
+        eprintln!("TIMING worker {:?} done working", std::thread::current().id());
+    });
+    handle.join().unwrap();
+    eprintln!(
+        "TIMING main {:?} joined worker {:?} at {:?} ms",
+        std::thread::current().id(),
+        handle.thread().id(),
+        t0.elapsed().as_millis()
+    );
 
     for i in 0..5_000 {
         let v = allox::__diagnostics::volume_raw();
-        let zc = v[zeroed_idx].saturating_sub(before[zeroed_idx]);
-        let ef = v[exit_idx].saturating_sub(before[exit_idx]);
+        let zc = v[zc_i].saturating_sub(before[zc_i]);
+        let ef = v[ef_i].saturating_sub(before[ef_i]);
         if zc > 0 {
             eprintln!(
-                "TIMING counters visible after {:?} ms (iter {i}, zeroed_calls +{zc}, exit_flushes +{ef})",
+                "TIMING counters visible after {:?} ms (iter {i}, zeroed +{zc}, exit_flushes +{ef})",
                 t0.elapsed().as_millis()
             );
             return;
         }
+        if i % 500 == 0 {
+            eprintln!("TIMING  iter {i}: zeroed +0, exit_flushes +{ef}");
+        }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    let v = allox::__diagnostics::volume_raw();
-    eprintln!(
-        "TIMING NEVER VISIBLE after {:?} ms (exit_flushes +{})",
-        t0.elapsed().as_millis(),
-        v[exit_idx].saturating_sub(before[exit_idx])
-    );
+    eprintln!("TIMING NEVER VISIBLE");
 }
