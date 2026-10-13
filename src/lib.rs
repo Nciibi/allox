@@ -139,8 +139,6 @@ mod tls {
                 // `arm_exit_hook`, so it cannot re-enter the hook install, and
                 // so cannot spin forever on `thread_exit::INSTALLING`.
                 if tls.in_use.get() {
-                    // TEMPORARY non-allocating probe.
-                    crate::counters::bump(&crate::counters::VOLUME.arena_fallbacks, 1);
                     return Outcome::Reentrant;
                 }
                 tls.in_use.set(true);
@@ -153,18 +151,10 @@ mod tls {
                 Outcome::Ran(out)
             });
             match result {
-                Ok(Outcome::Ran(r)) => {
-                    // TEMPORARY non-allocating probe: cache hits.
-                    crate::counters::bump(&crate::counters::VOLUME.arena_parks, 1);
-                    r
-                }
+                Ok(Outcome::Ran(r)) => r,
                 // Re-entered, or TLS is gone (thread teardown): both are
                 // served from the global heap.
-                Ok(Outcome::Reentrant) | Err(_) => {
-                    // TEMPORARY non-allocating probe: fallback taken.
-                    crate::counters::bump(&crate::counters::VOLUME.trims, 1);
-                    fallback()
-                }
+                Ok(Outcome::Reentrant) | Err(_) => fallback(),
             }
         }
 
