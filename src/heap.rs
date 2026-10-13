@@ -507,11 +507,6 @@ impl GlobalHeap {
                 debug_assert_eq!((*g.page).class as usize, class);
                 g.head = ptr::null_mut();
                 g.tail = ptr::null_mut();
-                let count = g.n & !PAGE_RELEASE_RETIRED;
-                let retire = count == (*g.page).used;
-                g.n = count | if retire { PAGE_RELEASE_RETIRED } else { 0 };
-                partial |= !retire;
-            }
             if partial {
                 let mut cursor = chain;
                 for _ in 0..len {
