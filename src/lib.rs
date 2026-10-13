@@ -1437,7 +1437,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
             return p;
         }
         #[cfg(all(unix, feature = "std"))]
-        if align > MIN_ALIGN || size > MAX_BIG_BLOCK {
+        if size > MAX_BIG_BLOCK {
             let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
             zero_large_allocation(p, size, known_zeroed);
             return p;
