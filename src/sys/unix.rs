@@ -148,10 +148,6 @@ pub(crate) struct Discarded {
     pub zeroed: bool,
 }
 
-impl Discarded {
-    const NOOP: Discarded = Discarded { physical: false, zeroed: false };
-}
-
 /// Tri-state cache for the one-time `MADV_DONTNEED` probe below.
 static MADV_ZEROES: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0); // 0 unknown, 1 yes, 2 no
 
