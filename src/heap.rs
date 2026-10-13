@@ -499,7 +499,11 @@ impl GlobalHeap {
             return;
         }
         debug_assert!(chunks.len() <= MAX_PAGE_RELEASE_GROUPS);
-        let mut fates = [PageFate::Keep; MAX_PAGE_RELEASE_GROUPS];
+        // Only `0..chunks.len()` is ever read below, but the array is still
+        // initialized in full — 2056 bytes memset on every flush. `MaybeUninit`
+        // avoids that; each slot is written before it is read.
+        let mut fate_storage: [MaybeUninit<PageFate>; MAX_PAGE_RELEASE_GROUPS] =
+            [const { MaybeUninit::uninit() }; MAX_PAGE_RELEASE_GROUPS];
         let mut partial = false;
         {
             let mut list = self.classes[class].lock();
