@@ -1183,6 +1183,11 @@ fn current_rss_kib() -> u64 {
     status_kib("VmRSS:")
 }
 
+#[cfg(target_os = "linux")]
+fn peak_rss_kib() -> u64 {
+    status_kib("VmHWM:")
+}
+
 /// Windows working-set probe.
 ///
 /// `sys::windows` decommits its cold retention tiers, and the entire point of
@@ -1246,13 +1251,7 @@ mod windows_mem {
         };
         // SAFETY: the pseudo-handle from `GetCurrentProcess` is always valid,
         // and `counters` is a live, correctly sized, zeroed out-param.
-        let ok = unsafe {
-            GetProcessMemoryInfo(
-                GetCurrentProcess(),
-                &mut counters,
-                size as u32,
-            )
-        };
+        let ok = unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size as u32) };
         if ok == 0 {
             (0, 0)
         } else {
@@ -2137,7 +2136,7 @@ fn main() {
     } else {
         println!("{}", "-".repeat(60));
         println!("raw samples are per repetition; timing percentiles are over aggregate ns/op values, avoiding a timer around every allocator call.");
-        println!("rssKiB = current VmRSS; peakRSS = VmHWM; both are KiB on Linux and 0 elsewhere.");
+        println!("rssKiB = current working set; peakRSS = peak working set. KiB on Linux (VmRSS/VmHWM) and Windows (GetProcessMemoryInfo); 0 elsewhere.");
         println!("allox counters are sampled only when allox is selected by BENCH_ALLOC.");
         println!("BENCH_OUTPUT=json or BENCH_JSON=1 emits one machine-readable JSON document.");
         #[cfg(feature = "bench-jemalloc")]
