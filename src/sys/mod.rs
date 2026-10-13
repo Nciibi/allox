@@ -84,7 +84,7 @@ mod spin_raw {
 
 /// Mutex built on a platform raw mutex.
 ///
-/// - Windows: SRWLock â€” contended threads park in the kernel.
+/// - Windows: SRWLock — contended threads park in the kernel.
 /// - Other platforms: adaptive spin (bounded spinning, then `yield_now` where
 ///   an OS exists). The allocator only takes this on batched slow paths, so
 ///   spinning briefly is acceptable there; none of it can allocate, which is

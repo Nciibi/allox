@@ -1,6 +1,6 @@
 ﻿//! Per-thread cache of detached free-block chains, one bin per size class.
 //!
-//! Fast path: pop/push on a bin's intrusive list â€” no locks, no atomics.
+//! Fast path: pop/push on a bin's intrusive list — no locks, no atomics.
 //! Slow paths: refill from the global heap (batched), and trimming when the
 //! thread's total cached bytes exceed [`THREAD_CACHE_BUDGET`].
 //!
@@ -41,13 +41,13 @@ const DEFAULT_THREAD_CACHE_BUDGET: usize = 32 * 1024 * 1024;
 /// Remote-free drift cap (ROADMAP P1 step 4): once a thread's cache exceeds
 /// this fraction of the budget, frees of blocks whose page/span was claimed
 /// by another thread are *counted* (`foreign_bytes`) so they can be shed in
-/// batch via `trim` â€” never one `release_blocks` per free (that serialized
+/// batch via `trim` — never one `release_blocks` per free (that serialized
 /// producer-consumer on the class lock and thrashed the arena). Same-thread
 /// frees below the gate stay header-free (the Phase-0 free-path win).
 ///
 /// `DIV = 1` (gate at full budget) was measured and **rejected**: mixed-all
-/// stayed ~0.71Ã— mimalloc (PMU's "72% of dealloc_medium" did not translate
-/// to wall-clock) and prodcons regressed 32.7M â†’ ~26.8M ops/s because
+/// stayed ~0.71× mimalloc (PMU's "72% of dealloc_medium" did not translate
+/// to wall-clock) and prodcons regressed 32.7M → ~26.8M ops/s because
 /// `foreign_bytes` never reached `budget / 8` before `cached_bytes > budget`
 /// already forced `should_shed`, killing the early foreign shed.
 const DRIFT_GATE_DIV: usize = 2;
@@ -238,7 +238,7 @@ pub(crate) struct ThreadCache {
     tid: u32,
     /// Bytes accepted from foreign-owned pages while the drift gate is open.
     /// Cleared on every `trim`/`flush_all`; heuristic only (never read for
-    /// correctness). Shed batch via `trim` once â‰¥ budget/[`FOREIGN_SHED_DIV`].
+    /// correctness). Shed batch via `trim` once ≥ budget/[`FOREIGN_SHED_DIV`].
     foreign_bytes: usize,
     /// Medium bins (multi-page spans), same discipline as small bins (the
     /// virgin count lives in `SmallBin::virgin` for the small tier).
@@ -301,7 +301,7 @@ const DIAG_FLUSH_OPS: u32 = 1024;
 // pins the bound.
 
 /// Note `by` occurrences of a diagnostic event, publishing the thread's
-/// batch when it fills. One thread-local add and a compare â€” deliberately
+/// batch when it fills. One thread-local add and a compare — deliberately
 /// *not* a shared atomic (see the `counters` module docs for what that
 /// costs at 4M events/s).
 ///
@@ -794,7 +794,7 @@ impl ThreadCache {
 
     /// Take over `other`'s chain for every small class this cache's bin is
     /// empty for, carrying the byte accounting and the virgin watermark with
-    /// it. O(1) per class â€” no walk, no lock, no allocation.
+    /// it. O(1) per class — no walk, no lock, no allocation.
     ///
     /// The virgin count moves with the chain because it describes those exact
     /// blocks: it is a count of never-allocated blocks at the bottom of *this*
@@ -927,7 +927,7 @@ impl ThreadCache {
     }
 
     /// True when either the total budget or the foreign-byte shed limit is
-    /// exceeded â€” caller should `trim` (batched, page-grouped) and clear
+    /// exceeded — caller should `trim` (batched, page-grouped) and clear
     /// `foreign_bytes`.
     #[inline]
     fn should_shed(&self) -> bool {
@@ -993,7 +993,7 @@ impl ThreadCache {
     /// `#[inline(never)]` is load-bearing, not cosmetic. Inlined into `alloc`
     /// it drags the class lock, the claim walk and the chain split into the
     /// fast path, which then needs two callee-saved registers and a stack
-    /// frame to hold them â€” six wasted instructions on every small allocation
+    /// frame to hold them — six wasted instructions on every small allocation
     /// and free. Refills are one batch per `REFILL_BATCH` allocations, so
     /// there is nothing to gain from inlining this into them.
     #[inline(never)]
@@ -1080,8 +1080,8 @@ impl ThreadCache {
     ///
     /// Both terms are loop-invariant for a thread recycling inside its
     /// budget, so this collapses to one well-predicted branch and lets the
-    /// entire cold half of [`Self::dealloc`] â€” hook arming, the owner probe,
-    /// the foreign-byte accounting â€” live behind a single outlined call.
+    /// entire cold half of [`Self::dealloc`] — hook arming, the owner probe,
+    /// the foreign-byte accounting — live behind a single outlined call.
     /// That matters because a `call` anywhere in the free path forces the
     /// register allocator to spill every live value into callee-saved
     /// registers around it, which measured as five push/pop pairs on every
@@ -1337,7 +1337,7 @@ impl ThreadCache {
 
     /// Medium free with `mclass` already known (layout-routed fast path;
     /// `free()` callers pass `(*span).mclass` after their own header load).
-    /// No span load here â€” the span is only needed on the cold no-TLS
+    /// No span load here — the span is only needed on the cold no-TLS
     /// fallback, which re-derives it from the pointer.
     #[inline]
     pub(crate) unsafe fn dealloc_medium(&mut self, p: *mut u8, mclass: usize) {
@@ -1809,7 +1809,7 @@ impl ThreadCache {
                 // it down here used to lag actual retention until a later
                 // pop drove it below zero (debug underflow panic, release
                 // wrap into an over-trim storm). A futile rescan per
-                // over-budget dealloc is the honest price â€” O(classes), no
+                // over-budget dealloc is the honest price — O(classes), no
                 // syscalls, and it stops the moment bins become trimmable.
                 break;
             }
@@ -2431,7 +2431,7 @@ unsafe fn debug_validate_free_medium(p: *mut u8, span: *mut SpanMaster) {
 }
 
 /// Debug-build validation for big frees: `p` must sit block-aligned inside
-/// the span's single contiguous carved area (past the 64 B master â€” data
+/// the span's single contiguous carved area (past the 64 B master — data
 /// chunks reserve nothing, so unlike medium spans there are no per-chunk
 /// bounds, only the whole-span extent) and must not already be on the span
 /// free list. Runs under the big-heap lock.
