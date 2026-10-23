@@ -84,17 +84,30 @@ unsafe fn alloc_slot(rng: &mut Rng) -> Slot {
 /// all code paths (small classes, large regions, over-aligned regions).
 #[test]
 fn randomized_churn_all_paths_multithreaded() {
+    // Bound the live set: allocs outnumber frees, so an uncapped run grows to
+    // thousands of slots per thread (hundreds of MB each) and exhausts a
+    // 32-bit address space before the iteration count is reached. The cap
+    // keeps the same path coverage with a bounded working set.
+    const LIVE_CAP: usize = 512;
     let handles: Vec<_> = (0..6)
         .map(|t| {
             thread::spawn(move || {
                 let mut rng = Rng((t as u64 + 7).wrapping_mul(0x2545F4914F6CDD1D));
-                let mut live: Vec<Slot> = Vec::with_capacity(512);
+                let mut live: Vec<Slot> = Vec::with_capacity(LIVE_CAP);
                 let mut reallocs = 0usize;
                 for _ in 0..25_000 {
                     match rng.next() % 10 {
                         0..=4 => {
                             let s = unsafe { alloc_slot(&mut rng) };
                             live.push(s);
+                            if live.len() > LIVE_CAP {
+                                let idx = (rng.next() as usize) % live.len();
+                                let s = live.swap_remove(idx);
+                                unsafe {
+                                    s.verify();
+                                    allox::free(s.p);
+                                }
+                            }
                         }
                         5..=6 if !live.is_empty() => {
                             let idx = (rng.next() as usize) % live.len();
