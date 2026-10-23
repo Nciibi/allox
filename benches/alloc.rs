@@ -1813,6 +1813,7 @@ fn run_fresh_processes() {
     let p99_every = std::env::var("BENCH_P99").unwrap_or_default();
     let budget_mb = std::env::var("BENCH_BUDGET_MB").unwrap_or_default();
     let safe_live = std::env::var_os("BENCH_SAFE_LIVE");
+    let warmup = std::env::var("BENCH_WARMUP").unwrap_or_else(|_| "0".to_string());
     // Two bindings rather than a seeded `Vec` plus a cfg'd reassignment: the
     // seed is dead on supported targets and `-D warnings` (and the CI cross-lint
     // job) rejects the unused assignment. Same cfg split as `allocators`.
@@ -1845,7 +1846,7 @@ fn run_fresh_processes() {
                     .env("BENCH_ONLY", workload.name)
                     .env("BENCH_SECS", secs.to_string())
                     .env("BENCH_REPS", "1")
-                    .env("BENCH_WARMUP", "0")
+                    .env("BENCH_WARMUP", &warmup)
                     .env("BENCH_OUTPUT", "json")
                     .env("BENCH_REP_INDEX", repetition.to_string());
                 // Settings that change the measured allocator or workload must
