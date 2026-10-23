@@ -87,12 +87,16 @@ mod tls {
         use super::super::cache::ThreadCache;
         use core::cell::{Cell, UnsafeCell};
 
+        const TLS_FREE: u8 = 0;
+        const TLS_ACTIVE: u8 = 1;
+        const TLS_RETIRED: u8 = 2;
+
         /// The guard lives beside the cache rather than in a second
         /// `thread_local!` so that reading it costs no extra TLS access: it
         /// shares a cache line with the state `with` is about to touch anyway.
         struct Tls {
             cache: UnsafeCell<ThreadCache>,
-            in_use: Cell<bool>,
+            state: Cell<u8>,
         }
 
         thread_local! {
@@ -101,17 +105,19 @@ mod tls {
             static TLS: Tls = const {
                 Tls {
                     cache: UnsafeCell::new(ThreadCache::new()),
-                    in_use: Cell::new(false),
+                    state: Cell::new(TLS_FREE),
                 }
             };
         }
 
         enum Outcome<R> {
             Ran(R),
-            /// Re-entered: this thread is already inside `with`.
+            /// This thread's TLS cache is active or retired.
             ///
-            /// TLS teardown is *not* a variant — `try_with` reports that as
-            /// its own `Err`, and both take the same fallback.
+            /// Retired means the cache was already handed to the retirement
+            /// queue and must never be borrowed again. TLS teardown is *not*
+            /// a variant - `try_with` reports that as its own `Err`, and all
+            /// of these take the same fallback.
             Reentrant,
         }
 
@@ -138,16 +144,16 @@ mod tls {
                 // also breaks the dependency cycle: the fallback never calls
                 // `arm_exit_hook`, so it cannot re-enter the hook install, and
                 // so cannot spin forever on `thread_exit::INSTALLING`.
-                if tls.in_use.get() {
+                if tls.state.get() != TLS_FREE {
                     return Outcome::Reentrant;
                 }
-                tls.in_use.set(true);
-                // Safety: `in_use` proves no other `&mut` to this cache is
+                tls.state.set(TLS_ACTIVE);
+                // Safety: `TLS_ACTIVE` proves no other `&mut` to this cache is
                 // live on this thread, and nothing below runs user code that
                 // could re-enter `with` (the guard turns any such re-entry
                 // into `Outcome::Reentrant` before it reaches this line).
                 let out = f(unsafe { &mut *ptr });
-                tls.in_use.set(false);
+                tls.state.set(TLS_FREE);
                 Outcome::Ran(out)
             });
             match result {
@@ -182,9 +188,13 @@ mod tls {
             // `eprintln!` here (its `{:?}` formatting allocates) is enough to
             // take the process down.
             let _ = TLS.try_with(|tls| {
-                if tls.in_use.get() {
+                if tls.state.get() != TLS_FREE {
                     return;
                 }
+                // Retire before reading: once the cache has moved into the
+                // retirement queue, no later TLS destructor or allocator
+                // re-entry may obtain a second `&mut` to the same storage.
+                tls.state.set(TLS_RETIRED);
                 let cache = core::ptr::read(tls.cache.get());
                 crate::cache::retire(cache);
             });
@@ -2401,10 +2411,10 @@ mod tls_reentrancy_tests {
 
     #[test]
     fn guard_is_released_after_each_call() {
-        // If `in_use` leaked true, every later allocation on this thread would
-        // silently fall back to the global heap — correct but pathologically
-        // slow. Prove the flag is cleared by running a real allocation after
-        // the guarded call above and confirming the cache is usable again.
+        // If the state leaked `TLS_ACTIVE`, every later allocation on this
+        // thread would silently fall back to the global heap -- correct but
+        // pathologically slow. Prove it is cleared by running a real
+        // allocation after the guarded call above.
         let first = with_cache(|c| unsafe { c.alloc(0) }, core::ptr::null_mut);
         assert!(!first.is_null(), "cache-backed alloc must succeed");
 
@@ -2434,6 +2444,27 @@ mod tls_reentrancy_tests {
             done.load(core::sync::atomic::Ordering::SeqCst),
             "reentrant entry must unwind normally"
         );
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn retired_cache_is_not_borrowed_again() {
+        // A TLS destructor can allocate after `retire` has moved the cache
+        // into the retirement queue. The old `in_use` flag was cleared before
+        // the move, so that allocation could mint a second `&mut` to the same
+        // cache. After retirement, `with` must take the global-heap fallback.
+        let handle = std::thread::spawn(|| {
+            let first = with_cache(|c| unsafe { c.alloc(0) }, core::ptr::null_mut);
+            assert!(!first.is_null(), "cache-backed alloc must succeed");
+
+            unsafe { tls::retire() };
+
+            let after = with_cache(|_c| 1usize, || 0usize);
+            assert_eq!(after, 0, "retired cache must not be borrowed again");
+
+            unsafe { free(first) };
+        });
+        handle.join().expect("retire test thread must not panic");
     }
 }
 

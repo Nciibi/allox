@@ -26,7 +26,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Blocks moved from pages into a thread cache in one batch.
 pub(crate) const REFILL_BATCH: u32 = 64;
-const PAGE_PROVISION_BATCH: usize = 8;
 
 /// Fully-freed pages kept mapped per size class before unmapping.
 /// Avoids map/unmap syscalls on alloc/free churn; worst-case retention is
@@ -186,8 +185,11 @@ unsafe fn fill_from_list(
         if (*page).flags & FLAG_VIRGIN == 0 {
             *virgin = false;
         }
-        let mut extended = false;
+        let before = *count;
         loop {
+            if *count >= REFILL_BATCH {
+                break;
+            }
             match pop_block(&mut (*page).free_head) {
                 Some(b) => {
                     *b.cast::<*mut u8>() = *chain;
@@ -199,17 +201,18 @@ unsafe fn fill_from_list(
                         && (*page).used as usize + (*page).free_count as usize >= (*page).capacity()
                     {
                         unlink_partial(list, page);
+                        break;
                     }
-                    break;
                 }
                 None => {
                     let materialized = (*page).used as usize + (*page).free_count as usize;
-                    if materialized < (*page).capacity() {
-                        if (*page).provision(PAGE_PROVISION_BATCH) == 0 {
+                    let capacity = (*page).capacity();
+                    if materialized < capacity {
+                        let want = (REFILL_BATCH - *count) as usize;
+                        if (*page).provision(want) == 0 {
                             unlink_partial(list, page);
                             break;
                         }
-                        extended = true;
                         continue;
                     }
                     unlink_partial(list, page);
@@ -217,8 +220,14 @@ unsafe fn fill_from_list(
                 }
             }
         }
-        if extended {
-            break;
+        if *count == before && *list == page {
+            // No block moved and the page is still the list head: it is
+            // unusable or bookkeeping is inconsistent. Unlink it so the outer
+            // loop can advance; if it cannot be unlinked, stop rather than
+            // re-reading the same head forever.
+            if !unlink_partial(list, page) {
+                break;
+            }
         }
     }
 }
@@ -1426,3 +1435,43 @@ impl BigHeap {
 
 #[cfg(all(unix, feature = "std"))]
 pub(crate) static BIG_HEAP: BigHeap = BigHeap::new();
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn take_and_release(heap: &GlobalHeap, class: usize) -> (u32, usize, bool) {
+        unsafe {
+            let (chain, count, virgin) = heap.take_blocks(class);
+            assert!(!chain.is_null(), "take_blocks returned no memory");
+            assert!(count > 0);
+            let page = PageHeader::of(chain);
+            assert!(!page.is_null());
+            let capacity = (*page).capacity();
+            heap.release_blocks(page, chain, count as u16);
+            (count, capacity, virgin)
+        }
+    }
+
+    #[test]
+    fn fresh_page_refill_fills_batch() {
+        // Regression: fill_from_list used to stop after the first block of a
+        // freshly mapped page, so a refill returned one block instead of a
+        // batch. A class-0 page has room for far more than REFILL_BATCH.
+        let heap = GlobalHeap::new();
+        let (count, _, virgin) = take_and_release(&heap, 0);
+        assert_eq!(count, REFILL_BATCH);
+        assert!(virgin, "a freshly mapped page must be reported as OS-zero");
+    }
+
+    #[test]
+    fn refill_respects_page_capacity() {
+        // 8 KiB blocks leave room for seven blocks in a 64 KiB page. The
+        // refill must stop at capacity instead of claiming REFILL_BATCH.
+        let class = crate::classes::class_for_size(8192);
+        let heap = GlobalHeap::new();
+        let (count, capacity, _) = take_and_release(&heap, class);
+        assert_eq!(count as usize, capacity);
+        assert!(capacity < REFILL_BATCH as usize);
+    }
+}

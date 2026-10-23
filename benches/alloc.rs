@@ -19,13 +19,21 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
 static HARNESS: System = System;
 
 static ALLOX: allox::Allox = allox::Allox;
+
+/// Set when any measured allocation returned null during the current
+/// `run`. A partial sample must never be reported as a valid data point.
+static ALLOC_FAILED: AtomicBool = AtomicBool::new(false);
+
+fn note_alloc_failure() {
+    ALLOC_FAILED.store(true, Ordering::Relaxed);
+}
 
 /// Targets where the pure-Rust comparators are available. Mirrors the
 /// `[target.'cfg(...)'.dev-dependencies]` scope in `Cargo.toml`: `dlmalloc`
@@ -365,16 +373,18 @@ struct RunSample {
     elapsed: Duration,
     rss_kib: u64,
     peak_rss_kib: u64,
+    alloc_failed: bool,
 }
 
 impl RunSample {
-    fn from_start(ops: u64, start: Instant) -> Self {
+    fn from_start(ops: u64, start: Instant, alloc_failed: bool) -> Self {
         let elapsed = start.elapsed();
         Self {
             ops,
             elapsed,
             rss_kib: current_rss_kib(),
             peak_rss_kib: peak_rss_kib(),
+            alloc_failed,
         }
     }
 
@@ -494,6 +504,7 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
     wl: &Workload,
     seconds: u64,
 ) -> RunSample {
+    ALLOC_FAILED.store(false, Ordering::Relaxed);
     let start = Instant::now();
     let ops = match wl.kind {
         Kind::Standard => run_standard(alloc, wl, seconds),
@@ -506,7 +517,8 @@ fn run<A: GlobalAlloc + Sync + ?Sized>(
         Kind::Request => run_request(alloc, wl, seconds),
         Kind::Ecs => run_ecs(alloc, wl, seconds),
     };
-    RunSample::from_start(ops, start)
+    let alloc_failed = ALLOC_FAILED.load(Ordering::Relaxed);
+    RunSample::from_start(ops, start, alloc_failed)
 }
 
 fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
@@ -544,6 +556,7 @@ fn run_standard<A: GlobalAlloc + Sync + ?Sized>(
                             };
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -624,6 +637,7 @@ fn run_zeroed_small<A: GlobalAlloc + Sync + ?Sized>(
                             let layout = Layout::from_size_align(size.max(1), 16).expect("layout");
                             let p = unsafe { alloc.alloc_zeroed(layout) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             // Dirty it, so a recycled block is observably
@@ -689,6 +703,7 @@ fn run_zeroed_large<A: GlobalAlloc + Sync + ?Sized>(
                             let layout = layout_for(size);
                             let p = unsafe { alloc.alloc_zeroed(layout) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -768,6 +783,7 @@ fn run_prodcons<A: GlobalAlloc + Sync + ?Sized>(
                             let size = min + (rng.next() as usize) % (max - min);
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 break 'produce;
                             }
                             unsafe { *p = ops as u8 };
@@ -856,6 +872,7 @@ fn run_spawn_churn<A: GlobalAlloc + Sync + ?Sized>(
                             let size = min + (rng.next() as usize) % (max - min);
                             let p = unsafe { alloc.alloc(layout_for(size)) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 break;
                             }
                             unsafe { *p = 0xAB };
@@ -931,6 +948,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, se
                             let l = layout_for(size);
                             let p = unsafe { alloc.alloc(l) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -946,6 +964,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, se
                             let mut bl = layout_for(64);
                             let mut bp = unsafe { alloc.alloc(bl) };
                             if bp.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             let mut bsize = 64usize;
@@ -953,6 +972,7 @@ fn run_json<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, se
                                 let nsize = bsize * 2;
                                 let np = unsafe { alloc.realloc(bp, bl, nsize) };
                                 if np.is_null() {
+                                    note_alloc_failure();
                                     break;
                                 }
                                 bp = np;
@@ -1000,6 +1020,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
                             let l = layout_for(size);
                             let p = unsafe { alloc.alloc(l) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -1011,6 +1032,7 @@ fn run_request<A: GlobalAlloc + Sync + ?Sized>(
                             let l = layout_for(size);
                             let p = unsafe { alloc.alloc(l) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -1054,12 +1076,14 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, sec
                             let mut bl = layout_for(bsize);
                             let mut bp = unsafe { alloc.alloc(bl) };
                             if bp.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             while bsize < 1048576 {
                                 let nsize = (bsize * 2).min(1048576);
                                 let np = unsafe { alloc.realloc(bp, bl, nsize) };
                                 if np.is_null() {
+                                    note_alloc_failure();
                                     break;
                                 }
                                 bp = np;
@@ -1075,6 +1099,7 @@ fn run_ecs<A: GlobalAlloc + Sync + ?Sized>(alloc: &'static A, wl: &Workload, sec
                             let l = layout_for(size);
                             let p = unsafe { alloc.alloc(l) };
                             if p.is_null() {
+                                note_alloc_failure();
                                 return ops;
                             }
                             unsafe { *p = ops as u8 };
@@ -1644,13 +1669,14 @@ fn json_number(value: f64) -> String {
 
 fn append_json_sample(output: &mut String, sample: RunSample) {
     output.push_str(&format!(
-        "{{\"ops\":{},\"elapsed_ns\":{},\"ops_per_sec\":{},\"ns_per_op\":{},\"rss_kib\":{},\"peak_rss_kib\":{}}}",
+        "{{\"ops\":{},\"elapsed_ns\":{},\"ops_per_sec\":{},\"ns_per_op\":{},\"rss_kib\":{},\"peak_rss_kib\":{},\"alloc_failed\":{}}}",
         sample.ops,
         sample.elapsed_ns(),
         json_number(sample.ops_per_sec()),
         json_number(sample.ns_per_op()),
         sample.rss_kib,
         sample.peak_rss_kib,
+        sample.alloc_failed,
     ));
 }
 
@@ -1784,6 +1810,9 @@ fn run_fresh_processes() {
         .max(1);
     let workload_filter = std::env::var("BENCH_ONLY").unwrap_or_default();
     let allocator_filter = std::env::var("BENCH_ALLOC").unwrap_or_default();
+    let p99_every = std::env::var("BENCH_P99").unwrap_or_default();
+    let budget_mb = std::env::var("BENCH_BUDGET_MB").unwrap_or_default();
+    let safe_live = std::env::var_os("BENCH_SAFE_LIVE");
     // Two bindings rather than a seeded `Vec` plus a cfg'd reassignment: the
     // seed is dead on supported targets and `-D warnings` (and the CI cross-lint
     // job) rejects the unused assignment. Same cfg split as `allocators`.
@@ -1808,7 +1837,8 @@ fn run_fresh_processes() {
                 if !allocator_filter.is_empty() && !allocator.contains(&allocator_filter) {
                     continue;
                 }
-                let output = std::process::Command::new(&exe)
+                let mut command = std::process::Command::new(&exe);
+                command
                     .env("BENCH_CHILD", "1")
                     .env("BENCH_FRESH", "0")
                     .env("BENCH_ALLOC", allocator)
@@ -1817,12 +1847,28 @@ fn run_fresh_processes() {
                     .env("BENCH_REPS", "1")
                     .env("BENCH_WARMUP", "0")
                     .env("BENCH_OUTPUT", "json")
-                    .output();
+                    .env("BENCH_REP_INDEX", repetition.to_string());
+                // Settings that change the measured allocator or workload must
+                // survive the process boundary; the fresh parent would
+                // otherwise silently benchmark a different configuration.
+                if !p99_every.is_empty() {
+                    command.env("BENCH_P99", &p99_every);
+                }
+                if !budget_mb.is_empty() {
+                    command.env("BENCH_BUDGET_MB", &budget_mb);
+                }
+                if let Some(value) = &safe_live {
+                    command.env("BENCH_SAFE_LIVE", value);
+                }
+                let output = command.output();
                 match output {
                     Ok(output) if output.status.success() => {
                         print!("{}", String::from_utf8_lossy(&output.stdout));
                     }
                     Ok(output) => {
+                        // Preserve the child's JSON: it carries the OOM flag
+                        // that explains the non-zero exit.
+                        eprint!("{}", String::from_utf8_lossy(&output.stdout));
                         eprint!("{}", String::from_utf8_lossy(&output.stderr));
                         std::process::exit(1);
                     }
@@ -1866,6 +1912,10 @@ fn main() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(5)
         .max(1);
+    let repetition = std::env::var("BENCH_REP_INDEX")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
     let warmup_secs = std::env::var("BENCH_WARMUP")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -1952,8 +2002,8 @@ fn main() {
         "{\"schema\":\"allox.bench.v1\",\"harness_allocator\":\"system\",\"config\":{",
     );
     json.push_str(&format!(
-        "\"seconds\":{},\"repetitions\":{},\"warmup_seconds\":{},",
-        secs, reps, warmup_secs
+        "\"seconds\":{},\"repetitions\":{},\"repetition\":{},\"warmup_seconds\":{},",
+        secs, reps, repetition, warmup_secs
     ));
     json.push_str(&format!(
         "\"workload_filter\":{},\"allocator_filter\":{},",
@@ -1970,6 +2020,7 @@ fn main() {
     json.push_str("],\"results\":[");
 
     let mut first_result = true;
+    let mut had_alloc_failure = false;
     for workload in WORKLOADS {
         if !filter.is_empty() && !workload.name.contains(&filter) {
             continue;
@@ -1983,17 +2034,21 @@ fn main() {
             for &allocator_index in &alloc_idx {
                 let allocator = &allocators[allocator_index];
                 eprintln!("  warmup {} / {}...", workload.name, allocator.0);
-                warmups[allocator_index] = Some(run(allocator.1, workload, warmup_secs));
+                let sample = run(allocator.1, workload, warmup_secs);
+                had_alloc_failure |= sample.alloc_failed;
+                warmups[allocator_index] = Some(sample);
             }
         }
         let mut latency_by_allocator: Vec<Option<[u64; 4]>> =
             (0..allocators.len()).map(|_| None).collect();
-        for _ in 0..reps {
-            for &allocator_index in &alloc_idx {
+        for repetition in 0..reps {
+            for offset in 0..alloc_idx.len() {
+                let allocator_index = alloc_idx[(offset + repetition) % alloc_idx.len()];
                 let allocator = &allocators[allocator_index];
                 eprintln!("  running {} / {}...", workload.name, allocator.0);
                 latency_reset();
                 let sample = run(allocator.1, workload, secs);
+                had_alloc_failure |= sample.alloc_failed;
                 if p99_every > 0 {
                     // Last rep wins: percentiles over a whole 2 s run are
                     // what we report, and merging runs would need per-rep
@@ -2029,6 +2084,7 @@ fn main() {
             let (d0abnd, _) = allox::__debug_arena_detail();
             let v0 = allox::__diagnostics::volume_raw();
             let probe = run(allocators[allocator_index].1, workload, 1);
+            had_alloc_failure |= probe.alloc_failed;
             settle_counters();
             let s1 = allox::stats();
             let (d1sp, d1su, d1sm, d1smu, d1ac, d1aru, d1bm, d1bmu) = allox::__debug_map_split();
@@ -2168,7 +2224,9 @@ fn main() {
         json.push('}');
     }
 
-    json.push_str("]}\n");
+    json.push_str("],\"alloc_failed\":");
+    json.push_str(if had_alloc_failure { "true" } else { "false" });
+    json.push_str("}\n");
     if json_output {
         print!("{}", json);
     } else {
@@ -2179,5 +2237,9 @@ fn main() {
         println!("BENCH_OUTPUT=json or BENCH_JSON=1 emits one machine-readable JSON document.");
         #[cfg(feature = "bench-jemalloc")]
         println!("jemalloc column present (--features bench-jemalloc); absent when feature off.");
+    }
+    if had_alloc_failure {
+        eprintln!("benchmark invalid: a measured allocation returned null; partial samples are not scoreboard data");
+        std::process::exit(2);
     }
 }
