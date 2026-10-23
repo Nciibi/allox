@@ -192,3 +192,67 @@ fn calloc_zero_after_recycle() {
         h.join().unwrap();
     }
 }
+
+/// `GlobalAlloc::alloc_zeroed` under concurrent churn, with alignments large
+/// enough to force the large path in every size tier. Complements the
+/// deterministic tier coverage in `discard_contract.rs` with the interleaving
+/// that only a randomized multithreaded run produces.
+#[test]
+fn randomized_zeroed_alignment_multithreaded() {
+    use std::alloc::{alloc_zeroed, dealloc, Layout};
+
+    let handles: Vec<_> = (0..4)
+        .map(|t| {
+            thread::spawn(move || {
+                let mut rng = Rng((t as u64 + 11).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                let mut live: Vec<(*mut u8, Layout)> = Vec::new();
+                for _ in 0..800 {
+                    match rng.next() % 3 {
+                        0 | 1 => {
+                            let size = match rng.next() % 4 {
+                                0 => 1 + (rng.next() % 1024) as usize,
+                                1 => 16_385 + (rng.next() % 8_000) as usize,
+                                2 => 65_473 + (rng.next() % 140_000) as usize,
+                                _ => 1 + (rng.next() % 250_000) as usize,
+                            };
+                            let align = [16usize, 64, 4096, 65_536][(rng.next() % 4) as usize];
+                            let layout = Layout::from_size_align(size, align).unwrap();
+                            let p = unsafe { alloc_zeroed(layout) };
+                            assert!(!p.is_null(), "OOM {size}@{align}");
+                            assert_eq!(
+                                p as usize % align,
+                                0,
+                                "alloc_zeroed {size}@{align} misaligned"
+                            );
+                            for i in 0..size {
+                                assert_eq!(
+                                    unsafe { *p.add(i) },
+                                    0,
+                                    "alloc_zeroed {size}@{align} dirty at {i}"
+                                );
+                            }
+                            live.push((p, layout));
+                            if live.len() > 96 {
+                                let (p, layout) = live.swap_remove(0);
+                                unsafe { dealloc(p, layout) };
+                            }
+                        }
+                        _ => {
+                            if !live.is_empty() {
+                                let idx = (rng.next() as usize) % live.len();
+                                let (p, layout) = live.swap_remove(idx);
+                                unsafe { dealloc(p, layout) };
+                            }
+                        }
+                    }
+                }
+                for (p, layout) in live {
+                    unsafe { dealloc(p, layout) };
+                }
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+}
