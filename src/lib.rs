@@ -1429,21 +1429,14 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         return align.max(1) as *mut u8;
     }
     if needs_large(size, align) {
-        // Big-span range on arena targets falls through to the big branch
-        // below; everywhere else (and for true large sizes/alignments)
-        // this is the large path.
-        #[cfg(not(all(unix, feature = "std")))]
-        {
-            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
-            zero_large_allocation(p, size, known_zeroed);
-            return p;
-        }
-        #[cfg(all(unix, feature = "std"))]
-        if size > MAX_BIG_BLOCK {
-            let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
-            zero_large_allocation(p, size, known_zeroed);
-            return p;
-        }
+        // Any over-minimum alignment must take this path even when the size
+        // would fit a packed tier: the big heaps only promise MIN_ALIGN, so
+        // routing an over-aligned request there (as this previously did on
+        // arena targets whenever `size <= MAX_BIG_BLOCK`) returned a pointer
+        // that did not honour the requested alignment.
+        let (p, _fresh, known_zeroed) = alloc_large_ex(size, align, true, 0);
+        zero_large_allocation(p, size, known_zeroed);
+        return p;
     }
     #[cfg(all(unix, feature = "std"))]
     if size > MAX_MEDIUM_BLOCK {
@@ -1634,26 +1627,15 @@ unsafe fn dealloc_with_layout(p: *mut u8, size: usize, align: usize) {
 #[inline(never)]
 unsafe fn dealloc_tiered(p: *mut u8, size: usize, align: usize) {
     if needs_large(size, align) {
-        // Big-span range on arena targets routes below; everywhere else
-        // (and for true large sizes/alignments) this is the large path.
-        #[cfg(not(all(unix, feature = "std")))]
-        {
-            #[cfg(debug_assertions)]
-            if !large_region_known(p) {
-                corrupt_pointer();
-            }
-            free_large(p);
-            return;
+        // Mirror the allocation side: an over-aligned block came from the
+        // large path even when its size is inside a packed range, so it must
+        // be released there rather than into the big/medium/small heaps.
+        #[cfg(debug_assertions)]
+        if !large_region_known(p) {
+            corrupt_pointer();
         }
-        #[cfg(all(unix, feature = "std"))]
-        if size > MAX_BIG_BLOCK {
-            #[cfg(debug_assertions)]
-            if !large_region_known(p) {
-                corrupt_pointer();
-            }
-            free_large(p);
-            return;
-        }
+        free_large(p);
+        return;
     }
     #[cfg(all(unix, feature = "std"))]
     if size > MAX_MEDIUM_BLOCK {
