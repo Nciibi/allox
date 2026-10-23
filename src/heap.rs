@@ -970,7 +970,9 @@ impl MediumHeap {
                 let span = raw.cast::<SpanMaster>();
                 (*span).init(mclass, pages as u32);
                 #[cfg(all(unix, feature = "std"))]
-                crate::arena::medium_table_set(raw, pages as u32, span);
+                if crate::arena::contains(raw, pages * PAGE_SIZE) {
+                    crate::arena::medium_table_set(raw, pages as u32, span);
+                }
                 if fresh {
                     MAPPED_PAGES.fetch_add(1, Ordering::Relaxed);
                 }

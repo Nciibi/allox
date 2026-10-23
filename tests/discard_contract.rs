@@ -160,3 +160,40 @@ fn calloc_is_zero_for_over_aligned_recycling() {
         }
     }
 }
+
+/// `alloc_zeroed` must honour over-aligned layouts in *every* size tier. The
+/// packed small/medium/big heaps only promise `MIN_ALIGN`, so an over-aligned
+/// request that was routed there came back misaligned even though the
+/// allocation succeeded.
+#[test]
+fn alloc_zeroed_respects_alignment_across_tiers() {
+    use std::alloc::{alloc_zeroed, dealloc, Layout};
+    // (size, align): small, medium, big, and a big allocation with the
+    // largest alignment the test exercises.
+    let cases = [
+        (32usize, 64usize),
+        (20_000, 4096),
+        (200_000, 4096),
+        (200_000, 65_536),
+    ];
+    for (size, align) in cases {
+        let layout = Layout::from_size_align(size, align).expect("valid layout");
+        for _ in 0..8 {
+            let p = unsafe { alloc_zeroed(layout) };
+            assert!(!p.is_null());
+            assert_eq!(
+                p as usize % align,
+                0,
+                "alloc_zeroed size {size} align {align} not honoured"
+            );
+            for i in 0..size {
+                assert_eq!(
+                    unsafe { *p.add(i) },
+                    0,
+                    "alloc_zeroed returned dirty byte {i} for size {size} align {align}"
+                );
+            }
+            unsafe { dealloc(p, layout) };
+        }
+    }
+}
