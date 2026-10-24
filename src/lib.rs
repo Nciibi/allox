@@ -1433,11 +1433,35 @@ unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
 /// blocks only need their freelist-link word cleared; recycled large regions
 /// are memset unless their cache metadata proves they were discarded.
+#[inline]
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
         return align.max(1) as *mut u8;
     }
+    if size <= MAX_SMALL_SIZE && align <= MIN_ALIGN {
+        return alloc_zeroed_small(size);
+    }
+    alloc_zeroed_tiered(size, align)
+}
+
+#[inline]
+unsafe fn alloc_zeroed_small(size: usize) -> *mut u8 {
+    let class = class_for_size(size);
+    let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small(class));
+    if !p.is_null() {
+        if virgin {
+            // Only the freelist link word is dirty.
+            p.cast::<u64>().write(0);
+        } else {
+            note_zeroed_fill(p, size);
+        }
+    }
+    p
+}
+
+#[inline(never)]
+unsafe fn alloc_zeroed_tiered(size: usize, align: usize) -> *mut u8 {
     if needs_large(size, align) {
         // Any over-minimum alignment must take this path even when the size
         // would fit a packed tier: the big heaps only promise MIN_ALIGN, so
@@ -1464,26 +1488,13 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
         }
         return p;
     }
-    if size > MAX_SMALL_SIZE {
-        let mclass = medium_class_for_size(size);
-        let (p, virgin) = with_cache(
-            |c| c.alloc_medium_zeroed(mclass),
-            || take_one_medium(mclass),
-        );
-        if !p.is_null() {
-            if virgin {
-                p.cast::<u64>().write(0);
-            } else {
-                note_zeroed_fill(p, size);
-            }
-        }
-        return p;
-    }
-    let class = class_for_size(size);
-    let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small(class));
+    let mclass = medium_class_for_size(size);
+    let (p, virgin) = with_cache(
+        |c| c.alloc_medium_zeroed(mclass),
+        || take_one_medium(mclass),
+    );
     if !p.is_null() {
         if virgin {
-            // Only the freelist link word is dirty.
             p.cast::<u64>().write(0);
         } else {
             note_zeroed_fill(p, size);
