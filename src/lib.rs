@@ -1445,10 +1445,15 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     alloc_zeroed_tiered(size, align)
 }
 
+#[inline(never)]
+unsafe fn take_one_small_cold(class: usize) -> (*mut u8, bool) {
+    take_one_small(class)
+}
+
 #[inline]
 unsafe fn alloc_zeroed_small(size: usize) -> *mut u8 {
     let class = class_for_size(size);
-    let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small(class));
+    let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small_cold(class));
     if !p.is_null() {
         if virgin {
             // Only the freelist link word is dirty.
