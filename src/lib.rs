@@ -1433,7 +1433,7 @@ unsafe fn note_zeroed_fill(p: *mut u8, size: usize) {
 /// Like `alloc_impl` but zeroes the allocation. Virgin small/medium/big
 /// blocks only need their freelist-link word cleared; recycled large regions
 /// are memset unless their cache metadata proves they were discarded.
-#[inline]
+#[inline(never)]
 unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     debug_assert!(align.is_power_of_two());
     if size == 0 {
@@ -1445,7 +1445,7 @@ unsafe fn alloc_zeroed_impl(size: usize, align: usize) -> *mut u8 {
     alloc_zeroed_tiered(size, align)
 }
 
-#[inline(never)]
+#[inline]
 unsafe fn alloc_zeroed_small(size: usize) -> *mut u8 {
     let class = class_for_size(size);
     let (p, virgin) = with_cache(|c| c.alloc_zeroed(class), || take_one_small(class));
