@@ -77,7 +77,7 @@ jobs:
   cross-lint:
     name: cross-lint (${{ matrix.target }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
