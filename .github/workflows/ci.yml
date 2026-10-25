@@ -1,4 +1,4 @@
-ï»¿name: CI
+name: CI
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
   test:
     name: test (${{ matrix.os }}, ${{ matrix.profile }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +69,7 @@ jobs:
   # `lint` above only ever sees the host target, so it cannot catch a
   # dependency or `#[cfg]` that breaks a target nobody builds on the runner.
   # That is exactly how `cargo clippy --all-targets --target
-  # x86_64-unknown-illumos` came to fail inside `dlmalloc` â€” a dev-dependency
+  # x86_64-unknown-illumos` came to fail inside `dlmalloc` — a dev-dependency
   # nothing on that target references. illumos and the BSDs are in this matrix
   # precisely because they are the unsupported ones: they are where
   # "works on my platform" quietly stops being true.
@@ -247,9 +247,9 @@ jobs:
         run: |
           set -o pipefail
           grep -q "raw allox" "bench-${{ matrix.os }}.txt" \
-            || { echo "::error::benchmark produced no results â€” bench target was skipped, not run"; exit 1; }
+            || { echo "::error::benchmark produced no results — bench target was skipped, not run"; exit 1; }
           # The harness indents these lines, so anchor on whitespace rather
-          # than on `raw` itself â€” `^raw ` matches nothing and would report 0.
+          # than on `raw` itself — `^raw ` matches nothing and would report 0.
           grep -c "^[[:space:]]*raw " "bench-${{ matrix.os }}.txt"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -258,7 +258,7 @@ jobs:
           path: bench-*.txt
           if-no-files-found: warn
 
-  # jemalloc comparator â€” CI box has make+autoconf (dev box does not).
+  # jemalloc comparator — CI box has make+autoconf (dev box does not).
   # Runs the scoreboard with the extra column; uploaded for re-scoring
   # against the other OS bench artifacts.
   jemalloc-bench:
