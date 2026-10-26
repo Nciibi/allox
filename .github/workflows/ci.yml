@@ -135,7 +135,7 @@ jobs:
           cargo build --locked --features telemetry
           cargo test --locked --features telemetry
       - name: no_std build (unix)
-        run: cargo build --locked --no-default-features
+        run: cargo build --locked --no-default-features --verbose
       - name: no_std build (wasm32)
         run: cargo build --locked --no-default-features --target wasm32-unknown-unknown
 
