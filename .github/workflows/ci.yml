@@ -219,7 +219,7 @@ jobs:
     # Results are collected as artifacts for re-scoring, not as a gate.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
