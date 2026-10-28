@@ -381,7 +381,7 @@ jobs:
     # with counter data the dev box cannot produce (no PMU there).
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     continue-on-error: true
     defaults:
       run:
