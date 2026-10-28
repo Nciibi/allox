@@ -325,9 +325,9 @@ jobs:
       - run: cargo fuzz build
       - name: Smoke-run fuzz targets
         run: |
-          cargo fuzz run alloc_seq -- -max_total_time=60
-          cargo fuzz run zero_init_seq -- -max_total_time=60
-          cargo fuzz run tier_boundary_seq -- -max_total_time=60
+          cargo fuzz run alloc_seq -- -max_total_time=90
+          cargo fuzz run zero_init_seq -- -max_total_time=90
+          cargo fuzz run tier_boundary_seq -- -max_total_time=90
 
   # Kani proofs for the span/big-carving arithmetic and medium-page packing.
   # Proofs live in src/page.rs `kani_proofs` under
