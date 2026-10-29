@@ -5,7 +5,7 @@ on:
     branches: [main, master]
   pull_request:
   schedule:
-    # Weekly, off the hour to avoid the top-of-hour runner stampede.
+    # Weekly run, offset from the hour to avoid the top-of-hour runner stampede.
     - cron: "37 4 * * 1"
 
 env:
