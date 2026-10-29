@@ -401,7 +401,7 @@ jobs:
         run: |
           for wl in "mixed-all 8T" "spawn-churn"; do
             safe=$(echo "$wl" | tr ' ' '-')
-            BENCH_SECS=2 BENCH_REPS=1 BENCH_ONLY="$wl" perf stat \
+            BENCH_SECS=2 BENCH_REPS=3 BENCH_ONLY="$wl" perf stat \
               -e task-clock,context-switches,cpu-migrations,page-faults,minor-faults,major-faults,cycles,instructions,cache-misses \
               -o "perf-${safe}.txt" cargo bench --locked --bench alloc -- --nocapture || true
           done
