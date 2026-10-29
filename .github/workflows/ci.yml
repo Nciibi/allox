@@ -365,7 +365,7 @@ jobs:
       # and pulls in bench-jemalloc without make/autoconf installed. The
       # measured surface is the library and its tests.
       - name: Generate LCOV report
-        run: cargo llvm-cov --locked --lib --tests --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --lib --tests --doctests --lcov --output-path lcov.info
       - name: Summary
         run: cargo llvm-cov report --summary-only
       - uses: actions/upload-artifact@v4
